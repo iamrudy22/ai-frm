@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* Astryx 디자인 시스템 — 리셋 → 핵심 스타일 → 테마 순 */
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
+
+/* Tailwind 유틸리티가 Astryx를 무시하고 덮어쓰지 않도록 레이어 순서 확보 */
+@layer base {
+  :root {
+    --background: var(--color-background-body);
+    --foreground: var(--color-text-primary);
+  }
+}
+
+@theme inline {
+  --color-background: var(--color-background-body);
+  --color-foreground: var(--color-text-primary);
+  --font-sans: var(--font-family-body);
+  --font-mono: var(--font-family-code);
+}
