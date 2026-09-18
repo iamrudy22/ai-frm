@@ -126,12 +126,14 @@ D:1월 E:2월 F:3월 G:4월 H:5월 I:6월 [J:상반기계] K:7월 L:8월 M:9월 
 
 > 판정 기준표의 정본이 원래 엑셀 시트에 있다는 점(이벤트 스토밍 6장 1번)은 후속 과제다. DDD 검토 D6 참조.
 
-| 등급 | 기준 |
-|---|---|
-| 정상 | Gap ≥ 50% |
-| 주의 | 25% ≤ Gap < 50% |
-| 경고 | 15% ≤ Gap < 25% |
-| 위기 | Gap < 15% |
+| 등급 | 기준(비율) | 화면 표시 |
+|---|---|---|
+| 정상 | ≥ 0.5 | ≥ 50% |
+| 주의 | 0.25 ~ 0.5 | 25 ~ 50% |
+| 경고 | 0.15 ~ 0.25 | 15 ~ 25% |
+| 위기 | < 0.15 | < 15% |
+
+**저장·판정은 비율로 한다.** 회의록 원문이 "0.5 이상"처럼 비율이고, 대금 회수 위험 구간(0.9/0.8/0.7)과 척도를 맞춰야 같은 구간표 타입을 공유할 수 있다. 퍼센트 변환은 화면에서만 한다.
 
 ### 2-5. 테스트 — Vitest 도입, fixtures는 gitignore
 - **Vitest 도입.** 계산 순수 함수에 §4-3 케이스 5개를 자동 검증. 3단계(적정 시재 3개 모델)까지 갈 것을 고려한 선택이다.
@@ -182,9 +184,14 @@ export type Ratio  = number & { readonly __unit: 'ratio' };   // 0.9 = 90%
 
 ```ts
 export type Grade = '정상' | '주의' | '경고' | '위기';
-export type Band  = { min: number; grade: Grade };
-export function gradeBy(bands: Band[], value: number): Grade;
+export type Band  = { readonly atLeast: number; readonly grade: Grade };  // atLeast 이상 = 이 등급
+export type GradeBands = readonly Band[] & { ... };   // defineBands를 통과한 것만
+
+export function defineBands(bands: readonly Band[]): GradeBands;  // 불변식 검증
+export function gradeBy(bands: GradeBands, value: Ratio): Grade;
 ```
+
+`defineBands`가 **내림차순**과 **전 구간 포괄**을 강제한다. 판정이 배열 순서에 조용히 의존하던 것을 불변식으로 바꾸고, 전 구간이 덮이므로 `'위기'` 같은 기본값을 코드에 박을 필요가 없다 — 정책은 구간표가 소유한다.
 
 `policy.ts`가 구간표를 소유한다. 출처는 회의록(§2-4)이며, 지표별 기준표 엑셀을 받으면 그쪽으로 옮긴다.
 
@@ -333,8 +340,8 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 | # | 작업 | 산출 | 커밋 |
 |---|---|---|---|
 | 0 | ✅ Vitest 설치·설정, `fixtures/` gitignore | `vitest.config.mts`, `.gitignore` | `chore: Vitest 도입` |
-| 1 | 등급·정책 | `domain/risk/grade.ts`, `policy.ts` | |
-| 2 | 값 객체 | `domain/shared/amount.ts` (Amount·Ratio) | |
+| 1 | ✅ 값 객체 | `domain/shared/amount.ts` (Amount·Ratio) | |
+| 2 | ✅ 등급·정책 | `domain/risk/grade.ts`, `policy.ts` | `feat: 등급 판정 정책` |
 | 3 | 회차 애그리거트 | `domain/cashflow/statement.ts` | `feat: 리스크 판정 도메인 모델` |
 | 4 | 유동성 Gap 산식 — **`abs` 제거** | `domain/risk/liquidity-gap.ts` | |
 | 5 | 대금 회수 위험 산식 | `domain/risk/payment-recovery.ts` | |
@@ -359,6 +366,17 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 - `tsconfig`의 `@/*` 별칭은 Vitest가 자동으로 읽지 않아 `resolve.alias`에 직접 넣었다.
 - `globals: true`를 쓰지 않는다. `include`가 `**/*.ts`라 테스트 파일이 `tsc --noEmit` 대상에 들어가므로, `vitest`에서 명시적으로 import한다.
 - `src/domain/shared/smoke.test.ts`는 0단계를 green으로 검증하기 위한 임시 파일이다. **1단계에서 제거한다.**
+
+### 8-3. 1·2단계 결과 (2026-09-18)
+
+**순서를 바꿨다.** 원안은 `1.등급·정책 → 2.값 객체`였으나 `gradeBy`가 `Ratio`를 받아야 하므로 값 객체가 선행해야 한다. 둘은 분리해서 쌓을 수 없어 한 단계로 묶었다.
+
+**척도를 비율로 통일했다.** 원안은 Gap을 `50/25/15`(%), 대금회수를 `0.9/0.8/0.7`(비율)로 적어 두 지표가 같은 구간표 타입을 공유할 수 없었다. 금액/비율 혼동을 타입으로 막으려던 §3-1의 취지가 여기서 무너진다. 회의록 원문이 비율이므로 비율이 정본이고, %는 표시 전용이다.
+
+**구간표 불변식을 구조로 고정했다.** `defineBands`가 내림차순과 전 구간 포괄을 검증한다. 이로써 `gradeBy`에 기본 등급을 하드코딩할 이유가 사라졌다.
+
+- 테스트 30개 통과. `tsc --noEmit`·`eslint` 통과
+- 합격 기준 확인: `src/domain` 아래에 `xlsx` import 없음
 
 ---
 
