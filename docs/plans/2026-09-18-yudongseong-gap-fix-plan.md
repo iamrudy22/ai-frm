@@ -202,19 +202,25 @@ export function gradeBy(bands: GradeBands, value: Ratio): Grade;
 ```ts
 export type ItemName = '기초시재' | '수입계' | '수입' | '지출';
 
+/** index가 정체성, label은 표시용. */
+export type Month = { readonly index: number; readonly label: string };
+
 export type Statement = {
-  asOf: Date;                    // A2 기준일
-  baseMonth: MonthKey;           // 기준월
-  months: MonthKey[];            // 시간순 월 목록 (소계 열 제외)
-  amountOf(item: ItemName, month: MonthKey): Amount;
+  readonly asOf: Date;                 // 판독 계층이 A2에서 뽑은 기준일
+  readonly months: readonly Month[];   // 시간순 (소계 열 제외)
+  readonly defaultBaseMonth: Month;    // 기본값일 뿐, 사용자가 바꾼다
+  amountOf(item: ItemName, month: Month): Amount;
 };
 
-export function windowFrom(s: Statement, base: MonthKey, count: number): MonthKey[];
-export function assertConsecutive(prev: Statement, next: Statement): Result;
+export function windowFrom(s: Statement, base: Month, count: number): readonly Month[];
+export function checkConsecutive(prev: Statement, next: Statement): ConsecutiveCheck;
+export function checkRollForward(s: Statement, tolerance?: number): readonly string[];
 ```
 
-- `windowFrom`이 3개월 창을 담당한다. **월 목록의 인덱스로 자르므로 연도 경계(§1-6)가 자연히 처리된다.**
-- `assertConsecutive`가 회차 순서 검증을 맡는다. UI가 아니라 여기서 한다.
+- **월은 라벨이 아니라 인덱스가 정체성이다.** 라벨로 창을 자르면 12월 다음이 `1월`인지 `26.1월`인지 가릴 수 없다(§1-6). 시트가 시간순이므로 인덱스로 다루면 사라지는 문제다.
+- `windowFrom`이 3개월 창을 담당한다. 남은 달이 모자라면 **거부한다** — 2개월치로 3개월 순지출을 내면 유동성이 실제보다 좋아 보인다.
+- `checkConsecutive`가 회차 순서 검증을 맡는다. UI가 아니라 여기서 한다. **던지지 않고 값으로 알린다** — 자동 교정하지 말고 사용자 확인을 받아야 하기 때문이다(§5-3). 월 인덱스는 회차마다 기준이 달라 비교할 수 없으므로 기준일로 따진다.
+- `checkRollForward`는 진단이다. 어긋나도 판정을 막지 않고 신호만 준다 — 대개 판독 계층이 행을 잘못 잡았다는 뜻이다.
 
 ---
 
@@ -342,7 +348,7 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 | 0 | ✅ Vitest 설치·설정, `fixtures/` gitignore | `vitest.config.mts`, `.gitignore` | `chore: Vitest 도입` |
 | 1 | ✅ 값 객체 | `domain/shared/amount.ts` (Amount·Ratio) | |
 | 2 | ✅ 등급·정책 | `domain/risk/grade.ts`, `policy.ts` | `feat: 등급 판정 정책` |
-| 3 | 회차 애그리거트 | `domain/cashflow/statement.ts` | `feat: 리스크 판정 도메인 모델` |
+| 3 | ✅ 회차 애그리거트 | `domain/cashflow/statement.ts` | `feat: 자금수지표 회차 애그리거트` |
 | 4 | 유동성 Gap 산식 — **`abs` 제거** | `domain/risk/liquidity-gap.ts` | |
 | 5 | 대금 회수 위험 산식 | `domain/risk/payment-recovery.ts` | |
 | 6 | 계산 테스트 5개 (§4-3) | `*.test.ts` | `test: 판정 로직 검증 케이스` |
@@ -377,6 +383,19 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 
 - 테스트 30개 통과. `tsc --noEmit`·`eslint` 통과
 - 합격 기준 확인: `src/domain` 아래에 `xlsx` import 없음
+
+### 8-4. 3단계 결과 (2026-09-18)
+
+**`MonthKey`를 `Month { index, label }`로 구체화했다.** 원안은 타입이 미정이었는데, 라벨 기반이면 `windowFrom`이 "인덱스로 자른다"는 규칙과 어긋나 §1-6 문제가 도메인까지 따라온다.
+
+**`assertConsecutive` → `checkConsecutive`.** `assert`는 예외를 함의하는데 §5-3이 요구하는 것은 "경고하고 사용자 확인"이다. 던지면 그 흐름이 불가능하다.
+
+**미정이던 두 경계를 오류로 명시했다** — 3개월 창이 모자랄 때, `amountOf`에 이 회차에 없는 월이 올 때.
+
+**`checkRollForward`를 진단으로 추가했다.** 실물에서 전 구간 성립을 확인한 불변식이라, 판독 계층이 행을 잘못 잡으면 여기서 드러난다. 생성을 막지는 않는다.
+
+- 테스트 45개 통과(회차 15개). `tsc`·`eslint` 통과
+- 테스트 기대값을 한 번 고쳤다. 기초시재 한 값이 틀어지면 들어오는 연결과 나가는 연결이 **함께** 깨지므로 진단이 2건 나온다. 구현이 맞고 테스트가 틀렸다
 
 ---
 
