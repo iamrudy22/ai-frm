@@ -363,8 +363,8 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 | 6 | ✅ 계산 테스트 (§4-3) — TDD로 각 단계에 포함 | `*.test.ts` | |
 | 7 | ✅ ACL — 시트/라벨/월 열 판독 | `infrastructure/xlsx/statement-reader.ts` | `feat: 자금수지표 판독 계층` |
 | 8 | ✅ 파싱 통합 테스트 (조건부 skip) | `statement-reader.fixture.test.ts` | |
-| 9 | 대시보드 재작성 — 2회차 업로드, 두 카드, 회차 검증 | `app/aifrm/page.tsx` | `feat: 통합 대시보드` |
-| 10 | `daegeum-hoe-su` → `payment-recovery` 리다이렉트 | | |
+| 9 | ✅ 대시보드 재작성 — 2회차 업로드, 두 지표, 회차 검증 | `app/aifrm/page.tsx` | `feat: 통합 대시보드` |
+| 10 | ✅ `daegeum-hoe-su` → `/aifrm` 리다이렉트 | | |
 | 11 | lint·Astryx·네비게이션·metadata (§7) | | `style: 디자인시스템 규칙 적용` |
 
 **1~6이 끝나면 문제 A가 검증과 함께 해소된다.** 7~9에서 B·C가 함께 풀린다. 이 순서면 도메인이 xlsx를 모르는 상태가 자연히 유지된다 — 4·5를 쓸 때 7이 아직 없기 때문이다.
@@ -392,6 +392,22 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 
 - 테스트 30개 통과. `tsc --noEmit`·`eslint` 통과
 - 합격 기준 확인: `src/domain` 아래에 `xlsx` import 없음
+
+### 8-7. 9·10단계 결과 (2026-09-18)
+
+**기준월 드롭다운을 결과 영역으로 옮겼다.** 원안 화면도는 업로드 줄에 두었는데, 월 목록은 파일을 읽어야 알 수 있어 산출 전에는 채울 수 없다. 판독 후에 나타나고, 바꾸면 **파일을 다시 읽지 않고** 이미 읽어 둔 회차로 다시 셈한다.
+
+**드롭다운은 유동성 Gap 창에만 적용된다.** 라벨에 그렇게 적었다. 대금 회수 위험의 판정 대상월은 두 회차의 경계에서 정해지는 것이라, 유동성 관측 창을 바꾼다고 함께 움직이면 오히려 어색하다.
+
+**§5-4의 두 지시가 서로 어긋나 있었다.** "대시보드로 리다이렉트"와 "경로명을 `payment-recovery`로 변경"을 함께 적었는데, 사라질 페이지의 이름을 바꾸는 셈이다. `payment-recovery`는 도메인 파일명에 이미 적용됐고(`domain/risk/payment-recovery.ts`), URL은 리다이렉트만 남긴다.
+
+**지표 묶음을 Card가 아니라 Section으로 썼다.** Astryx의 Card 문서가 "페이지 구역을 카드로 감싸지 말라"고 명시한다. §5-3 화면도의 "카드"는 표현이 부정확했다.
+
+**Astryx 적용을 11단계에서 당겨 왔다.** 페이지를 새로 쓰면서 raw `<div>`로 짰다가 11단계에 다시 고치는 것은 낭비다. §8-1이 이미 "9단계 전에 컴포넌트 후보 확보"라고 적고 있었다.
+
+- 테스트 79개 유지. `tsc`·`next build` 통과, **`eslint src` 전체가 깨끗해졌다**(기존 오류 4건은 두 페이지를 새로 쓰며 사라졌다)
+- **`src/app`에서 `xlsx` import가 사라졌다.** 이제 `statement-reader`만 xlsx를 안다
+- 브라우저에서 실제 렌더를 확인했다. 버튼이 전폭으로 늘어나던 것과 파일 입력 문구가 영어로 나오던 것을 고쳤다
 
 ### 8-6. 7·8단계 결과 (2026-09-18)
 

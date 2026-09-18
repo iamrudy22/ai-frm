@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ai-frm",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ai-frm", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}
