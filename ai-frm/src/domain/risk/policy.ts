@@ -31,6 +31,14 @@ export const PAYMENT_RECOVERY_BANDS = defineBands([
   { atLeast: NO_FLOOR, grade: '위기' },
 ]);
 
+/**
+ * 3개월간 자금이 순유입이면 유동성 압박이 없다고 본다.
+ *
+ * 산식 쪽에 '정상'을 박아 두면 정책이 코드로 새므로 여기서 소유한다.
+ * 자금기획팀이 "순유입이라도 시재가 없으면 주의" 같은 기준을 주면 이 값만 바꾼다.
+ */
+export const GRADE_WHEN_NET_INFLOW: Grade = '정상';
+
 export type IndicatorKey = 'liquidity-gap' | 'payment-recovery';
 
 /**

@@ -263,7 +263,7 @@ export type LiquidityGap =
 | 2 | 순유입 (수입 > 지출) | `net-inflow` · 정상 |
 | 3 | 순지출 = 0 | `net-inflow` · 정상 (오류 아님) |
 | 4 | 기초시재 0, 순지출 > 0 | Gap 0% · 위기 |
-| 5 | 항목/월 누락 | 등급 대신 판독 오류 |
+| 5 | 항목/월 누락 | 등급 대신 판독 오류 — **판독 계층 책임이므로 7·8단계에서 검증한다** |
 
 > 1번은 실수치가 아니라 같은 비율을 내는 합성값이다 — `1,700 − 700 = 1,000`, `1,690 ÷ 1,000 = 169.0%`.
 
@@ -349,9 +349,9 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 | 1 | ✅ 값 객체 | `domain/shared/amount.ts` (Amount·Ratio) | |
 | 2 | ✅ 등급·정책 | `domain/risk/grade.ts`, `policy.ts` | `feat: 등급 판정 정책` |
 | 3 | ✅ 회차 애그리거트 | `domain/cashflow/statement.ts` | `feat: 자금수지표 회차 애그리거트` |
-| 4 | 유동성 Gap 산식 — **`abs` 제거** | `domain/risk/liquidity-gap.ts` | |
-| 5 | 대금 회수 위험 산식 | `domain/risk/payment-recovery.ts` | |
-| 6 | 계산 테스트 5개 (§4-3) | `*.test.ts` | `test: 판정 로직 검증 케이스` |
+| 4 | ✅ 유동성 Gap 산식 — **`abs` 제거** | `domain/risk/liquidity-gap.ts` | `feat: 두 지표 산식` |
+| 5 | ✅ 대금 회수 위험 산식 | `domain/risk/payment-recovery.ts` | |
+| 6 | ✅ 계산 테스트 (§4-3) — TDD로 각 단계에 포함 | `*.test.ts` | |
 | 7 | ACL — 시트/라벨/월 열 판독 | `infrastructure/xlsx/statement-reader.ts` | `feat: 자금수지표 판독 계층` |
 | 8 | 파싱 통합 테스트 (조건부 skip) | `statement-reader.test.ts` | |
 | 9 | 대시보드 재작성 — 2회차 업로드, 두 카드, 회차 검증 | `app/aifrm/page.tsx` | `feat: 통합 대시보드` |
@@ -383,6 +383,21 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 
 - 테스트 30개 통과. `tsc --noEmit`·`eslint` 통과
 - 합격 기준 확인: `src/domain` 아래에 `xlsx` import 없음
+
+### 8-5. 4·5단계 결과 (2026-09-18)
+
+**`net-inflow`의 `grade: '정상'`을 정책으로 옮겼다.** 원안은 산식 파일의 타입에 리터럴로 박혀 있었는데, 2단계에서 `gradeBy`의 기본 등급 하드코딩을 없앤 것과 같은 누수다. `policy.ts`의 `GRADE_WHEN_NET_INFLOW`가 소유한다. 자금기획팀이 "순유입이라도 시재가 없으면 주의" 같은 기준을 주면 이 값만 바꾼다.
+
+**§4-3 케이스 5를 7·8단계로 옮겼다.** "항목/월 누락"은 판독 계층 책임인데 "순수 함수 단위로 돈다"고 되어 있어 계층이 섞여 있었다. 4단계에는 검증할 대상 자체가 없다.
+
+**조립 함수를 도메인에 두었다.** `liquidityGapInputFrom`·`paymentRecoveryInputFrom`이 원안에 없었다. 없으면 9단계 화면이 "기초시재는 기준월 것만, 수입·지출은 3개월 합계" 같은 규칙을 직접 조립하게 되고 도메인이 표현 계층으로 샌다.
+
+**계획값 거부 조건을 `0`에서 `<= 0`으로 넓혔다.** 음수로 나누면 부호가 뒤집혀 미달이 초과처럼 보인다.
+
+**`npm run verify`를 추가했다.** Vitest는 타입체크를 하지 않아서, 테스트가 green인데 `tsc`가 깨진 상태를 실제로 한 번 만들었다. 둘을 한 명령으로 묶었다. eslint는 app 페이지에 기존 오류가 남아 있어 11단계 이후 합류시킨다.
+
+- 테스트 61개 통과(16개 추가). `tsc`·`eslint` 통과
+- **문제 A가 닫혔다.** 순유입 회귀가 테스트로 고정됐다
 
 ### 8-4. 3단계 결과 (2026-09-18)
 
