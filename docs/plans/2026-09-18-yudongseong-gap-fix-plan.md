@@ -6,6 +6,8 @@
 
 ---
 
+> **상태: 구현 계획(§8) 11단계 전부 완료 (2026-09-18).** 문제 A~G가 모두 닫혔다. 남은 것은 §9 미결뿐이다.
+
 ## 0. 현황 요약
 
 이전 세션에서 `/aifrm` 경로에 "대금 회수 위험 + 유동성 Gap" 통합 대시보드를 만들었으나 아래 문제로 그대로 둘 수 없다.
@@ -365,7 +367,7 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 | 8 | ✅ 파싱 통합 테스트 (조건부 skip) | `statement-reader.fixture.test.ts` | |
 | 9 | ✅ 대시보드 재작성 — 2회차 업로드, 두 지표, 회차 검증 | `app/aifrm/page.tsx` | `feat: 통합 대시보드` |
 | 10 | ✅ `daegeum-hoe-su` → `/aifrm` 리다이렉트 | | |
-| 11 | lint·Astryx·네비게이션·metadata (§7) | | `style: 디자인시스템 규칙 적용` |
+| 11 | ✅ 홈 화면·metadata (§7) | `app/page.tsx`, `layout.tsx` | `feat: AIFRM 홈 화면` |
 
 **1~6이 끝나면 문제 A가 검증과 함께 해소된다.** 7~9에서 B·C가 함께 풀린다. 이 순서면 도메인이 xlsx를 모르는 상태가 자연히 유지된다 — 4·5를 쓸 때 7이 아직 없기 때문이다.
 
@@ -392,6 +394,22 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 
 - 테스트 30개 통과. `tsc --noEmit`·`eslint` 통과
 - 합격 기준 확인: `src/domain` 아래에 `xlsx` import 없음
+
+### 8-8. 11단계 결과 (2026-09-18) — 구현 계획 완료
+
+**§7의 앞 세 항목은 이미 해소돼 있었다.** 중첩 `<label>`은 `FileInput`으로 바뀌며 사라졌고, lint 오류 4건도 두 페이지를 새로 쓰며 없어졌으며, Astryx 적용은 9단계에서 당겨 왔다. 남은 것은 홈 화면과 metadata뿐이었다.
+
+**"루트에 링크 추가"로는 부족했다.** 루트가 Next 스타터 템플릿 전체(Next 로고, "To get started, edit page.tsx")여서 링크만 덧붙이면 보일러플레이트가 그대로 남는다. 홈으로 새로 썼다. 네 지표 중 **지금 자동으로 내는 둘과 아직 사람이 하는 둘을 나눠 적었다** — 무엇이 자동인지 드러나 있어야 결과를 잘못 믿지 않는다.
+
+**`<html lang="en">`을 `ko`로 고쳤다.** §7에 없던 항목이다. 콘텐츠가 전부 한국어인데 영어로 선언돼 있어 스크린리더가 잘못 읽는다.
+
+**`next/link`를 `Button`의 `as`로 넘길 수 없었다.** 빌드가 "Functions cannot be passed directly to Client Components"로 깨졌다 — 홈은 서버 컴포넌트이고 `Button`은 클라이언트 컴포넌트라 함수가 경계를 넘지 못한다. 진입 링크 하나뿐이라 평범한 `<a>`로 두었다.
+
+**`Text`의 `as`는 `li`를 받지 않는다.** `List`/`ListItem`으로 바꿨다.
+
+- 테스트 79개 유지. `tsc`·`eslint src`·`next build` 통과
+- 브라우저에서 홈 → `/aifrm` 링크와 `/aifrm/daegeum-hoe-su` → `/aifrm` 리다이렉트를 확인했다
+- `src/app`에 raw `<div>`·`<span>`·`<label>`이 하나도 남지 않았다
 
 ### 8-7. 9·10단계 결과 (2026-09-18)
 

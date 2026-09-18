@@ -1,69 +1,60 @@
-import Image from "next/image";
+import { Button } from '@astryxdesign/core/Button';
+import { Heading } from '@astryxdesign/core/Heading';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
+import { List, ListItem } from '@astryxdesign/core/List';
+import { Text } from '@astryxdesign/core/Text';
+import { VStack } from '@astryxdesign/core/VStack';
 
+/**
+ * AIFRM 홈.
+ *
+ * 월별 자금 리스크 모니터링은 네 지표를 각각 따로 판정한다. 지금 자동으로
+ * 내는 것은 두 개이고, 나머지 둘은 아직 사람이 엑셀로 한다. 무엇이 자동이고
+ * 무엇이 아닌지 여기서 드러나 있어야 결과를 잘못 믿지 않는다.
+ */
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <Layout
+      contentWidth={720}
+      padding={6}
+      content={
+        <LayoutContent>
+          <VStack gap={6}>
+            <VStack gap={2}>
+              <Heading level={1}>AIFRM</Heading>
+              <Text type="supporting">
+                월별 자금 리스크 모니터링. 자금수지표에서 위험 등급을 자동으로 판정합니다.
+              </Text>
+            </VStack>
+
+            <VStack gap={3}>
+              <Heading level={2}>지금 판정하는 지표</Heading>
+              <List>
+                <ListItem label="대금 회수 위험" description="계획 대비 실적 회수율" />
+                <ListItem label="유동성 Gap" description="기초시재 대비 3개월 순지출" />
+              </List>
+              <HStack>
+                {/* Button은 클라이언트 컴포넌트라 next/link를 as로 넘길 수 없다.
+                    서버 컴포넌트 경계를 함수가 건너지 못한다. 진입 링크 하나뿐이라
+                    평범한 <a>로 충분하다. */}
+                <Button label="재무위험 선행지표 열기" variant="primary" href="/aifrm" />
+              </HStack>
+            </VStack>
+
+            <VStack gap={3}>
+              <Heading level={2}>아직 사람이 하는 것</Heading>
+              <List>
+                <ListItem
+                  label="건설 경기 인식 지수"
+                  description="한국은행·국토부 자료를 손으로 옮겨 씁니다"
+                />
+                <ListItem label="적정 시재" description="세 가지 산식 중 ACR 모델을 씁니다" />
+              </List>
+            </VStack>
+          </VStack>
+        </LayoutContent>
+      }
+    />
   );
 }
