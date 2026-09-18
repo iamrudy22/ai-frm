@@ -44,7 +44,11 @@ function workbook(options: SheetOptions = {}): ArrayBuffer {
       row('기초시재', same(1690)),
       row('수입계(자금조달포함)', same(900)),
       row('수입', same(300)),
-      // 지출을 바로 다음 행에 둔다 — 실물은 41행이지만 라벨로 찾으므로 상관없어야 한다.
+      // 부분 일치로 찾으면 걸려드는 이웃들. 실물 시트에 실제로 함께 있다.
+      row('공공분양자금', same(77)),
+      row('분양회수', same(200)),
+      row('분양', same(88)),
+      // 지출을 라벨로만 찾는지 보려고 실물(41행)과 다른 자리에 둔다.
       row('지출', same(600)),
     ],
   } = options;
@@ -105,13 +109,23 @@ describe('항목 찾기', () => {
     expect(s.amountOf('수입계', s.months[0])).toBe(900);
   });
 
+  it('분양회수를 공공분양자금이나 분양과 헷갈리지 않는다', () => {
+    const s = readOk();
+    expect(s.amountOf('분양회수', s.months[0])).toBe(200);
+  });
+
   it('지출이 몇 번째 행이든 라벨로 찾는다', () => {
     const s = readOk();
     expect(s.amountOf('지출', s.months[0])).toBe(600);
   });
 
   it('항목이 없으면 어느 항목인지 알려 준다', () => {
-    const rows = [row('기초시재', same(1)), row('수입계(자금조달포함)', same(1)), row('수입', same(1))];
+    const rows = [
+      row('기초시재', same(1)),
+      row('수입계(자금조달포함)', same(1)),
+      row('수입', same(1)),
+      row('분양회수', same(1)),
+    ];
     expect(readErr({ rows })).toMatch(/지출/);
   });
 });
@@ -134,6 +148,7 @@ describe('판독 실패', () => {
       row('기초시재', same(1690)),
       row('수입계(자금조달포함)', same(900)),
       row('수입', values),
+      row('분양회수', same(200)),
       row('지출', same(600)),
     ];
     expect(readErr({ rows })).toMatch(/수입/);
@@ -146,6 +161,7 @@ describe('판독 실패', () => {
       row('기초시재', same(1690)),
       row('수입계(자금조달포함)', same(900)),
       row('수입', values),
+      row('분양회수', same(200)),
       row('지출', same(600)),
     ];
     expect(readErr({ rows })).toMatch(/수입/);
@@ -163,6 +179,7 @@ describe('판독에서 판정까지', () => {
         row('기초시재', same(1690)),
         row('수입계(자금조달포함)', same(900)),
         row('수입', income),
+        row('분양회수', same(200)),
         row('지출', expense),
       ],
     });

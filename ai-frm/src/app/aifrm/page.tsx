@@ -255,8 +255,8 @@ function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | nul
 
   const rows: Row[] = [
     { 항목: '판정 대상월', 값: recovery.targetMonthLabel ?? '—' },
-    { 항목: '계획값', 값: money(recovery.plan) },
-    { 항목: '실적값', 값: money(recovery.actual) },
+    { 항목: '계획값 (분양회수)', 값: money(recovery.plan) },
+    { 항목: '실적값 (분양회수)', 값: money(recovery.actual) },
     { 항목: '회수율', 값: percent(toPercent(recovery.rate)) },
   ];
 
@@ -265,6 +265,10 @@ function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | nul
       <Badge variant={BADGE_VARIANT[recovery.grade]} label={recovery.grade} />
       <Table data={rows} columns={COLUMNS} />
       <Text type="supporting">{commentFor('payment-recovery', recovery.grade)}</Text>
+      <Text type="supporting" size="xsm">
+        자금수지표의 분양회수 항목을 읽습니다. 수입계나 수입이 아니라 분양 대금 회수만 봅니다 —
+        국고보조금·기금·출자금은 걷는 일과 무관합니다.
+      </Text>
     </VStack>
   );
 }

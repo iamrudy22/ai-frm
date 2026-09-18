@@ -15,9 +15,9 @@
 
 import { amount, minus, type Amount } from '@/domain/shared/amount';
 
-export type ItemName = '기초시재' | '수입계' | '수입' | '지출';
+export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' | '지출';
 
-const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '지출'];
+const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '분양회수', '지출'];
 
 /** 시트 안에서 한 달이 차지하는 자리. `index`가 정체성이고 `label`은 표시용이다. */
 export type Month = {

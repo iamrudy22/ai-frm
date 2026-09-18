@@ -6,6 +6,10 @@
  * 같은 달을 두 회차에서 읽는다. 7월 회차의 7월 값은 계획이고, 8월 회차의
  * 7월 값은 이미 실적으로 채워져 있다. 따라서 판정 대상월은 최신 회차의
  * 직전 월이며, 그것은 곧 이전 회차의 기준월이다.
+ *
+ * 읽는 항목은 '분양회수'다. '수입'은 분양회수에 국고보조금·국민주택기금·
+ * 정부출자금·기타수입까지 더한 합이라, 대금을 계획대로 걷었는지를 보려는
+ * 이 지표에는 걷는 일과 무관한 돈이 섞여 들어간다.
  */
 
 import { divide, type Amount, type Ratio } from '@/domain/shared/amount';
@@ -66,8 +70,8 @@ export function paymentRecoveryInputFrom(prev: Statement, next: Statement): Paym
   const targetInPrev = prev.defaultBaseMonth;
 
   return {
-    plan: prev.amountOf('수입', targetInPrev),
-    actual: next.amountOf('수입', targetInNext),
+    plan: prev.amountOf('분양회수', targetInPrev),
+    actual: next.amountOf('분양회수', targetInNext),
     targetMonthLabel: targetInNext.label,
   };
 }

@@ -62,6 +62,7 @@ describe('회차에서 입력 조립', () => {
       기초시재: [amount(1), amount(1690), amount(2), amount(3), amount(4)],
       수입계: [amount(0), amount(0), amount(0), amount(0), amount(0)],
       수입: [amount(999), amount(300), amount(200), amount(200), amount(999)],
+      분양회수: [amount(0), amount(0), amount(0), amount(0), amount(0)],
       지출: [amount(999), amount(600), amount(600), amount(500), amount(999)],
     },
   });

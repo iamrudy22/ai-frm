@@ -25,6 +25,7 @@ function input(over: Partial<StatementInput> = {}): StatementInput {
       기초시재: filled(1690),
       수입계: filled(900),
       수입: filled(700),
+      분양회수: filled(500),
       지출: filled(1700),
     },
     ...over,
@@ -40,7 +41,17 @@ describe('회차 생성', () => {
 
   it('항목 계열 길이가 월 수와 다르면 거부한다', () => {
     expect(() =>
-      createStatement(input({ amounts: { 기초시재: filled(1), 수입계: filled(1), 수입: [amount(1)], 지출: filled(1) } })),
+      createStatement(
+        input({
+          amounts: {
+            기초시재: filled(1),
+            수입계: filled(1),
+            수입: [amount(1)],
+            분양회수: filled(1),
+            지출: filled(1),
+          },
+        }),
+      ),
     ).toThrow(/길이/);
   });
 
@@ -121,6 +132,7 @@ describe('시재 롤포워드 진단', () => {
           수입계: [amount(100), amount(100), amount(100)],
           지출: [amount(50), amount(50), amount(50)],
           수입: [amount(80), amount(80), amount(80)],
+          분양회수: [amount(60), amount(60), amount(60)],
         },
         monthLabels: ['1월', '2월', '3월'],
         baseMonthIndex: 0,
@@ -138,6 +150,7 @@ describe('시재 롤포워드 진단', () => {
           수입계: [amount(100), amount(100), amount(100)],
           지출: [amount(50), amount(50), amount(50)],
           수입: [amount(80), amount(80), amount(80)],
+          분양회수: [amount(60), amount(60), amount(60)],
         },
         monthLabels: ['1월', '2월', '3월'],
         baseMonthIndex: 0,

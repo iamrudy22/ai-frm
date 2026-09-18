@@ -62,4 +62,15 @@ describe.skipIf(!present)('실물 회차 판독', () => {
     const august = statement.defaultBaseMonth;
     expect(statement.amountOf('수입계', august)).toBeGreaterThan(statement.amountOf('수입', august));
   });
+
+  it('분양회수는 수입의 일부다 — 대금 회수 위험이 읽는 항목', () => {
+    const august = statement.defaultBaseMonth;
+    const 분양회수 = statement.amountOf('분양회수', august);
+    const 수입 = statement.amountOf('수입', august);
+
+    // 수입 = 정부출자금 + 국고보조금 + 국민주택기금 + 공공분양자금 + 분양회수 + 기타수입.
+    // 분양회수만 떼어 쓰므로 반드시 더 작아야 하고, 0이어서도 안 된다.
+    expect(분양회수).toBeGreaterThan(0);
+    expect(분양회수).toBeLessThan(수입);
+  });
 });

@@ -32,7 +32,7 @@ describe('대금 회수 위험 판정', () => {
 });
 
 describe('두 회차에서 입력 조립', () => {
-  function statementAt(asOf: Date, baseMonthIndex: number, 수입: number[]): StatementInput {
+  function statementAt(asOf: Date, baseMonthIndex: number, 분양회수: number[]): StatementInput {
     const labels = ['6월', '7월', '8월', '9월', '10월'];
     const zeros = labels.map(() => amount(0));
     return {
@@ -42,16 +42,26 @@ describe('두 회차에서 입력 조립', () => {
       amounts: {
         기초시재: zeros,
         수입계: zeros,
-        수입: 수입.map(amount),
+        // 분양회수가 아닌 행을 집으면 바로 드러나도록 다른 값을 넣어 둔다.
+        수입: labels.map(() => amount(11111)),
+        분양회수: 분양회수.map(amount),
         지출: zeros,
       },
     };
   }
 
-  // 7월 회차: 기준월 7월. 7월 값은 계획이다.
+  // 7월 회차: 기준월 7월. 7월 분양회수 값은 계획이다.
   const july = createStatement(statementAt(new Date(2026, 6, 8), 1, [0, 50000, 0, 0, 0]));
   // 8월 회차: 기준월 8월. 직전 달인 7월 값은 이제 실적이다.
   const august = createStatement(statementAt(new Date(2026, 7, 10), 2, [0, 40000, 0, 0, 0]));
+
+  it('수입이 아니라 분양회수를 읽는다', () => {
+    const input = paymentRecoveryInputFrom(july, august);
+    expect(input.plan).toBe(50000);
+    expect(input.actual).toBe(40000);
+    expect(input.plan).not.toBe(11111);
+    expect(input.actual).not.toBe(11111);
+  });
 
   it('이전 회차의 기준월 = 최신 회차의 직전 월이 판정 대상이다', () => {
     const input = paymentRecoveryInputFrom(july, august);
