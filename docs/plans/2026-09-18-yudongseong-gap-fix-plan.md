@@ -332,7 +332,7 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 
 | # | 작업 | 산출 | 커밋 |
 |---|---|---|---|
-| 0 | Vitest 설치·설정, `fixtures/` gitignore | `vitest.config.ts`, `.gitignore` | `chore: Vitest 도입` |
+| 0 | ✅ Vitest 설치·설정, `fixtures/` gitignore | `vitest.config.mts`, `.gitignore` | `chore: Vitest 도입` |
 | 1 | 등급·정책 | `domain/risk/grade.ts`, `policy.ts` | |
 | 2 | 값 객체 | `domain/shared/amount.ts` (Amount·Ratio) | |
 | 3 | 회차 애그리거트 | `domain/cashflow/statement.ts` | `feat: 리스크 판정 도메인 모델` |
@@ -350,11 +350,21 @@ export function assessPaymentRecovery(input: { plan: Amount; actual: Amount }):
 ### 8-1. 선행 확인
 
 - `astryx docs layout` 및 `astryx build "재무 지표 대시보드"` — 9단계 전에 컴포넌트 후보 확보
-- Vitest + Next 16 / React 19 조합 설정 확인 (0단계)
+
+### 8-2. 0단계 결과 (2026-09-18)
+
+- **Vitest 5 + Next 16 / React 19 조합은 문제없다.** 테스트가 순수 TS라 jsdom·@testing-library·plugin-react 모두 불필요했다. `vitest` 하나만 설치했다.
+- **`@types/node`를 ^20 → ^22로 올렸다.** Vitest 5의 피어 요구(`^22 || >=24`)와 충돌했는데, 실제 런타임이 Node 22이므로 `--legacy-peer-deps` 우회 대신 타입을 런타임에 맞췄다.
+- **설정 파일은 `vitest.config.mts`다.** `.ts`면 CommonJS로 로드돼 ESM 문법 경고가 뜨고 향후 Vite 메이저에서 깨진다.
+- `tsconfig`의 `@/*` 별칭은 Vitest가 자동으로 읽지 않아 `resolve.alias`에 직접 넣었다.
+- `globals: true`를 쓰지 않는다. `include`가 `**/*.ts`라 테스트 파일이 `tsc --noEmit` 대상에 들어가므로, `vitest`에서 명시적으로 import한다.
+- `src/domain/shared/smoke.test.ts`는 0단계를 green으로 검증하기 위한 임시 파일이다. **1단계에서 제거한다.**
 
 ---
 
 ## 9. 미결
+
+- **🔴 `xlsx@0.18.5` 고위험 취약점** — Prototype Pollution([GHSA-4r6h-8v6p-xvw6](https://github.com/advisories/GHSA-4r6h-8v6p-xvw6)), ReDoS([GHSA-5pgg-2g8v-p4x9](https://github.com/advisories/GHSA-5pgg-2g8v-p4x9)). npm 레지스트리 판에는 **수정본이 없다**(SheetJS가 0.20+를 자체 배포로 옮겼다). 사용자가 직접 올린 파일을 브라우저에서 파싱하는 구조라 노출면은 좁지만, 서버 파싱으로 가면 재평가해야 한다. 선택지: SheetJS 자체 배포판으로 이전 / `exceljs` 등으로 교체 / 현행 유지. **§6 ACL이 xlsx를 감싸므로 교체 비용은 낮다.**
 
 - **D6 정책 정본 이관** — 지표별 점수 기준표 엑셀을 받으면 `policy.ts`의 출처를 옮긴다 (이벤트 스토밍 6장 1번)
 - **17개 지표 체계와의 관계** — 이벤트 스토밍 6장 2번. 4개 지표가 상위 체계의 부분집합이면 지표 추상화 설계가 달라진다
