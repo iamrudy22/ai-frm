@@ -7,7 +7,6 @@ import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
 import { FileInput } from '@astryxdesign/core/FileInput';
-import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
@@ -23,7 +22,7 @@ import {
   type Outcome,
   type PaymentRecoveryResult,
 } from '@/application/dashboard';
-import type { Month, Statement } from '@/domain/cashflow/statement';
+import type { Month } from '@/domain/cashflow/statement';
 import type { AdequateCashMonth } from '@/domain/risk/adequate-cash/adequate-cash';
 import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
 import {
@@ -35,6 +34,7 @@ import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { ConstructionPerceptionCard } from './construction-perception-card';
+import { arrangeRounds, type NamedStatement, type UploadedRound } from './uploaded-rounds';
 import { GRADE_BADGE, money, percent } from './format';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
@@ -49,15 +49,30 @@ const COLUMNS = [
 ];
 
 type Loaded = {
-  readonly previous: Statement | null;
-  readonly latest: Statement;
+  readonly previous: UploadedRound | null;
+  readonly latest: UploadedRound;
+  /** 올린 회차 전부, 회차 순서. */
+  readonly rounds: readonly UploadedRound[];
+};
+
+type RoundRow = { 회차: string; 쓰임: string; 파일: string } & Record<string, unknown>;
+
+const ROUND_COLUMNS = [
+  { key: '회차', header: '회차' },
+  { key: '쓰임', header: '쓰임' },
+  { key: '파일', header: '파일' },
+];
+
+const ROLE_TEXT: Record<UploadedRound['role'], string> = {
+  '최신 회차': '최신 회차 — 유동성 Gap·적정 시재 기준, 대금 회수 위험 실적',
+  '이전 회차': '이전 회차 — 대금 회수 위험 계획',
+  분양회수: '건설경기 인식 지수(분양회수)만',
 };
 
 // ── 화면 ─────────────────────────────────────────────────────────────────
 
 export default function AifrmDashboardPage() {
-  const [previousFile, setPreviousFile] = useState<File | null>(null);
-  const [latestFile, setLatestFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [isReading, setIsReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -69,57 +84,46 @@ export default function AifrmDashboardPage() {
     setBaseMonthLabel(null);
   }, []);
 
-  const pickFile = useCallback((files: File | File[] | null): File | null => {
-    if (files === null) return null;
-    return Array.isArray(files) ? (files[0] ?? null) : files;
-  }, []);
-
   const handleSubmit = useCallback(async () => {
-    if (latestFile === null) {
-      setError('최신 회차 파일을 올려 주세요. 유동성 Gap은 가장 최근 회차로 판정합니다.');
-      return;
-    }
-
     setIsReading(true);
     reset();
 
     try {
-      const latestResult = readStatement(await latestFile.arrayBuffer());
-      if (!latestResult.ok) {
-        setError(`최신 회차를 읽지 못했습니다 — ${latestResult.error}`);
-        return;
-      }
-
-      let previous: Statement | null = null;
-
-      if (previousFile !== null) {
-        const previousResult = readStatement(await previousFile.arrayBuffer());
-        if (!previousResult.ok) {
-          setError(`이전 회차를 읽지 못했습니다 — ${previousResult.error}`);
+      // 하나라도 못 읽으면 멈춘다. 빠진 회차로 조용히 다른 결과를 내지 않는다.
+      const named: NamedStatement[] = [];
+      for (const file of files) {
+        const result = readStatement(await file.arrayBuffer());
+        if (!result.ok) {
+          setError(`${file.name}을(를) 읽지 못했습니다 — ${result.error}`);
           return;
         }
-        previous = previousResult.statement;
+        named.push({ file: file.name, statement: result.statement });
       }
 
-      setLoaded({ previous, latest: latestResult.statement });
-      setBaseMonthLabel(latestResult.statement.defaultBaseMonth.label);
+      const arranged = arrangeRounds(named);
+      if (!arranged.ok) {
+        setError(arranged.reason);
+        return;
+      }
+      setLoaded(arranged);
+      setBaseMonthLabel(arranged.latest.statement.defaultBaseMonth.label);
     } catch {
       setError('파일을 처리하는 중 문제가 생겼습니다.');
     } finally {
       setIsReading(false);
     }
-  }, [latestFile, previousFile, reset]);
+  }, [files, reset]);
 
   const baseMonth: Month | null = useMemo(() => {
     if (loaded === null || baseMonthLabel === null) return null;
-    return loaded.latest.months.find((m) => m.label === baseMonthLabel) ?? null;
+    return loaded.latest.statement.months.find((m) => m.label === baseMonthLabel) ?? null;
   }, [loaded, baseMonthLabel]);
 
   // 기준월을 바꿔도 파일을 다시 읽지 않는다. 이미 읽어 둔 회차로 다시 셈한다.
   // 어느 회차로 어느 지표를 셈하는지, 실패를 어떻게 격리하는지는 유스케이스가 정한다.
   const dashboard = useMemo((): Dashboard | null => {
     if (loaded === null || baseMonth === null) return null;
-    return assessDashboard(loaded.previous, loaded.latest, baseMonth);
+    return assessDashboard(loaded.previous?.statement ?? null, loaded.latest.statement, baseMonth);
   }, [loaded, baseMonth]);
 
   return (
@@ -132,42 +136,29 @@ export default function AifrmDashboardPage() {
             <VStack gap={1}>
               <Heading level={1}>재무위험 선행지표</Heading>
               <Text type="supporting">
-                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재를 함께 판정합니다. 건설경기
-                인식 지수는 한국은행 ECOS 지표와 올린 회차의 분양회수로 산출합니다. 회차는 저장하지
-                않습니다.
+                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재와 건설경기 인식 지수를
+                함께 판정합니다. 올린 파일은 저장하지 않습니다.
               </Text>
             </VStack>
 
-            <Grid gap={4} columns={{ minWidth: 280, repeat: 'fit' }}>
-              <FileInput
-                label="이전 회차"
-                description="대금 회수 위험 판정에만 씁니다. 없으면 유동성 Gap만 나옵니다."
-                placeholder="자금수지표 파일 선택"
-                accept=".xlsx,.xls"
-                value={previousFile}
-                onChange={(files) => {
-                  setPreviousFile(pickFile(files));
-                  reset();
-                }}
-              />
-              <FileInput
-                label="최신 회차"
-                description="유동성 Gap과 적정 시재의 기준이 됩니다."
-                placeholder="자금수지표 파일 선택"
-                accept=".xlsx,.xls"
-                value={latestFile}
-                onChange={(files) => {
-                  setLatestFile(pickFile(files));
-                  reset();
-                }}
-              />
-            </Grid>
+            <FileInput
+              label="자금수지표 회차"
+              description="최신 회차와 그 전 회차들을 한 번에 올리세요. 가장 늦은 회차가 최신 회차, 바로 전 달 회차가 이전 회차가 됩니다. 건설경기 인식 지수의 분양회수에는 기준월(최신 회차 − 2개월)과 그 전 석 달, 모두 네 회차가 필요합니다."
+              placeholder="자금수지표 파일 선택(여러 개)"
+              accept=".xlsx,.xls"
+              isMultiple
+              value={files}
+              onChange={(picked) => {
+                setFiles(picked === null ? [] : Array.isArray(picked) ? picked : [picked]);
+                reset();
+              }}
+            />
 
             <HStack>
               <Button
                 label={isReading ? '읽는 중…' : '산출하기'}
                 variant="primary"
-                isDisabled={isReading || latestFile === null}
+                isDisabled={isReading || files.length === 0}
                 onClick={handleSubmit}
               />
             </HStack>
@@ -180,9 +171,23 @@ export default function AifrmDashboardPage() {
 
             {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
+                <Collapsible trigger={`올린 회차 ${loaded.rounds.length}개`} defaultIsOpen={false}>
+                  <VStack gap={2}>
+                    <Text type="supporting" size="xsm">
+                      회차는 파일 기준일의 달입니다. 올린 순서와 상관없이 회차 순서로 씁니다.
+                    </Text>
+                    <Table data={roundRows(loaded.rounds)} columns={ROUND_COLUMNS} />
+                    <Text type="supporting" size="xsm">
+                      {loaded.previous === null
+                        ? `최신 회차(${loaded.latest.round}) 바로 전 달 회차가 없어 대금 회수 위험은 판정하지 않습니다.`
+                        : '파일을 바꾸려면 위에서 다시 골라 산출하세요.'}
+                    </Text>
+                  </VStack>
+                </Collapsible>
+
                 <Selector
                   label={`기준월 (${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달)`}
-                  options={loaded.latest.months.map((m) => m.label)}
+                  options={loaded.latest.statement.months.map((m) => m.label)}
                   value={baseMonthLabel ?? undefined}
                   onChange={setBaseMonthLabel}
                 />
@@ -210,14 +215,22 @@ export default function AifrmDashboardPage() {
               </VStack>
             )}
 
-            <Divider />
-
-            <ConstructionPerceptionCard latest={loaded?.latest ?? null} previous={loaded?.previous ?? null} isReading={isReading} />
+            {loaded !== null && (
+              <>
+                <Divider />
+                {/* 회차를 새로 읽으면 카드를 새로 만든다 — 고른 기준월이 기본값으로 돌아간다. */}
+                <ConstructionPerceptionCard key={loaded.rounds.map((r) => `${r.round}:${r.file}`).join()} latest={loaded.latest.statement} rounds={loaded.rounds} />
+              </>
+            )}
           </VStack>
         </LayoutContent>
       }
     />
   );
+}
+
+function roundRows(rounds: readonly UploadedRound[]): RoundRow[] {
+  return [...rounds].reverse().map((r) => ({ 회차: r.round, 쓰임: ROLE_TEXT[r.role], 파일: r.file }));
 }
 
 // ── 진단 ─────────────────────────────────────────────────────────────────
