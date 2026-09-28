@@ -1,5 +1,5 @@
 /**
- * 분양회수 계획·실적 이력 — 올린 회차마다 기재분 한 건을 쌓는다(판형 2).
+ * 분양회수 계획·실적 이력 — 올린 회차마다 기재분 한 건을 담는다.
  *
  * 특정 지표의 개념이 아니라 자금수지의 사실이라 회차와 같은 곳에 둔다(DDD 검토
  * §10-2). 건설경기 인식 지수의 분양회수 예측오차가 이 이력을 읽는다.
@@ -12,7 +12,8 @@
  * 정산된 값은 쓰지 않는다. 직후 회차 시트에 그 달 열이 아예 없을 때(2026년 1월
  * 회차의 2025년 12월)만, 그 달이 실적으로 들어 있는 가장 이른 회차에서 채운다.
  *
- * 판형 1(달 단위, 회차마다 실적 1개·계획 3개)은 새 정의에 쓸 수 없어 거부한다.
+ * 저장하지 않는다(2026-09-28). 산출할 때마다 화면에서 올린 회차들로 새로 만든다
+ * (ledgerOf). 이전에 올린 파일이 결과에 섞이지 않는다.
  */
 
 import { roundEntry, type RoundEntry } from '@/domain/cashflow/round-entry';
@@ -21,8 +22,6 @@ import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/yea
 
 /** 값이 없다는 사실과 그 사유. 0으로 대신하지 않는다. */
 export type LedgerMissing = { readonly missing: string };
-
-export type LedgerSnapshot = { readonly version: 2; readonly rounds: readonly RoundEntry[] };
 
 export type ForecastLedger = {
   /** 유일한 변경 경로. 새 이력을 돌려준다. */
@@ -36,31 +35,30 @@ export type ForecastLedger = {
   planOf(round: YearMonth): RoundEntry['plans'] | undefined;
   /** month 실적 = 직후 회차(month+1)가 적은 값. 그 시트에 없는 전년 달만 다른 회차에서 채운다. */
   actualOf(month: YearMonth): Amount | LedgerMissing;
-  snapshot(): LedgerSnapshot;
 };
 
 export function emptyLedger(): ForecastLedger {
   return build(new Map());
 }
 
-export function ledgerFrom(snapshot: LedgerSnapshot): ForecastLedger {
-  const version = (snapshot as { version?: unknown } | null)?.version;
-  if (version === 1) {
-    throw new Error(
-      '분양회수 이력이 판형 1(달 단위)입니다. 2026-09-28 개정된 정의로는 계산할 수 없습니다. ' +
-        '파일을 따로 보관하고 회차를 다시 올리세요.',
-    );
-  }
-  if (version !== 2 || !Array.isArray(snapshot.rounds)) {
-    throw new Error(`모르는 이력 판형입니다: ${String(version)}`);
-  }
-
+/**
+ * 요청 본문처럼 믿을 수 없는 회차 목록으로 이력을 만든다. 회차마다 기재분
+ * 불변식을 검사하고, 같은 회차가 두 번 오면 어느 파일을 믿을지 알 수 없으므로
+ * 거부한다.
+ */
+export function ledgerOf(raw: readonly unknown[]): ForecastLedger {
+  if (!Array.isArray(raw)) throw new Error('회차 목록은 배열이어야 합니다.');
   const entries = new Map<YearMonth, RoundEntry>();
-  for (const raw of snapshot.rounds) {
-    const entry = roundEntry(raw);
-    if (entries.has(entry.round)) throw new Error(`이력에 ${entry.round} 회차가 두 번 있습니다.`);
+  raw.forEach((item, i) => {
+    let entry: RoundEntry;
+    try {
+      entry = roundEntry(item);
+    } catch (e) {
+      throw new Error(`회차 ${i + 1}번째: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (entries.has(entry.round)) throw new Error(`${entry.round} 회차가 두 번 있습니다.`);
     entries.set(entry.round, entry);
-  }
+  });
   return build(entries);
 }
 
@@ -93,7 +91,7 @@ function build(entries: ReadonlyMap<YearMonth, RoundEntry>): ForecastLedger {
       const next = addMonths(month, 1);
       const entry = entries.get(next);
       if (entry === undefined) {
-        return { missing: `${month} 실적은 직후 회차인 ${next} 회차에서 읽는데, 그 회차가 이력에 없습니다. 올리세요.` };
+        return { missing: `${month} 실적은 직후 회차인 ${next} 회차에서 읽는데, 그 회차를 올리지 않았습니다.` };
       }
       if (compareYearMonth(month, entry.sheetStart) >= 0) {
         const cell = entry.actuals.find((a) => a.month === month);
@@ -106,10 +104,9 @@ function build(entries: ReadonlyMap<YearMonth, RoundEntry>): ForecastLedger {
         if (cell !== undefined) return cell.value;
       }
       return {
-        missing: `${next} 회차에는 ${month} 열이 없고, ${month}이(가) 실적인 회차도 이력에 없습니다. 전년도 파일을 올리세요.`,
+        missing: `${next} 회차에는 ${month} 열이 없고, ${month}이(가) 실적인 회차도 올리지 않았습니다. 전년도 파일을 올리세요.`,
       };
     },
 
-    snapshot: () => ({ version: 2, rounds: sorted().map((r) => entries.get(r) as RoundEntry) }),
   };
 }

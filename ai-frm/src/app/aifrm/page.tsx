@@ -133,8 +133,8 @@ export default function AifrmDashboardPage() {
               <Heading level={1}>재무위험 선행지표</Heading>
               <Text type="supporting">
                 자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재를 함께 판정합니다. 건설경기
-                인식 지수는 한국은행 ECOS 지표로 따로 산출하며, 올린 최신 회차의 분양회수를 이력에
-                더합니다.
+                인식 지수는 한국은행 ECOS 지표와 올린 회차의 분양회수로 산출합니다. 회차는 저장하지
+                않습니다.
               </Text>
             </VStack>
 

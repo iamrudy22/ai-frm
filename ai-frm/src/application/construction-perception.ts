@@ -1,8 +1,11 @@
 /**
- * 유스케이스: 건설경기 인식 지수 산출 — ECOS 9종과 분양회수 이력으로 기준월
+ * 유스케이스: 건설경기 인식 지수 산출 — ECOS 9종과 올린 회차들로 기준월
  * 한 달을 산출한다.
  *
- *   기준월 결정 → ECOS 9종 조회 → 이력 불러오기 → 그 달 산출 → 결측 사유 다듬기
+ *   기준월 결정 → ECOS 9종 조회 → 그 달 산출 → 결측 사유 다듬기
+ *
+ * 분양회수 이력은 저장하지 않는다(2026-09-28). 요청마다 화면에서 올린 회차들로
+ * 만든 이력을 받는다. 형식 검사는 요청을 받는 쪽(ledgerOf)이 끝낸다.
  *
  * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2 >
  * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
@@ -10,11 +13,11 @@
  * 실패는 두 층이다.
  *   - ECOS 실패는 지표 단위다. 그 지표가 산출불가 사유로 나온다. 조회 전체가
  *     실패해도 9종이 모두 조회 실패일 뿐 던지지 않는다.
- *   - 이력 저장소 실패(파일 손상 등)는 산출 자체를 할 수 없으므로 Outcome 실패다.
+ *   - 그 밖의 예기치 못한 실패만 Outcome 실패다.
  */
 
 import { settleAsync, succeed, type Outcome } from '@/application/outcome';
-import type { EconomicIndicatorSource, ForecastLedgerRepository, IndicatorFetch, SourceResult } from '@/application/ports';
+import type { EconomicIndicatorSource, IndicatorFetch, SourceResult } from '@/application/ports';
 import type { ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import {
   assessConstructionPerception,
@@ -55,7 +58,7 @@ export type IndicatorStatus = {
 export type PerceptionDiagnostics = {
   /** 엑셀 열 순서(1~10번). */
   readonly indicators: readonly IndicatorStatus[];
-  /** 분양회수 계획·실적 이력: 올라온 회차와 그 사이에 빠진 회차. */
+  /** 분양회수 계획·실적: 올린 회차와 그 사이에 빠진 회차. */
   readonly ledger: {
     readonly latestRound: YearMonth | null;
     readonly rounds: readonly YearMonth[];
@@ -66,10 +69,10 @@ export type PerceptionDiagnostics = {
 
 export type PerceptionReport = {
   readonly basis: PerceptionBasis;
-  /** 기준월로 고를 수 있는 범위(정책 §5). from은 이력이 비었으면 없다. */
+  /** 기준월로 고를 수 있는 범위(정책 §5). from은 올린 회차가 없으면 없다. */
   readonly selectable: { readonly from: YearMonth | null; readonly to: YearMonth };
   readonly result: ConstructionPerception;
-  /** 지표별 최신월·단위·조회 실패, 이력 상태. */
+  /** 지표별 최신월·단위·조회 실패, 올린 회차. */
   readonly diagnostics: PerceptionDiagnostics;
 };
 
@@ -79,7 +82,7 @@ const ECOS_KEYS = SCORING_RULES.map((r) => r.key).filter(
 
 export async function assessPerception(
   source: EconomicIndicatorSource,
-  repo: ForecastLedgerRepository,
+  ledger: ForecastLedger,
   request: PerceptionRequest = {},
   now: () => Date = () => new Date(),
 ): Promise<Outcome<PerceptionReport>> {
@@ -88,7 +91,6 @@ export async function assessPerception(
     const basis = basisOf(request, today);
 
     const fetched = await fetchSafely(source);
-    const ledger = await repo.load();
 
     const series = {} as Record<EcosIndicatorKey, RawSeries>;
     const statuses = new Map<IndicatorKey, IndicatorStatus>();
@@ -102,7 +104,7 @@ export async function assessPerception(
         statuses.set(key, { key, latest: lastMonthOf(f.values), unit: f.unit });
       }
     }
-    // 분양회수의 최신월 = 이력의 마지막 회차(기준월 t에는 t−3 ~ t월 회차가 필요하다).
+    // 분양회수의 최신월 = 올린 회차 중 마지막(기준월 t에는 t−3 ~ t월 회차가 필요하다).
     statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestRound() });
 
     const result = assessConstructionPerception(
@@ -194,9 +196,13 @@ function explain(
     missing: result.missing.map(({ key, reason }) => {
       const status = statuses.get(key);
       if (key === '분양회수예측오차') {
-        // 도메인 사유가 이미 어느 회차를 올릴지 적는다. 이력이 통째로 비었을 때만 따로 안내한다.
+        // 도메인 사유가 이미 어느 회차를 올릴지 적는다. 하나도 안 올렸을 때만 따로 안내한다.
         if (ledger.latestRound() === null) {
-          return { key, reason: '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.' };
+          const planRound = addMonths(month, -PLAN_ROUND_LAG);
+          return {
+            key,
+            reason: `분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 ${month}에는 ${planRound}~${month} 회차 네 개가 필요합니다.`,
+          };
         }
         return { key, reason };
       }

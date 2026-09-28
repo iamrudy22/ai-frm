@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
 import {
   basisNote,
-  batchRecordedText,
+  readRoundsText,
   changeText,
   indicatorRows,
   ledgerNote,
@@ -169,7 +169,7 @@ describe('기준월 선택지', () => {
   });
 });
 
-describe('이력 안내 (회차 단위)', () => {
+describe('올린 회차 안내', () => {
   const ledger = (rounds: string[], missingRounds: string[] = []) => ({
     latestRound: (rounds.at(-1) ?? null) as never,
     rounds: rounds as never,
@@ -178,55 +178,55 @@ describe('이력 안내 (회차 단위)', () => {
 
   it('올라온 회차 범위와, 기준월에 필요한 두 회차가 다 있음을 알린다', () => {
     expect(ledgerNote(ledger(['2026/01', '2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08']), '2026/07' as never)).toBe(
-      '분양회수 계획·실적 이력: 2026/01~2026/08 회차 8개. 기준월 2026/07에 필요한 2026/04~2026/07 회차가 모두 있습니다.',
+      '분양회수에 쓸 회차: 2026/01~2026/08 8개. 기준월 2026/07에 필요한 2026/04~2026/07 회차가 모두 있습니다.',
     );
   });
 
   it('필요한 회차가 없으면 무엇을 올릴지 알린다', () => {
     expect(ledgerNote(ledger(['2026/05', '2026/06']), '2026/07' as never)).toBe(
-      '분양회수 계획·실적 이력: 2026/05~2026/06 회차 2개. 기준월 2026/07에는 2026/04~2026/07 회차가 필요합니다 — 2026/04·2026/07 회차를 올리세요.',
+      '분양회수에 쓸 회차: 2026/05~2026/06 2개. 기준월 2026/07에는 2026/04~2026/07 회차 네 개가 필요합니다 — 2026/04·2026/07 회차를 올리세요.',
     );
   });
 
   it('사이에 빠진 회차도 알린다', () => {
     expect(ledgerNote(ledger(['2026/04', '2026/07'], ['2026/05', '2026/06']), '2026/06' as never)).toBe(
-      '분양회수 계획·실적 이력: 2026/04~2026/07 회차 2개, 빠진 회차 2026/05·2026/06. 기준월 2026/06에는 2026/03~2026/06 회차가 필요합니다 — 2026/03·2026/05·2026/06 회차를 올리세요.',
+      '분양회수에 쓸 회차: 2026/04~2026/07 2개, 빠진 회차 2026/05·2026/06. 기준월 2026/06에는 2026/03~2026/06 회차 네 개가 필요합니다 — 2026/03·2026/05·2026/06 회차를 올리세요.',
     );
   });
 
-  it('이력이 비어 있으면 회차를 올리라고 알린다', () => {
+  it('올린 회차가 없으면 무엇을 올릴지 알린다', () => {
     expect(ledgerNote(ledger([]), '2026/07' as never)).toBe(
-      '분양회수 계획·실적 이력이 비어 있습니다. 기준월 2026/07에는 2026/04~2026/07 회차가 필요합니다.',
+      '분양회수에 쓸 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/04~2026/07 회차 네 개가 필요합니다.',
     );
   });
 });
 
-describe('여러 회차 반영 결과', () => {
-  it('반영한 회차를 달 순서로 알린다', () => {
+describe('여러 회차 읽기 결과', () => {
+  it('읽은 회차를 달 순서로 알린다', () => {
     expect(
-      batchRecordedText([
+      readRoundsText([
         { file: 'b.xlsx', round: '2026/05' as never },
         { file: 'a.xlsx', round: '2026/04' as never },
       ]),
-    ).toEqual({ status: 'success', text: '회차 2개를 반영했습니다: 2026/04·2026/05.' });
+    ).toEqual({ status: 'success', text: '회차 2개를 읽었습니다: 2026/04·2026/05.' });
   });
 
-  it('반영하지 못한 파일은 사유와 함께 알리고, 경고로 보인다', () => {
+  it('읽지 못한 파일은 사유와 함께 알리고, 경고로 보인다', () => {
     expect(
-      batchRecordedText([
+      readRoundsText([
         { file: 'a.xlsx', round: '2026/04' as never },
         { file: 'x.xlsx', reason: '시트를 찾을 수 없습니다.' },
       ]),
     ).toEqual({
       status: 'warning',
-      text: '회차 1개를 반영했습니다: 2026/04. 반영하지 못한 파일: x.xlsx — 시트를 찾을 수 없습니다.',
+      text: '회차 1개를 읽었습니다: 2026/04. 읽지 못한 파일: x.xlsx — 시트를 찾을 수 없습니다.',
     });
   });
 
-  it('하나도 반영하지 못했으면', () => {
-    expect(batchRecordedText([{ file: 'x.xlsx', reason: '깨진 파일' }])).toEqual({
+  it('하나도 읽지 못했으면', () => {
+    expect(readRoundsText([{ file: 'x.xlsx', reason: '깨진 파일' }])).toEqual({
       status: 'warning',
-      text: '반영한 회차가 없습니다. 반영하지 못한 파일: x.xlsx — 깨진 파일',
+      text: '읽은 회차가 없습니다. 읽지 못한 파일: x.xlsx — 깨진 파일',
     });
   });
 });

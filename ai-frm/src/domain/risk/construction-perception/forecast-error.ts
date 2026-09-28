@@ -23,7 +23,7 @@ export function forecastErrorAt(ledger: ForecastLedger, t: YearMonth): Ratio | M
   const planRound = addMonths(t, -PLAN_ROUND_LAG);
   const plans = ledger.planOf(planRound);
   if (plans === undefined) {
-    return { missing: `분양회수: 계획을 세운 ${planRound} 회차가 이력에 없습니다. 올리세요.` };
+    return { missing: `분양회수: 계획을 세운 ${planRound} 회차를 올리지 않았습니다.` };
   }
 
   let actual = 0;

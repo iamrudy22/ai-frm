@@ -59,8 +59,8 @@ export default function Home() {
               <Heading level={2}>사람이 해야 하는 것</Heading>
               <List>
                 <ListItem
-                  label="매달 최신 회차 올리기"
-                  description="건설경기 인식 지수의 분양회수 계획·실적 이력이 이어집니다. 한 달을 건너뛰면 그 달이 든 세 달이 산출불가가 됩니다"
+                  label="회차 네 개 올리기"
+                  description="건설경기 인식 지수의 분양회수 예측오차에는 기준월과 그 전 석 달의 회차가 필요합니다. 저장하지 않으므로 볼 때마다 올립니다"
                 />
               </List>
             </VStack>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { assessPerception, type PerceptionRequest } from '@/application/construction-perception';
-import type { EconomicIndicatorSource, ForecastLedgerRepository, SourceResult } from '@/application/ports';
+import type { EconomicIndicatorSource, SourceResult } from '@/application/ports';
 import { emptyLedger, type ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import type { RoundEntry } from '@/domain/cashflow/round-entry';
 import type { EcosIndicatorKey } from '@/domain/risk/construction-perception/construction-perception';
@@ -37,14 +37,6 @@ class FixedSource implements EconomicIndicatorSource {
   }
 }
 
-class MemoryRepository implements ForecastLedgerRepository {
-  constructor(private readonly ledger: ForecastLedger) {}
-  async load() {
-    return this.ledger;
-  }
-  async save() {}
-}
-
 /** 회차 기재분: 시트 첫 달부터 직전 달까지 실적 110, 그달부터 4개월 계획 100. */
 function entry(round: YearMonth): RoundEntry {
   const sheetStart = ym(`${round.slice(0, 4)}/01`);
@@ -54,7 +46,7 @@ function entry(round: YearMonth): RoundEntry {
   return { round, sheetStart, actuals, plans: [plan(0), plan(1), plan(2), plan(3)] };
 }
 
-/** 2~8월 회차가 모두 올라온 이력 — 오차율 (330 − 300) ÷ 300 = +10%(0점). */
+/** 2~8월 회차를 모두 올린 경우 — 오차율 (330 − 300) ÷ 300 = +10%(0점). */
 const ROUNDS = ['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08'];
 function ledgerThrough(rounds: string[] = ROUNDS): ForecastLedger {
   return rounds.reduce((l, r) => l.record(entry(ym(r))), emptyLedger());
@@ -62,14 +54,12 @@ function ledgerThrough(rounds: string[] = ROUNDS): ForecastLedger {
 
 const NOW = new Date(2026, 8, 28, 9, 0);
 
-const repoOf = (ledger: ForecastLedger = ledgerThrough()) => new MemoryRepository(ledger);
-
 async function assess(
   request: PerceptionRequest = {},
   source: EconomicIndicatorSource = new FixedSource(),
-  repo: ForecastLedgerRepository = repoOf(),
+  ledger: ForecastLedger = ledgerThrough(),
 ) {
-  const out = await assessPerception(source, repo, request, () => NOW);
+  const out = await assessPerception(source, ledger, request, () => NOW);
   if (!out.ok) throw new Error(out.reason);
   return out.value;
 }
@@ -93,9 +83,9 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/05' });
   });
 
-  it('고를 수 있는 범위: 이력의 첫 회차 + 3부터 오늘의 전달까지', async () => {
+  it('고를 수 있는 범위: 올린 첫 회차 + 3부터 오늘의 전달까지', async () => {
     expect((await assess()).selectable).toEqual({ from: '2026/05', to: '2026/08' });
-    expect((await assess({}, new FixedSource(), repoOf(emptyLedger()))).selectable).toEqual({
+    expect((await assess({}, new FixedSource(), emptyLedger())).selectable).toEqual({
       from: null,
       to: '2026/08',
     });
@@ -112,14 +102,14 @@ describe('산출불가 사유', () => {
     for (const m of r.result.missing) expect(m.reason).toBe('아직 공표 전입니다(ECOS 최신 2026/06).');
   });
 
-  it('기준월 회차가 이력에 아직 없으면 그 회차를 올리라고 알린다', async () => {
-    const repo = repoOf(ledgerThrough(ROUNDS.slice(0, 5))); // 2~6월 회차만 — 6월 실적을 적을 7월 회차 없음
-    const r = await assess({}, new FixedSource(), repo);
+  it('기준월 회차를 올리지 않았으면 그 회차를 올리라고 알린다', async () => {
+    const ledger = ledgerThrough(ROUNDS.slice(0, 5)); // 2~6월 회차만 — 6월 실적을 적을 7월 회차 없음
+    const r = await assess({}, new FixedSource(), ledger);
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
       missing: [
-        { key: '분양회수예측오차', reason: '분양회수: 2026/06 실적은 직후 회차인 2026/07 회차에서 읽는데, 그 회차가 이력에 없습니다. 올리세요.' },
+        { key: '분양회수예측오차', reason: '분양회수: 2026/06 실적은 직후 회차인 2026/07 회차에서 읽는데, 그 회차를 올리지 않았습니다.' },
       ],
     });
   });
@@ -159,18 +149,18 @@ describe('산출불가 사유', () => {
   });
 
   it('기준월 회차가 빠지면 이전 달로 내려가지 않고 산출불가, 진단에 빠진 회차', async () => {
-    const repo = repoOf(ledgerThrough(['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/08'])); // 7월 회차 누락
-    const r = await assess({}, new FixedSource(), repo);
+    const ledger = ledgerThrough(['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/08']); // 7월 회차 누락
+    const r = await assess({}, new FixedSource(), ledger);
     expect(r.result).toMatchObject({ kind: 'unavailable', month: '2026/07' });
     expect(r.diagnostics.ledger.missingRounds).toEqual(['2026/07']);
   });
 
-  it('이력이 비어 있으면 회차를 올리라고 알린다', async () => {
-    const r = await assess({}, new FixedSource(), repoOf(emptyLedger()));
+  it('회차를 하나도 올리지 않았으면 무엇이 필요한지 알린다', async () => {
+    const r = await assess({}, new FixedSource(), emptyLedger());
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
-      missing: [{ key: '분양회수예측오차', reason: '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.' }],
+      missing: [{ key: '분양회수예측오차', reason: '분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/04~2026/07 회차 네 개가 필요합니다.' }],
     });
   });
 });
@@ -197,18 +187,5 @@ describe('진단과 실패', () => {
         ) as SourceResult,
     };
     expect((await assess({}, stamped)).diagnostics.fetchedAt).toBe(earlier);
-  });
-
-  it('이력 저장소가 실패하면 산출 자체가 실패다', async () => {
-    const repo: ForecastLedgerRepository = {
-      load: async () => {
-        throw new Error('이력 파일이 손상되었습니다');
-      },
-      save: async () => {},
-    };
-    expect(await assessPerception(new FixedSource(), repo, {}, () => NOW)).toEqual({
-      ok: false,
-      reason: '이력 파일이 손상되었습니다',
-    });
   });
 });

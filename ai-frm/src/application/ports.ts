@@ -1,7 +1,8 @@
 /**
- * 유스케이스가 바깥에 기대는 것 — 포트 두 개(DDD 검토 §10-3).
+ * 유스케이스가 바깥에 기대는 것 — 경제지표 출처(DDD 검토 §10-3).
  *
- * 구현은 infrastructure/가 한다(ECOS Open API, 이력 파일). 유스케이스는 이
+ * 구현은 infrastructure/가 한다(ECOS Open API). 분양회수 이력은 저장하지 않으므로
+ * 저장소 포트가 없다(2026-09-28) — 요청마다 올린 회차로 만든다. 유스케이스는 이
  * 인터페이스만 알아서 규칙 4(유스케이스는 판독 계층을 모른다)를 지킨다.
  * 조립은 app/api/의 라우트가 한다.
  *
@@ -9,15 +10,7 @@
  * 문자열 DATA_VALUE)은 여기에 나오지 않는다 — 번역은 ACL이 끝낸다.
  */
 
-import type { ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import type { EcosIndicatorKey, RawSeries } from '@/domain/risk/construction-perception/construction-perception';
-
-/** 분양회수 계획·실적 이력의 저장소. */
-export interface ForecastLedgerRepository {
-  /** 저장된 이력. 아직 없으면 빈 이력이다. */
-  load(): Promise<ForecastLedger>;
-  save(ledger: ForecastLedger): Promise<void>;
-}
 
 /**
  * 지표 하나의 조회 결과. 성공이면 달력 월별 원값과 단위, 실패면 사유다.

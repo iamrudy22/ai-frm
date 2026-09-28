@@ -66,10 +66,10 @@ describe.skipIf(files.length < 8 || !existsSync(EXCEL))('분양회수 예측오�
   });
 
   // 1~3월은 계획을 세운 전년 10~12월 회차가 필요하다(전년도 파일).
-  it('1~3월은 전년도 회차가 올라올 때까지 산출불가이고, 그렇게 알린다', () => {
+  it('1~3월은 전년도 회차를 올릴 때까지 산출불가이고, 그렇게 알린다', () => {
     for (const month of ['2026/01', '2026/02', '2026/03']) {
       const r = forecastErrorAt(ledger, parseYearMonth(month));
-      expect(isMissing(r) && r.missing, month).toMatch(/2025\/1[0-2] 회차가 이력에 없습니다/);
+      expect(isMissing(r) && r.missing, month).toMatch(/2025\/1[0-2] 회차를 올리지 않았습니다/);
     }
   });
 });

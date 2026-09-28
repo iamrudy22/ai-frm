@@ -3,19 +3,22 @@
 /**
  * 건설경기 인식 지수 카드 — 표시만 한다(구현 계획 §11).
  *
- * 흐름 조율은 서버의 유스케이스가 맡는다. 이 카드는
- *   1. 최신 회차가 새로 읽혔으면 기재분(실적 1개, 계획 3개)만 떼어 한 번 POST하고
- *   2. GET으로 기준월 한 달의 결과를 받아 그린다.
+ * 흐름 조율은 서버의 유스케이스가 맡는다. 이 카드는 올린 회차들에서 분양회수
+ * 기재분만 떼어 기준월과 함께 POST로 보내고, 받은 결과를 그린다.
+ *
+ * 회차는 저장하지 않는다(2026-09-28). 화면에 올린 회차 — 위의 이전·최신 회차와
+ * 이 카드에서 더 올린 회차 — 만으로 매번 계산한다. 새로고침하면 다시 올린다.
+ * 분양회수 예측오차(기준월 t)에는 t−3 ~ t월 회차 네 개가 필요하다.
  *
  * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2 >
  * 오늘 − 2. 서버가 정한다. 카드는 보고월(회차)과 사용자가 고른 달만 보낸다.
  * 고른 달은 그것을 고를 때의 회차에 묶여 있어서, 회차를 새로 올리면 저절로
  * 기본값으로 돌아간다.
  *
- * 서버 전용 모듈(ECOS, 이력 파일)을 import하지 않는다(경계 규칙 6).
+ * 서버 전용 모듈(ECOS)을 import하지 않는다(경계 규칙 6).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
@@ -28,19 +31,19 @@ import { Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
-import type { PerceptionReportDto, PerceptionResponse, RecordRoundResponse } from '@/app/api/construction-perception/dto';
+import type { PerceptionReportDto, PerceptionResponse } from '@/app/api/construction-perception/dto';
 import {
   basisNote,
-  batchRecordedText,
   type BatchResult,
   indicatorRows,
   ledgerNote,
   missingRows,
   monthOptions,
+  readRoundsText,
   revisionNote,
 } from '@/app/aifrm/construction-perception-view';
 import { GRADE_BADGE } from '@/app/aifrm/format';
-import { roundEntryOf } from '@/domain/cashflow/round-entry';
+import { roundEntryOf, type RoundEntry } from '@/domain/cashflow/round-entry';
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
 import { commentFor } from '@/domain/risk/construction-perception/policy';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
@@ -59,17 +62,16 @@ const MISSING_COLUMNS = [
   { key: '사유', header: '사유' },
 ];
 
-type RecordNote = { readonly status: 'success' | 'warning'; readonly text: string };
+type ReadNote = { readonly status: 'success' | 'warning'; readonly text: string };
 
 /** 사용자가 고른 기준월. 고를 때의 회차에 묶인다. */
 type Choice = { readonly for: Statement | null; readonly month: YearMonth };
 
 type Loaded = {
-  /** 이 결과가 어느 회차·선택에 대한 것인가. 다르면 아직 불러오는 중이다. */
-  readonly latest: Statement | null;
+  /** 이 결과가 어느 회차 묶음·선택에 대한 것인가. 다르면 아직 불러오는 중이다. */
+  readonly rounds: readonly RoundEntry[];
   readonly chosen: YearMonth | undefined;
   readonly response: PerceptionResponse;
-  readonly recordNote: RecordNote | null;
 };
 
 /**
@@ -87,59 +89,66 @@ export function ConstructionPerceptionCard({
 }) {
   const [choice, setChoice] = useState<Choice | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [extraFiles, setExtraFiles] = useState<File[]>([]);
-  const [extraNote, setExtraNote] = useState<RecordNote | null>(null);
+  // 이 카드에서 더 올린 회차. 서버에 남기지 않는다.
+  const [uploaded, setUploaded] = useState<readonly RoundEntry[]>([]);
+  const [pickedFiles, setPickedFiles] = useState<File[]>([]);
+  const [readNote, setReadNote] = useState<ReadNote | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  // 이력용 회차를 더 올리면 결과를 다시 받는다.
-  const [refresh, setRefresh] = useState(0);
-  // 회차마다 POST는 한 번만. 기준월만 바꿀 때는 GET만 다시 부른다.
-  const recorded = useRef<{ latest: Statement | null; previous: Statement | null; note: Promise<RecordNote | null> } | null>(null);
 
   const chosen = choice !== null && choice.for === latest ? choice.month : undefined;
   const reportMonth = latest === null ? undefined : calendarOf(latest, latest.defaultBaseMonth);
 
+  // 위의 이전·최신 회차와 이 카드에서 올린 회차를 합친다. 같은 회차면 나중 것이 이긴다.
+  const { rounds, pageNote } = useMemo(() => {
+    const byRound = new Map<YearMonth, RoundEntry>();
+    const failures: BatchResult[] = [];
+    const fromPage = [
+      { file: '이전 회차', statement: previous },
+      { file: '최신 회차', statement: latest },
+    ];
+    for (const { file, statement } of fromPage) {
+      if (statement === null) continue;
+      const entry = entryOf(file, statement);
+      if ('reason' in entry) failures.push(entry);
+      else byRound.set(entry.round, entry);
+    }
+    for (const entry of uploaded) byRound.set(entry.round, entry);
+    return { rounds: [...byRound.values()], pageNote: failures.length === 0 ? null : readRoundsText(failures) };
+  }, [previous, latest, uploaded]);
+
   useEffect(() => {
     if (isReading) return;
     let cancelled = false;
-    if (recorded.current === null || recorded.current.latest !== latest || recorded.current.previous !== previous) {
-      // 이전 회차와 최신 회차를 둘 다 이력에 반영한다(정책 §3-3 개정).
-      const named = [
-        previous === null ? null : { file: '이전 회차', statement: previous },
-        latest === null ? null : { file: '최신 회차', statement: latest },
-      ].filter((x) => x !== null);
-      recorded.current = {
-        latest,
-        previous,
-        note: named.length === 0 ? Promise.resolve(null) : recordStatements(named).then(batchRecordedText),
-      };
-    }
-    const noteFor = recorded.current.note;
     (async () => {
-      const recordNote = await noteFor;
-      const response = await fetchPerception(reportMonth, chosen);
-      if (!cancelled) setLoaded({ latest, chosen, response, recordNote });
+      const response = await fetchPerception(rounds, reportMonth, chosen);
+      if (!cancelled) setLoaded({ rounds, chosen, response });
     })();
     return () => {
       cancelled = true;
     };
-  }, [latest, previous, chosen, reportMonth, isReading, refresh]);
+  }, [rounds, chosen, reportMonth, isReading]);
 
   const addRounds = async (files: File[]) => {
     setIsAdding(true);
-    const named = [];
-    const unreadable: BatchResult[] = [];
+    const added: RoundEntry[] = [];
+    const results: BatchResult[] = [];
     for (const file of files) {
       const read = readStatement(await file.arrayBuffer());
-      if (read.ok) named.push({ file: file.name, statement: read.statement });
-      else unreadable.push({ file: file.name, reason: read.error });
+      const entry = read.ok ? entryOf(file.name, read.statement) : { file: file.name, reason: read.error };
+      if ('reason' in entry) {
+        results.push(entry);
+      } else {
+        added.push(entry);
+        results.push({ file: file.name, round: entry.round });
+      }
     }
-    setExtraNote(batchRecordedText([...unreadable, ...(await recordStatements(named))]));
-    setExtraFiles([]);
+    setUploaded((prev) => [...prev, ...added]);
+    setReadNote(readRoundsText(results));
+    setPickedFiles([]);
     setIsAdding(false);
-    setRefresh((n) => n + 1);
   };
 
-  const isLoading = isReading || loaded === null || loaded.latest !== latest || loaded.chosen !== chosen;
+  const isLoading = isReading || loaded === null || loaded.rounds !== rounds || loaded.chosen !== chosen;
 
   return (
     <VStack gap={3}>
@@ -148,21 +157,16 @@ export function ConstructionPerceptionCard({
         <Text type="supporting">한국은행 ECOS에서 지표를 불러오는 중…</Text>
       ) : (
         <>
-          {loaded.recordNote !== null && (
-            <Banner
-              status={loaded.recordNote.status}
-              title={loaded.recordNote.status === 'success' ? '회차를 이력에 반영했습니다' : '회차를 이력에 반영하지 못했습니다'}
-              description={loaded.recordNote.text}
-              isDismissable={loaded.recordNote.status === 'success'}
-            />
+          {pageNote !== null && (
+            <Banner status="warning" title="위에서 올린 회차의 분양회수를 읽지 못했습니다" description={pageNote.text} />
           )}
-          {extraNote !== null && (
+          {readNote !== null && (
             <Banner
-              status={extraNote.status}
-              title={extraNote.status === 'success' ? '이력용 회차를 반영했습니다' : '이력용 회차 일부를 반영하지 못했습니다'}
-              description={extraNote.text}
+              status={readNote.status}
+              title={readNote.status === 'success' ? '회차를 읽었습니다' : '회차 일부를 읽지 못했습니다'}
+              description={readNote.text}
               isDismissable
-              onDismiss={() => setExtraNote(null)}
+              onDismiss={() => setReadNote(null)}
             />
           )}
           {loaded.response.ok ? (
@@ -175,24 +179,45 @@ export function ConstructionPerceptionCard({
           ) : (
             <Banner status="error" title="산출할 수 없습니다" description={loaded.response.reason} />
           )}
-          <FileInput
-            label="이력용 회차 추가"
-            description="분양회수 예측오차에는 기준월과 그 전 석 달의 회차(모두 네 개)가 필요합니다. 과거·전년도 회차를 여러 개 올리면 이력에 더합니다. 파일 원본은 서버로 보내지 않습니다."
-            placeholder={isAdding ? '반영하는 중…' : '자금수지표 파일 선택(여러 개)'}
-            accept=".xlsx,.xls"
-            isMultiple
-            isDisabled={isAdding}
-            value={extraFiles}
-            onChange={(files) => {
-              const list = files === null ? [] : Array.isArray(files) ? files : [files];
-              setExtraFiles(list);
-              if (list.length > 0) void addRounds(list);
-            }}
-          />
+          <HStack gap={2} vAlign="end">
+            <FileInput
+              label="분양회수 회차 추가"
+              description="분양회수 예측오차에는 기준월과 그 전 석 달의 회차(모두 네 개)가 필요합니다. 위에서 올린 이전·최신 회차 말고 더 필요한 회차를 여러 개 올리세요. 저장하지 않으므로 새로고침하면 다시 올립니다. 파일 원본은 서버로 보내지 않습니다."
+              placeholder={isAdding ? '읽는 중…' : '자금수지표 파일 선택(여러 개)'}
+              accept=".xlsx,.xls"
+              isMultiple
+              isDisabled={isAdding}
+              value={pickedFiles}
+              onChange={(files) => {
+                const list = files === null ? [] : Array.isArray(files) ? files : [files];
+                setPickedFiles(list);
+                if (list.length > 0) void addRounds(list);
+              }}
+            />
+            {uploaded.length > 0 && (
+              <Button
+                label="추가한 회차 비우기"
+                variant="secondary"
+                onClick={() => {
+                  setUploaded([]);
+                  setReadNote(null);
+                }}
+              />
+            )}
+          </HStack>
         </>
       )}
     </VStack>
   );
+}
+
+/** 회차에서 분양회수 기재분을 뗀다. 못 떼면 파일 이름과 사유. */
+function entryOf(file: string, statement: Statement): RoundEntry | { file: string; reason: string } {
+  try {
+    return roundEntryOf(statement);
+  } catch (e) {
+    return { file, reason: `분양회수를 뗄 수 없습니다 — ${e instanceof Error ? e.message : e}` };
+  }
 }
 
 function PerceptionResult({
@@ -244,7 +269,7 @@ function PerceptionResult({
               <Table data={indicatorRows(report)} columns={INDICATOR_COLUMNS} />
               <Text type="supporting" size="xsm">
                 원값의 단위는 ECOS 응답 그대로입니다. 대출금리 변화율은 bp(%p × 100)입니다. 분양회수
-                예측오차는 원값이 아니라 이력에서 계산한 3개월 누적 오차율입니다.
+                예측오차는 원값이 아니라 올린 회차로 계산한 3개월 누적 오차율입니다.
               </Text>
             </VStack>
           </Collapsible>
@@ -278,44 +303,20 @@ function PerceptionResult({
   );
 }
 
-async function fetchPerception(reportMonth?: YearMonth, baseMonth?: YearMonth): Promise<PerceptionResponse> {
-  const params = new URLSearchParams();
-  if (reportMonth !== undefined) params.set('reportMonth', reportMonth);
-  if (baseMonth !== undefined) params.set('baseMonth', baseMonth);
-  const query = params.size > 0 ? `?${params}` : '';
+async function fetchPerception(
+  rounds: readonly RoundEntry[],
+  reportMonth?: YearMonth,
+  baseMonth?: YearMonth,
+): Promise<PerceptionResponse> {
   try {
-    const res = await fetch(`/api/construction-perception${query}`, { cache: 'no-store' });
+    const res = await fetch('/api/construction-perception', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rounds, reportMonth, baseMonth }),
+      cache: 'no-store',
+    });
     return (await res.json()) as PerceptionResponse;
   } catch {
     return { ok: false, reason: '서버에 연결하지 못했습니다.' };
   }
-}
-
-/**
- * 회차들에서 기재분을 떼어 차례로 이력에 반영한다. 파일 원본은 보내지 않는다.
- * 실패해도 결과 조회는 이어 간다.
- */
-async function recordStatements(named: readonly { file: string; statement: Statement }[]): Promise<BatchResult[]> {
-  const results: BatchResult[] = [];
-  for (const { file, statement } of named) {
-    let entry;
-    try {
-      entry = roundEntryOf(statement);
-    } catch (e) {
-      results.push({ file, reason: `분양회수를 뗄 수 없습니다 — ${e instanceof Error ? e.message : e}` });
-      continue;
-    }
-    try {
-      const res = await fetch('/api/forecast-ledger/rounds', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(entry),
-      });
-      const out = (await res.json()) as RecordRoundResponse;
-      results.push(out.ok ? { file, round: entry.round } : { file, reason: out.reason });
-    } catch {
-      results.push({ file, reason: '서버에 연결하지 못했습니다.' });
-    }
-  }
-  return results;
 }

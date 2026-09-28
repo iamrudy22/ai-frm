@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emptyLedger, ledgerFrom, type LedgerSnapshot } from '@/domain/cashflow/forecast-ledger';
+import { emptyLedger, ledgerOf } from '@/domain/cashflow/forecast-ledger';
 import type { RoundEntry } from '@/domain/cashflow/round-entry';
 import { amount } from '@/domain/shared/amount';
 import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
@@ -37,7 +37,8 @@ describe('분양회수 계획·실적 이력 (판형 2, 회차 단위)', () => {
 
   it('같은 회차를 다시 올리면 그 회차만 바꾼다 — 두 번 올려도 같다', () => {
     const once = emptyLedger().record(entry('2026/05')).record(entry('2026/07'));
-    expect(once.record(entry('2026/07')).snapshot()).toEqual(once.snapshot());
+    expect(once.record(entry('2026/07')).entryOf(ym('2026/07'))).toEqual(once.entryOf(ym('2026/07')));
+    expect(once.record(entry('2026/07')).rounds()).toEqual(once.rounds());
   });
 
   it('첫 회차와 마지막 회차 사이에 빠진 회차를 알려 준다', () => {
@@ -72,32 +73,28 @@ describe('실적 — 각 달의 직후 회차 값이다 (정책 §3-2, 2026-09-2
   });
 });
 
-describe('저장 형태와 복원', () => {
-  it('스냅샷으로 저장했다가 되살리면 같은 이력이다', () => {
-    const ledger = emptyLedger().record(entry('2026/05')).record(entry('2026/07'));
-    const restored = ledgerFrom(JSON.parse(JSON.stringify(ledger.snapshot())));
-    expect(restored.snapshot()).toEqual(ledger.snapshot());
-    expect(restored.actualOf(ym('2026/06'))).toBe(7006);
+describe('올린 회차로 만들기 — 저장하지 않는다', () => {
+  it('요청으로 받은 회차들로 이력을 만든다 — 순서는 상관없다', () => {
+    const ledger = ledgerOf(JSON.parse(JSON.stringify([entry('2026/07'), entry('2026/05')])));
+    expect(ledger.rounds()).toEqual(['2026/05', '2026/07']);
+    expect(ledger.actualOf(ym('2026/04'))).toBe(5004);
   });
 
-  it('스냅샷은 판형 2이고 회차 순서로 정렬되어 있다', () => {
-    const snap = emptyLedger().record(entry('2026/07')).record(entry('2026/05')).snapshot();
-    expect(snap.version).toBe(2);
-    expect(snap.rounds.map((r) => r.round)).toEqual(['2026/05', '2026/07']);
-  });
-
-  // 판형 1(달 단위, 회차마다 실적 1개·계획 3개)으로는 새 정의를 계산할 수 없다.
-  it('판형 1은 거부하고 이유를 알린다', () => {
-    expect(() => ledgerFrom({ version: 1, rows: [] } as unknown as LedgerSnapshot)).toThrow(/판형 1/);
+  it('회차가 없으면 빈 이력이다', () => {
+    expect(ledgerOf([]).latestRound()).toBeNull();
   });
 
   it('기재분 불변식을 어긴 회차는 거부한다', () => {
     const bad = { ...entry('2026/07'), plans: entry('2026/07').plans.slice(0, 3) };
-    expect(() => ledgerFrom({ version: 2, rounds: [bad] } as unknown as LedgerSnapshot)).toThrow();
+    expect(() => ledgerOf([bad])).toThrow(/4칸/);
   });
 
-  it('같은 회차가 두 번 있으면 거부한다', () => {
+  it('같은 회차가 두 번 있으면 거부한다 — 어느 파일을 믿을지 알 수 없다', () => {
     const e = entry('2026/07');
-    expect(() => ledgerFrom({ version: 2, rounds: [e, e] } as unknown as LedgerSnapshot)).toThrow(/두 번/);
+    expect(() => ledgerOf([e, e])).toThrow('2026/07 회차가 두 번');
+  });
+
+  it('배열이 아니면 거부한다', () => {
+    expect(() => ledgerOf({ rounds: [] } as unknown as unknown[])).toThrow(/배열/);
   });
 });

@@ -7,11 +7,9 @@
 
 import type { PerceptionDiagnostics, PerceptionReport } from '@/application/construction-perception';
 import type { Outcome } from '@/application/outcome';
-import type { RecordedRound } from '@/application/record-round';
 
 export type PerceptionReportDto = Omit<PerceptionReport, 'diagnostics'> & {
   readonly diagnostics: Omit<PerceptionDiagnostics, 'fetchedAt'> & { readonly fetchedAt: string };
 };
 
 export type PerceptionResponse = Outcome<PerceptionReportDto>;
-export type RecordRoundResponse = Outcome<RecordedRound>;

@@ -107,34 +107,34 @@ export function monthOptions(
 }
 
 /**
- * 분양회수 계획·실적 이력 안내(정책 §3-2·§3-3). 기준월 t에는 t−3월 회차(계획)와
+ * 올린 회차 안내(정책 §3-2·§3-3). 기준월 t에는 t−3월 회차(계획)와
  * t−2·t−1·t월 회차(각 달의 직후 회차 실적)가 필요하다. 무엇이 있고 무엇을 올려야
- * 하는지 알린다.
+ * 하는지 알린다. 회차는 저장하지 않으므로 지금 화면에 올린 것만 센다.
  */
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
   const needed = Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(baseMonth, i - PLAN_ROUND_LAG));
   const span = `${needed[0]}~${baseMonth}`;
-  const neededText = `기준월 ${baseMonth}에는 ${span} 회차가 필요합니다`;
+  const neededText = `기준월 ${baseMonth}에는 ${span} 회차 네 개가 필요합니다`;
   if (ledger.rounds.length === 0) {
-    return `분양회수 계획·실적 이력이 비어 있습니다. ${neededText}.`;
+    return `분양회수에 쓸 회차를 올리지 않았습니다. ${neededText}.`;
   }
 
-  const range = `${ledger.rounds[0]}~${ledger.latestRound} 회차 ${ledger.rounds.length}개`;
+  const range = `${ledger.rounds[0]}~${ledger.latestRound} ${ledger.rounds.length}개`;
   const holes = ledger.missingRounds.length > 0 ? `, 빠진 회차 ${ledger.missingRounds.join('·')}` : '';
   const absent = needed.filter((r) => !ledger.rounds.includes(r));
   const need =
     absent.length === 0
       ? `기준월 ${baseMonth}에 필요한 ${span} 회차가 모두 있습니다.`
       : `${neededText} — ${absent.join('·')} 회차를 올리세요.`;
-  return `분양회수 계획·실적 이력: ${range}${holes}. ${need}`;
+  return `분양회수에 쓸 회차: ${range}${holes}. ${need}`;
 }
 
 export type BatchResult =
   | { readonly file: string; readonly round: YearMonth }
   | { readonly file: string; readonly reason: string };
 
-/** 여러 회차를 한 번에 반영한 결과. 하나라도 실패하면 경고로 보인다. */
-export function batchRecordedText(results: readonly BatchResult[]): {
+/** 여러 회차 파일을 읽은 결과. 하나라도 실패하면 경고로 보인다. */
+export function readRoundsText(results: readonly BatchResult[]): {
   status: 'success' | 'warning';
   text: string;
 } {
@@ -143,7 +143,7 @@ export function batchRecordedText(results: readonly BatchResult[]): {
     .sort(compareYearMonth);
   const failures = results.flatMap((r) => ('reason' in r ? [`${r.file} — ${r.reason}`] : []));
 
-  const done = rounds.length > 0 ? `회차 ${rounds.length}개를 반영했습니다: ${rounds.join('·')}.` : '반영한 회차가 없습니다.';
+  const done = rounds.length > 0 ? `회차 ${rounds.length}개를 읽었습니다: ${rounds.join('·')}.` : '읽은 회차가 없습니다.';
   if (failures.length === 0) return { status: 'success', text: done };
-  return { status: 'warning', text: `${done} 반영하지 못한 파일: ${failures.join(' / ')}` };
+  return { status: 'warning', text: `${done} 읽지 못한 파일: ${failures.join(' / ')}` };
 }
