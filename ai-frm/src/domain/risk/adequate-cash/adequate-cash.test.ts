@@ -3,7 +3,6 @@ import {
   assessAdequateCash,
   adequateCashAt,
   adequateCashInputFrom,
-  adequateCashSeries,
 } from '@/domain/risk/adequate-cash/adequate-cash';
 import { createStatement, unreadable, type ItemSeries, type ItemName } from '@/domain/cashflow/statement';
 import { amount } from '@/domain/shared/amount';
@@ -161,26 +160,5 @@ describe('한 달치 — 계획·다음 해 표시', () => {
 
   it('회차 기준월보다 앞의 달은 계획이 아니다', () => {
     expect(at(5).isPlan).toBe(false);
-  });
-});
-
-describe('매월 롤링', () => {
-  const s = statement();
-
-  it('기준월부터 창이 시트 안에 드는 마지막 달까지 — 8월 회차면 8월~26.1월 여섯 달', () => {
-    const { rows, cutoff } = adequateCashSeries(s, s.months[7]);
-    expect(rows.map((r) => r.month.label)).toEqual(['8월', '9월', '10월', '11월', '12월', '26.1월']);
-    expect(cutoff?.label).toBe('26.2월');
-  });
-
-  it('창이 모자라는 달은 빼고 던지지 않는다 — 짧은 창으로 계산하지 않는다', () => {
-    const { rows, cutoff } = adequateCashSeries(s, s.months[13]);
-    expect(rows).toEqual([]);
-    expect(cutoff?.label).toBe('26.2월');
-  });
-
-  it('각 행은 한 달치 산출과 같다', () => {
-    const { rows } = adequateCashSeries(s, s.months[7]);
-    expect(rows[2]).toEqual(adequateCashAt(s, s.months[9]));
   });
 });

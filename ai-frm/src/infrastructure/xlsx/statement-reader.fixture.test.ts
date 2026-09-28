@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap/liquidity-gap';
 import { checkRollForward, type Statement } from '@/domain/cashflow/statement';
-import { adequateCashSeries } from '@/domain/risk/adequate-cash/adequate-cash';
+import { adequateCashAt } from '@/domain/risk/adequate-cash/adequate-cash';
 import { toPercent } from '@/domain/shared/amount';
 
 const FIXTURE = resolve(process.cwd(), 'fixtures/자금수지표-최신회차.xlsx');
@@ -89,12 +89,16 @@ describe.skipIf(!present)('실물 회차 판독', () => {
   });
 
   // 금액은 단언하지 않는다(사내 자금 데이터). 판정과 표시만 본다.
-  it('적정 시재 — 8월 기준 안정적, 8월~26.1월 여섯 달, 11월부터 다음 해 계획 미확정', () => {
-    const { rows } = adequateCashSeries(statement, statement.defaultBaseMonth);
-    expect(rows.map((r) => r.month.label)).toEqual(['8월', '9월', '10월', '11월', '12월', '26.1월']);
-    expect(rows[0]).toMatchObject({ isAdequate: true, isPlan: false, beyondPlanYear: false });
-    expect(rows.map((r) => r.beyondPlanYear)).toEqual([false, false, false, true, true, true]);
-    expect(rows.slice(1).every((r) => r.isPlan)).toBe(true);
-    expect(rows[0]).not.toHaveProperty('grade');
+  // 금액은 2026-09-28 자금기획팀 엑셀 산출값과 수기 대조해 일치를 확인했다(PRD §9-5).
+  it('적정 시재 — 8월 기준 한 달치, 안정적, 계획·다음 해 표시 없음, 등급 없음', () => {
+    const august = adequateCashAt(statement, statement.defaultBaseMonth);
+    expect(august).toMatchObject({
+      month: { label: '8월' },
+      windowEnd: { label: '10월' },
+      isAdequate: true,
+      isPlan: false,
+      beyondPlanYear: false,
+    });
+    expect(august).not.toHaveProperty('grade');
   });
 });

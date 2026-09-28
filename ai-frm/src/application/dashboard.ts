@@ -18,12 +18,7 @@ import {
   type Month,
   type Statement,
 } from '@/domain/cashflow/statement';
-import {
-  adequateCashAt,
-  adequateCashSeries,
-  type AdequateCashMonth,
-  type AdequateCashSeries,
-} from '@/domain/risk/adequate-cash/adequate-cash';
+import { adequateCashAt, type AdequateCashMonth } from '@/domain/risk/adequate-cash/adequate-cash';
 import {
   assessLiquidityGap,
   liquidityGapInputFrom,
@@ -41,17 +36,12 @@ export type Outcome<T> =
 
 export type PaymentRecoveryResult = Extract<PaymentRecovery, { kind: 'ok' }>;
 
-/** 적정 시재 — 고른 기준월의 한 달치와 그 달부터의 매월 추이. 등급이 없다. */
-export type AdequateCashReport = {
-  readonly current: AdequateCashMonth;
-  readonly series: AdequateCashSeries;
-};
-
 export type Dashboard = {
   /** 이전 회차가 없으면 null — 실패가 아니라 산출 대상이 아니다. */
   readonly paymentRecovery: Outcome<PaymentRecoveryResult> | null;
   readonly liquidityGap: Outcome<LiquidityGap>;
-  readonly adequateCash: Outcome<AdequateCashReport>;
+  /** 고른 기준월 한 달치. 다음 달들의 추이는 내지 않는다. 등급이 없다. */
+  readonly adequateCash: Outcome<AdequateCashMonth>;
   readonly diagnostics: {
     /** 이전 회차가 없으면 null. */
     readonly order: ConsecutiveCheck | null;
@@ -75,14 +65,7 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
       () => succeed(assessLiquidityGap(liquidityGapInputFrom(latest, base))),
       '유동성 Gap을 산출할 수 없습니다.',
     ),
-    adequateCash: settle(
-      () =>
-        succeed({
-          current: adequateCashAt(latest, base),
-          series: adequateCashSeries(latest, base),
-        }),
-      '적정 시재를 산출할 수 없습니다.',
-    ),
+    adequateCash: settle(() => succeed(adequateCashAt(latest, base)), '적정 시재를 산출할 수 없습니다.'),
     diagnostics: {
       order: previous === null ? null : checkConsecutive(previous, latest),
       rollForward: checkRollForward(latest),

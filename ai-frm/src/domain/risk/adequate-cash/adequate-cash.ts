@@ -116,24 +116,3 @@ export function adequateCashAt(statement: Statement, base: Month): AdequateCashM
     beyondPlanYear: windowEnd.index > statement.planYearEnd.index,
   };
 }
-
-export type AdequateCashSeries = {
-  readonly rows: readonly AdequateCashMonth[];
-  /** 3개월 창이 시트 끝을 넘어 산출하지 않기 시작한 첫 달. */
-  readonly cutoff: Month | null;
-};
-
-/**
- * `from`부터 매월 산출한다. 창이 시트 끝을 넘는 달은 빼고 던지지 않는다.
- * 항목을 읽지 못한 경우처럼 창과 무관한 실패는 그대로 던진다.
- */
-export function adequateCashSeries(statement: Statement, from: Month): AdequateCashSeries {
-  const lastStart = statement.months.length - ADEQUATE_CASH_WINDOW_MONTHS;
-  const rows = statement.months
-    .filter((m) => m.index >= from.index && m.index <= lastStart)
-    .map((m) => adequateCashAt(statement, m));
-
-  const cutoff = statement.months[Math.max(from.index, lastStart + 1)] ?? null;
-
-  return { rows, cutoff };
-}

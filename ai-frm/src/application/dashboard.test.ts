@@ -111,21 +111,27 @@ describe('대시보드 — 실패 격리', () => {
 });
 
 describe('대시보드 — 적정 시재', () => {
-  it('고른 기준월로 한 달치와, 그 달부터의 매월 추이를 낸다', () => {
+  // 8월 기준이면 8월만 낸다(2026-09-28 결정). 다음 달들의 추이는 내지 않는다.
+  it('고른 기준월 한 달치만 낸다 — 다음 달들의 추이는 없다', () => {
     const d = assessDashboard(july, august, aug);
     expect(d.adequateCash.ok).toBe(true);
     if (!d.adequateCash.ok) return;
-    expect(d.adequateCash.value.current.month.label).toBe('8월');
-    // 6개월짜리 합성 회차: 8월(8~10월), 9월(9~11월)까지 창이 든다.
-    expect(d.adequateCash.value.series.rows.map((r) => r.month.label)).toEqual(['8월', '9월']);
-    expect(d.adequateCash.value.series.cutoff?.label).toBe('10월');
+    expect(d.adequateCash.value.month.label).toBe('8월');
+    expect(d.adequateCash.value).not.toHaveProperty('series');
+  });
+
+  it('기준월을 바꾸면 그 달 한 달치를 낸다', () => {
+    const d = assessDashboard(july, august, august.months[3]);
+    if (!d.adequateCash.ok) throw new Error('산출돼야 한다');
+    expect(d.adequateCash.value.month.label).toBe('9월');
+    expect(d.adequateCash.value.isPlan).toBe(true);
   });
 
   it('결과에 등급이 없다 — T/F만 있다', () => {
     const d = assessDashboard(july, august, aug);
     if (!d.adequateCash.ok) throw new Error('산출돼야 한다');
-    expect(d.adequateCash.value.current).not.toHaveProperty('grade');
-    expect(typeof d.adequateCash.value.current.isAdequate).toBe('boolean');
+    expect(d.adequateCash.value).not.toHaveProperty('grade');
+    expect(typeof d.adequateCash.value.isAdequate).toBe('boolean');
   });
 
   it('이전 회차 없이도 산출한다 — 최신 회차 한 장만 쓴다', () => {

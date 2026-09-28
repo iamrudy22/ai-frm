@@ -19,7 +19,6 @@ import { VStack } from '@astryxdesign/core/VStack';
 
 import {
   assessDashboard,
-  type AdequateCashReport,
   type Dashboard,
   type Outcome,
   type PaymentRecoveryResult,
@@ -366,30 +365,13 @@ const BREAKDOWN_COLUMNS = [
   { key: '가중값', header: '가중값' },
 ];
 
-type SeriesRow = {
-  기준월: string;
-  구간: string;
-  현재시재: string;
-  적정시재: string;
-  판정: string;
-  비고: string;
-} & Record<string, unknown>;
-
-const SERIES_COLUMNS = [
-  { key: '기준월', header: '기준월' },
-  { key: '구간', header: '구간' },
-  { key: '현재시재', header: '현재시재' },
-  { key: '적정시재', header: '적정시재' },
-  { key: '판정', header: '적정 여부' },
-  { key: '비고', header: '비고' },
-];
-
-function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCashReport> }) {
+// 고른 기준월 한 달치만 보여 준다. 8월 기준이면 8월만 — 다음 달들의 추이는 내지 않는다.
+function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCashMonth> }) {
   if (!adequateCash.ok) {
     return <Banner status="error" title="산출할 수 없습니다" description={adequateCash.reason} />;
   }
 
-  const { current, series } = adequateCash.value;
+  const current = adequateCash.value;
   const remark = remarkText(current);
 
   const summary: Row[] = [
@@ -409,17 +391,6 @@ function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCa
     })),
     { 항목: '적정시재', 합계: '', 가중치: '', 가중값: money(current.adequateCash) },
   ];
-
-  const rows: SeriesRow[] = series.rows.map((m) => ({
-    기준월: m.month.label,
-    구간: windowText(m),
-    현재시재: money(m.openingCash),
-    적정시재: money(m.adequateCash),
-    판정: verdictText(m.isAdequate),
-    비고: remarkText(m),
-  }));
-
-  const hasBeyondPlanYear = series.rows.some((m) => m.beyondPlanYear);
 
   return (
     <VStack gap={3} align="start">
@@ -448,29 +419,19 @@ function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCa
         </VStack>
       </Collapsible>
 
-      <Heading level={3}>월별 추이</Heading>
-      {rows.length > 0 ? (
-        <Table data={rows} columns={SERIES_COLUMNS} />
-      ) : (
-        <Text type="supporting">이 기준월부터는 3개월 계획이 시트에 없어 추이를 내지 않았습니다.</Text>
-      )}
-
       <VStack gap={1}>
-        {series.cutoff !== null && rows.length > 0 && (
+        {current.isPlan && (
           <Text type="supporting" size="xsm">
-            {series.cutoff.label} 이후는 3개월 계획이 시트에 없어 산출하지 않았습니다.
+            계획: 회차 기준월 뒤의 달입니다. 기초시재가 계획된 조달까지 포함한 이월 잔고라서,
+            안정적 판정은 계획대로 조달한다는 전제 위에 있습니다.
           </Text>
         )}
-        {hasBeyondPlanYear && (
+        {current.beyondPlanYear && (
           <Text type="supporting" size="xsm">
-            다음 해 계획 미확정: 창이 다음 해 열에 걸친 달입니다. 다음 해 계획이 일부만 입력되어
+            다음 해 계획 미확정: 3개월 창이 다음 해 열에 걸칩니다. 다음 해 계획이 일부만 입력되어
             있어 적정시재가 작게 나올 수 있습니다.
           </Text>
         )}
-        <Text type="supporting" size="xsm">
-          계획: 회차 기준월 뒤의 달입니다. 기초시재가 계획된 조달까지 포함한 이월 잔고라서, 안정적
-          판정은 계획대로 조달한다는 전제 위에 있습니다.
-        </Text>
         <Text type="supporting" size="xsm">
           적정시재 = 분양회수 20% + 기타수입 10% + 지출 10% + 수지차(지출 − 수입) 40%, 각 3개월
           합계. 등급 없이 현재시재가 적정시재 이상이면 안정적, 아니면 적정시재 부족입니다.
