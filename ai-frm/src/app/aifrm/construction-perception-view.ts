@@ -7,7 +7,7 @@
 
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
 import {
-  defaultBaseMonth,
+  baseMonthOfRound,
   type ConstructionPerception,
 } from '@/domain/risk/construction-perception/construction-perception';
 import { PLAN_ROUND_LAG } from '@/domain/risk/construction-perception/forecast-error';
@@ -73,14 +73,14 @@ export function missingRows(result: ConstructionPerception | PerceptionReportDto
   return result.missing.map((m) => ({ 지표: indicatorLabel(m.key), 사유: m.reason }));
 }
 
-/** 기준월이 어디서 왔는지(정책 §5, 2026-09-28 개정). */
+/** 기준월이 어디서 왔는지(정책 §5, 2026-09-28 재개정). */
 export function basisNote(basis: PerceptionReportDto['basis']): string {
   const { baseMonth, reportMonth, source } = basis;
-  if (source === '회차') return `보고월 ${reportMonth}(최신 회차) → 기준월 ${baseMonth}`;
+  if (source === '회차') return `기준월 ${baseMonth} = 최신 회차의 달`;
   if (source === '오늘') return `보고월 ${reportMonth}(오늘) → 기준월 ${baseMonth}`;
   const chosen = `직접 고른 기준월 ${baseMonth}`;
   if (reportMonth === null) return chosen;
-  return `${chosen} · 기본값은 보고월 ${reportMonth} − ${REPORT_LAG_MONTHS} = ${defaultBaseMonth(reportMonth)}`;
+  return `${chosen} · 기본값은 최신 회차의 달 ${baseMonthOfRound(reportMonth)}`;
 }
 
 /**

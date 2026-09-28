@@ -142,15 +142,22 @@ export function assessConstructionPerception(input: PerceptionInput, month: Year
 }
 
 /**
- * 기본 기준월 = 보고월 − 보고 시차(정책 §5, 2026-09-28 개정).
+ * 기본 기준월 — 회차를 올렸으면 최신 회차의 달이다(정책 §5, 2026-09-28 재개정).
  *
- * 보고월은 최신 회차의 기준월이고, 회차가 없으면 오늘이 속한 달이다. 사용자가
- * 기준월을 고르면 그 달을 쓴다 — 그 순서는 유스케이스가 정한다.
+ * 7월 판단은 4~7월 회차로 한다. 대금 회수 위험·유동성 Gap·적정 시재가 7월 회차로
+ * 7월을 보므로 건설경기 인식 지수도 같은 달을 본다. 분양회수 예측오차(7월)에 필요한
+ * 회차도 4~7월이라 올린 파일과 맞는다. 그 달 ECOS 값이 아직 공표 전이면 그 지표만
+ * 산출불가다.
  *
- * 처음에는 데이터가 기준월을 정했다(지표별 최신월 중 가장 이른 달). 두 규칙을
- * 함께 두면 어긋나므로 그 규칙은 지웠다. 기준월이 정해진 뒤에는 그 달 하나만
- * 산출하고, 빈 값이 있어도 이전 달로 거슬러 내려가지 않는다(정책 §9-1 Q2).
+ * 사용자가 기준월을 고르면 그 달을 쓴다 — 그 순서는 유스케이스가 정한다. 기준월이
+ * 정해진 뒤에는 그 달 하나만 산출하고, 빈 값이 있어도 이전 달로 거슬러 내려가지
+ * 않는다(정책 §9-1 Q2).
  */
-export function defaultBaseMonth(reportMonth: YearMonth): YearMonth {
-  return addMonths(reportMonth, -REPORT_LAG_MONTHS);
+export function baseMonthOfRound(latestRound: YearMonth): YearMonth {
+  return latestRound;
+}
+
+/** 회차 없이 볼 때의 기본 기준월 = 오늘이 속한 달 − 보고 시차. */
+export function baseMonthOfToday(today: YearMonth): YearMonth {
+  return addMonths(today, -REPORT_LAG_MONTHS);
 }

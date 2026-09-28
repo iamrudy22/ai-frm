@@ -11,7 +11,7 @@
  */
 
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
-import { defaultBaseMonth } from '@/domain/risk/construction-perception/construction-perception';
+import { baseMonthOfRound } from '@/domain/risk/construction-perception/construction-perception';
 import { PLAN_ROUND_LAG } from '@/domain/risk/construction-perception/forecast-error';
 import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
@@ -74,7 +74,9 @@ export type Requirement = {
  *
  *   - 유동성 Gap·적정 시재: L
  *   - 대금 회수 위험: L−1, L
- *   - 건설경기 인식 지수: 기본 기준월 B = L − 2 에서 B−3 ~ B (정책 §3-2, §5)
+ *   - 건설경기 인식 지수: 기본 기준월 B = L 에서 B−3 ~ B (정책 §3-2, §5)
+ *
+ * 그래서 7월 판단은 4·5·6·7월 회차 네 개로 모든 지표가 채워진다.
  *
  * 건설경기는 기본 기준월 기준이다. 산출 뒤 기준월을 바꾸면 필요한 회차도 바뀌고,
  * 그때는 카드가 다시 알린다.
@@ -90,7 +92,7 @@ export function requirementsOf(rounds: readonly YearMonth[]): Requirement[] {
     ifMissing,
   });
 
-  const base = defaultBaseMonth(latest);
+  const base = baseMonthOfRound(latest);
   const perceptionRounds = Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(base, i - PLAN_ROUND_LAG));
 
   return [

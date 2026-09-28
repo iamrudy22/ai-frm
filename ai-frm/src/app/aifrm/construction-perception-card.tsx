@@ -10,7 +10,7 @@
  * 회차는 저장하지 않는다(2026-09-28). 올린 회차만으로 매번 계산한다.
  * 분양회수 예측오차(기준월 t)에는 t−3 ~ t월 회차 네 개가 필요하다.
  *
- * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2.
+ * 기준월(정책 §5, 2026-09-28 재개정): 사용자가 고른 달 > 최신 회차의 달.
  * 서버가 정한다. 훅은 보고월(최신 회차)과 사용자가 고른 달만 보낸다. 고른 달은
  * 그때의 회차 묶음에 묶여 있어서, 회차를 새로 읽으면 기본값으로 돌아간다.
  *
@@ -165,7 +165,7 @@ function PerceptionResult({
       <HStack gap={2} vAlign="end">
         <Selector
           label="건설경기 기준월"
-          description="기본값은 최신 회차 − 2개월입니다(ECOS 공표 시차)"
+          description="기본값은 최신 회차의 달입니다"
           options={monthOptions(report.selectable, basis.baseMonth)}
           value={basis.baseMonth}
           onChange={(value) => onChoose(parseYearMonth(value))}

@@ -3,7 +3,8 @@ import { ratio, type Ratio } from '@/domain/shared/amount';
 import { yearMonth, type YearMonth } from '@/domain/shared/year-month';
 import {
   assessConstructionPerception,
-  defaultBaseMonth,
+  baseMonthOfRound,
+  baseMonthOfToday,
   scoreBy,
   type EcosIndicatorKey,
   type Missing,
@@ -206,14 +207,18 @@ describe('결측은 0이 아니다 (정책 §6-1)', () => {
   });
 });
 
-describe('기준월 (정책 §5, 2026-09-28 개정)', () => {
-  it('보고월 − 2개월이다 — 9월에 보면 7월, 8월 회차면 6월', () => {
-    expect(defaultBaseMonth(yearMonth(2026, 9))).toBe('2026/07');
-    expect(defaultBaseMonth(yearMonth(2026, 8))).toBe('2026/06');
+describe('기준월 (정책 §5, 2026-09-28 재개정)', () => {
+  // 7월 판단은 4~7월 회차로 한다. 자금수지표 지표들과 같은 달을 본다.
+  it('회차를 올렸으면 최신 회차의 달이다 — 7월 회차면 7월', () => {
+    expect(baseMonthOfRound(yearMonth(2026, 7))).toBe('2026/07');
   });
 
-  it('해를 넘긴다 — 1월 회차면 전년 11월', () => {
-    expect(defaultBaseMonth(yearMonth(2027, 1))).toBe('2026/11');
+  it('회차 없이 보면 오늘 − 2개월이다 — 9월에 보면 7월', () => {
+    expect(baseMonthOfToday(yearMonth(2026, 9))).toBe('2026/07');
+  });
+
+  it('해를 넘긴다 — 1월에 회차 없이 보면 전년 11월', () => {
+    expect(baseMonthOfToday(yearMonth(2027, 1))).toBe('2026/11');
   });
 
   it('보고 시차는 정책 상수 한 곳에 있다', () => {

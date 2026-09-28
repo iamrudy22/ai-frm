@@ -7,7 +7,7 @@
  * 분양회수 이력은 저장하지 않는다(2026-09-28). 요청마다 화면에서 올린 회차들로
  * 만든 이력을 받는다. 형식 검사는 요청을 받는 쪽(ledgerOf)이 끝낸다.
  *
- * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2 >
+ * 기준월(정책 §5, 2026-09-28 재개정): 사용자가 고른 달 > 최신 회차의 달 >
  * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
  *
  * 실패는 두 층이다.
@@ -21,7 +21,8 @@ import type { EconomicIndicatorSource, IndicatorFetch, SourceResult } from '@/ap
 import type { ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import {
   assessConstructionPerception,
-  defaultBaseMonth,
+  baseMonthOfRound,
+  baseMonthOfToday,
   type ConstructionPerception,
   type EcosIndicatorKey,
   type RawSeries,
@@ -139,9 +140,9 @@ function basisOf(request: PerceptionRequest, today: YearMonth): PerceptionBasis 
     return { baseMonth: request.baseMonth, reportMonth: request.reportMonth ?? null, source: '선택' };
   }
   if (request.reportMonth !== undefined) {
-    return { baseMonth: defaultBaseMonth(request.reportMonth), reportMonth: request.reportMonth, source: '회차' };
+    return { baseMonth: baseMonthOfRound(request.reportMonth), reportMonth: request.reportMonth, source: '회차' };
   }
-  return { baseMonth: defaultBaseMonth(today), reportMonth: today, source: '오늘' };
+  return { baseMonth: baseMonthOfToday(today), reportMonth: today, source: '오늘' };
 }
 
 /** 조회 전체가 던져도 9종 모두 조회 실패로 바꿔 이어 간다. */

@@ -71,8 +71,8 @@ describe('기준월 인자', () => {
     expect((await basisOf({})).source).toBe('오늘');
   });
 
-  it('reportMonth가 있으면 회차 − 2', async () => {
-    expect(await basisOf({ reportMonth: '2026/08' })).toEqual({ baseMonth: '2026/06', reportMonth: '2026/08', source: '회차' });
+  it('reportMonth가 있으면 그 회차의 달', async () => {
+    expect(await basisOf({ reportMonth: '2026/07' })).toEqual({ baseMonth: '2026/07', reportMonth: '2026/07', source: '회차' });
   });
 
   it('baseMonth가 있으면 그 달', async () => {

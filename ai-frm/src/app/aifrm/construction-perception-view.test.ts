@@ -109,9 +109,9 @@ describe('기준월 설명 (정책 §5, 2026-09-28 개정)', () => {
     ...over,
   });
 
-  it('회차를 올렸으면 회차가 보고월이다', () => {
-    expect(basisNote(basis({ baseMonth: '2026/06' as never, reportMonth: '2026/08' as never, source: '회차' }))).toBe(
-      '보고월 2026/08(최신 회차) → 기준월 2026/06',
+  it('회차를 올렸으면 최신 회차의 달이 기준월이다', () => {
+    expect(basisNote(basis({ baseMonth: '2026/07' as never, reportMonth: '2026/07' as never, source: '회차' }))).toBe(
+      '기준월 2026/07 = 최신 회차의 달',
     );
   });
 
@@ -121,7 +121,7 @@ describe('기준월 설명 (정책 §5, 2026-09-28 개정)', () => {
 
   it('직접 골랐으면 기본값도 함께 알린다', () => {
     expect(basisNote(basis({ baseMonth: '2026/05' as never, reportMonth: '2026/08' as never, source: '선택' }))).toBe(
-      '직접 고른 기준월 2026/05 · 기본값은 보고월 2026/08 − 2 = 2026/06',
+      '직접 고른 기준월 2026/05 · 기본값은 최신 회차의 달 2026/08',
     );
   });
 

@@ -56,27 +56,28 @@ describe('올린 회차 정리', () => {
 describe('산출 전 필요 회차 확인', () => {
   const have = (...rounds: string[]) => rounds.map((r) => r as never);
 
-  it('최신 회차 8월이면 — Gap·시재는 8월, 대금 회수는 7·8월, 건설경기(기준월 6월)는 3~6월', () => {
-    expect(requirementsOf(have('2026/04', '2026/05', '2026/06', '2026/07', '2026/08'))).toEqual([
-      { indicator: '유동성 Gap · 적정 시재', needed: ['2026/08'], missing: [], ifMissing: '' },
-      { indicator: '대금 회수 위험', needed: ['2026/07', '2026/08'], missing: [], ifMissing: '판정하지 않습니다' },
+  // 7월 판단: 4·5·6·7월 회차 네 개면 모든 지표가 채워진다.
+  it('최신 회차 7월이면 — Gap·시재는 7월, 대금 회수는 6·7월, 건설경기(기준월 7월)는 4~7월', () => {
+    expect(requirementsOf(have('2026/04', '2026/05', '2026/06', '2026/07'))).toEqual([
+      { indicator: '유동성 Gap · 적정 시재', needed: ['2026/07'], missing: [], ifMissing: '' },
+      { indicator: '대금 회수 위험', needed: ['2026/06', '2026/07'], missing: [], ifMissing: '판정하지 않습니다' },
       {
-        indicator: '건설경기 인식 지수 (기준월 2026/06)',
-        needed: ['2026/03', '2026/04', '2026/05', '2026/06'],
-        missing: ['2026/03'],
+        indicator: '건설경기 인식 지수 (기준월 2026/07)',
+        needed: ['2026/04', '2026/05', '2026/06', '2026/07'],
+        missing: [],
         ifMissing: '기본 기준월로는 산출불가입니다',
       },
     ]);
   });
 
   it('최신 회차 하나만 올리면 무엇이 빠졌는지 모두 알린다', () => {
-    const r = requirementsOf(have('2026/08'));
-    expect(r.map((x) => x.missing)).toEqual([[], ['2026/07'], ['2026/03', '2026/04', '2026/05', '2026/06']]);
+    const r = requirementsOf(have('2026/07'));
+    expect(r.map((x) => x.missing)).toEqual([[], ['2026/06'], ['2026/04', '2026/05', '2026/06']]);
   });
 
-  it('연도를 넘는 회차도 달력으로 센다 — 최신 2월이면 건설경기는 전년 9~12월', () => {
+  it('연도를 넘는 회차도 달력으로 센다 — 최신 2월이면 건설경기는 전년 11월~2월', () => {
     const r = requirementsOf(have('2026/02'));
-    expect(r[2]).toMatchObject({ indicator: '건설경기 인식 지수 (기준월 2025/12)', needed: ['2025/09', '2025/10', '2025/11', '2025/12'] });
+    expect(r[2]).toMatchObject({ indicator: '건설경기 인식 지수 (기준월 2026/02)', needed: ['2025/11', '2025/12', '2026/01', '2026/02'] });
   });
 });
 

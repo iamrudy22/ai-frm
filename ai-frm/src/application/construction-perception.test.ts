@@ -71,10 +71,20 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/07', index: 0, grade: '정상' });
   });
 
-  it('8월 회차를 올리면 보고월 8월 − 2 = 6월', async () => {
+  it('7월 회차를 올리면 기준월도 7월이다 — 4~7월 회차로 7월을 판단한다', async () => {
+    const r = await assess({ reportMonth: ym('2026/07') });
+    expect(r.basis).toEqual({ baseMonth: '2026/07', reportMonth: '2026/07', source: '회차' });
+    expect(r.result).toMatchObject({ kind: 'ok', month: '2026/07' });
+  });
+
+  it('회차의 달이 ECOS에 아직 없으면 그 지표만 공표 전이다 — 이전 달로 내려가지 않는다', async () => {
     const r = await assess({ reportMonth: ym('2026/08') });
-    expect(r.basis).toEqual({ baseMonth: '2026/06', reportMonth: '2026/08', source: '회차' });
-    expect(r.result).toMatchObject({ kind: 'ok', month: '2026/06' });
+    expect(r.basis.baseMonth).toBe('2026/08');
+    if (r.result.kind !== 'unavailable') throw new Error(r.result.kind);
+    expect(r.result.month).toBe('2026/08');
+    // KB지수·환율·주가는 8월까지 있고 나머지 6종은 7월까지다.
+    expect(r.result.missing).toHaveLength(6);
+    expect(r.result.missing[0].reason).toBe('아직 공표 전입니다(ECOS 최신 2026/07).');
   });
 
   it('사용자가 고른 달이 가장 우선이다', async () => {
