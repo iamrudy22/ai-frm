@@ -26,7 +26,12 @@ export interface ForecastLedgerRepository {
  * 서로 어긋날 수 있다.
  */
 export type IndicatorFetch =
-  | { readonly values: RawSeries; readonly unit: string }
+  | {
+      readonly values: RawSeries;
+      readonly unit: string;
+      /** 응답을 받은 시각. 캐시에서 꺼낸 값이면 처음 받은 시각이다. */
+      readonly fetchedAt?: Date;
+    }
   | { readonly error: string };
 
 export type SourceResult = Readonly<Record<EcosIndicatorKey, IndicatorFetch>>;

@@ -73,7 +73,7 @@ export class EcosIndicatorSource implements EconomicIndicatorSource {
     try {
       const response = await this.fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (!response.ok) return { error: `${stat}: HTTP ${response.status}` };
-      return translate(stat, (await response.json()) as EcosBody);
+      return translate(stat, (await response.json()) as EcosBody, this.now());
     } catch (e) {
       // 네트워크 오류 메시지에 URL(=인증키)이 섞여 나오는 일이 없도록 지운다.
       const message = e instanceof Error ? e.message : String(e);
@@ -82,10 +82,10 @@ export class EcosIndicatorSource implements EconomicIndicatorSource {
   }
 }
 
-function translate(stat: string, body: EcosBody): IndicatorFetch {
+function translate(stat: string, body: EcosBody, fetchedAt: Date): IndicatorFetch {
   if (body.RESULT !== undefined) {
     const code = String(body.RESULT.CODE ?? '');
-    if (code.endsWith('-200')) return { values: new Map(), unit: '' };
+    if (code.endsWith('-200')) return { values: new Map(), unit: '', fetchedAt };
     return { error: `${stat}: ${code} ${String(body.RESULT.MESSAGE ?? '')}`.trim() };
   }
 
@@ -108,5 +108,5 @@ function translate(stat: string, body: EcosBody): IndicatorFetch {
     values.set(month, value);
     unit = String(row.UNIT_NAME ?? '').trim();
   }
-  return { values, unit };
+  return { values, unit, fetchedAt };
 }

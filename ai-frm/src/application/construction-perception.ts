@@ -79,8 +79,7 @@ export async function assessPerception(
   now: () => Date = () => new Date(),
 ): Promise<Outcome<PerceptionReport>> {
   return settleAsync(async () => {
-    const fetchedAt = now();
-    const today = yearMonthOfDate(fetchedAt);
+    const today = yearMonthOfDate(now());
     const basis = basisOf(request, today);
 
     const fetched = await fetchSafely(source);
@@ -116,7 +115,7 @@ export async function assessPerception(
       diagnostics: {
         indicators: SCORING_RULES.map((r) => statuses.get(r.key) as IndicatorStatus),
         ledger: { latestActualMonth: ledger.latestActualMonth(), gaps: [...ledger.gaps()] },
-        fetchedAt,
+        fetchedAt: earliestFetch(fetched) ?? now(),
       },
     });
   }, '건설경기 인식 지수를 산출하지 못했습니다.');
@@ -140,6 +139,20 @@ async function fetchSafely(source: EconomicIndicatorSource): Promise<SourceResul
     const error: IndicatorFetch = { error: e instanceof Error ? e.message : 'ECOS 조회에 실패했습니다.' };
     return Object.fromEntries(ECOS_KEYS.map((k) => [k, error])) as SourceResult;
   }
+}
+
+/**
+ * 화면에 보일 조회 시각. 캐시에서 꺼낸 값이면 처음 받은 시각이어야 한다 —
+ * 산출 시각을 보이면 10분 묵은 값이 방금 받은 값처럼 보인다(기준월 계획 B-R3).
+ */
+function earliestFetch(fetched: SourceResult): Date | null {
+  let earliest: Date | null = null;
+  for (const f of Object.values(fetched)) {
+    if ('fetchedAt' in f && f.fetchedAt !== undefined && (earliest === null || f.fetchedAt < earliest)) {
+      earliest = f.fetchedAt;
+    }
+  }
+  return earliest;
 }
 
 function lastMonthOf(values: RawSeries): YearMonth | null {

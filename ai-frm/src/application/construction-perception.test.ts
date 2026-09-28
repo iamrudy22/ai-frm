@@ -186,6 +186,18 @@ describe('진단과 실패', () => {
     expect(d.ledger).toEqual({ latestActualMonth: '2026/07', gaps: [] });
   });
 
+  it('조회 시각은 산출 시각이 아니라 ECOS 응답을 받은 시각이다 — 캐시된 값이면 그때 시각', async () => {
+    const earlier = new Date(2026, 8, 28, 8, 55);
+    const source = new FixedSource();
+    const stamped: EconomicIndicatorSource = {
+      fetchAll: async () =>
+        Object.fromEntries(
+          Object.entries(await source.fetchAll()).map(([k, f]) => [k, { ...f, fetchedAt: earlier }]),
+        ) as SourceResult,
+    };
+    expect((await assess({}, stamped)).diagnostics.fetchedAt).toBe(earlier);
+  });
+
   it('이력 저장소가 실패하면 산출 자체가 실패다', async () => {
     const repo: ForecastLedgerRepository = {
       load: async () => {

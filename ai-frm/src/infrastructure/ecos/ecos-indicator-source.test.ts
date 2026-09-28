@@ -36,6 +36,13 @@ describe('ECOS 응답 번역', () => {
     expect(result.values.get('2026/07' as never)).toBe(14357324);
   });
 
+  it('응답을 받은 시각을 찍어 둔다 — 캐시에서 꺼내도 실제 조회 시각이 보이게', async () => {
+    const source = new EcosIndicatorSource('KEY', fakeFetch({ '901Y020': recorded('construction-orders.json') }), NOW);
+    const result = (await source.fetchAll()).총수주액;
+    if ('error' in result) throw new Error(result.error);
+    expect(result.fetchedAt).toEqual(NOW());
+  });
+
   it('환율은 항목코드 두 개(원/달러, 평균자료)로 부른다', async () => {
     const calls: Call[] = [];
     const source = new EcosIndicatorSource(
@@ -58,7 +65,7 @@ describe('ECOS 응답 번역', () => {
 
   it('데이터가 없다는 응답(INFO-200)은 빈 계열이다', async () => {
     const result = (await new EcosIndicatorSource('KEY', fakeFetch({}), NOW).fetchAll()).주가;
-    expect(result).toEqual({ values: new Map(), unit: '' });
+    expect(result).toEqual({ values: new Map(), unit: '', fetchedAt: NOW() });
   });
 
   it('키 오류 같은 RESULT 응답은 그 지표의 실패다 — HTTP 200이어도', async () => {
