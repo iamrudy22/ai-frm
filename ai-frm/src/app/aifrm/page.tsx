@@ -26,7 +26,6 @@ import {
 import type { Month, Statement } from '@/domain/cashflow/statement';
 import type { AdequateCashMonth } from '@/domain/risk/adequate-cash/adequate-cash';
 import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
-import type { Grade } from '@/domain/risk/grade';
 import {
   LIQUIDITY_WINDOW_MONTHS,
   type LiquidityGap,
@@ -35,16 +34,12 @@ import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
-import { money, percent } from './format';
+import { ConstructionPerceptionCard } from './construction-perception-card';
+import { GRADE_BADGE, money, percent } from './format';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
 
-const BADGE_VARIANT: Record<Grade, 'success' | 'warning' | 'orange' | 'error'> = {
-  정상: 'success',
-  주의: 'warning',
-  경고: 'orange',
-  위기: 'error',
-};
+const BADGE_VARIANT = GRADE_BADGE;
 
 type Row = { 항목: string; 값: string } & Record<string, unknown>;
 
@@ -137,7 +132,9 @@ export default function AifrmDashboardPage() {
             <VStack gap={1}>
               <Heading level={1}>재무위험 선행지표</Heading>
               <Text type="supporting">
-                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재를 함께 판정합니다.
+                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재를 함께 판정합니다. 건설경기
+                인식 지수는 한국은행 ECOS 지표로 따로 산출하며, 올린 최신 회차의 분양회수를 이력에
+                더합니다.
               </Text>
             </VStack>
 
@@ -212,6 +209,10 @@ export default function AifrmDashboardPage() {
                 </VStack>
               </VStack>
             )}
+
+            <Divider />
+
+            <ConstructionPerceptionCard latest={loaded?.latest ?? null} />
           </VStack>
         </LayoutContent>
       }

@@ -421,6 +421,8 @@ export async function POST(request: Request) {
 
 `app/aifrm/page.tsx`. **표시만** 한다.
 
+구현(W10): 카드는 `app/aifrm/construction-perception-card.tsx`로 따로 두었다. 표 행·기준월 설명·이력 안내·변화율 표기는 순수 함수(`construction-perception-view.ts`)로 떼어 테스트했다. 등급 배지 색은 `format.ts`의 `GRADE_BADGE`로 옮겨 세 지표가 함께 쓴다(`page.tsx`는 기본 내보내기 외의 이름을 내보낼 수 없다). 카드는 회차 업로드와 상관없이 뜬다.
+
 - 페이지를 열면 `GET /api/construction-perception`을 부른다. 회차를 올리면 `roundEntryOf`로 기재분을 떼어 `POST`하고, 성공하면 다시 `GET`한다.
 - 카드 내용:
   - 제목은 **건설경기 인식 지수**, 옆에 **기준월**을 적는다.
@@ -440,6 +442,7 @@ export async function POST(request: Request) {
   - 카드가 2026/07 기준으로 뜬다.
   - 콘솔 오류가 없다.
 - 브라우저로 내려온 JS 번들에 `ECOS_API_KEY` 값이 없는지 확인한다.
+- 결과(W10): GET 경로는 브라우저에서 2026/07 기준 15.15 정상으로 뜨고 콘솔 오류가 없다. 브라우저 도구로 파일을 올릴 수 없어 POST는 8월 회차 fixture에서 뗀 기재분을 실행 중인 서버에 직접 보내 확인했다(200, 깨진 본문 400). 값이 시드와 같아 이력 금액은 그대로이고 해당 칸의 시드 표시만 걷혔다. 번들 21개에 ECOS 요청 주소와 `ECOS_API_KEY` 이름이 없다.
 - 스크린숏을 남긴다.
 
 ## 12. W11 — 문서

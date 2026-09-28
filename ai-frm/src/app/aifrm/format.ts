@@ -6,7 +6,17 @@
  * 방식(Intl 기본값)이라 엑셀의 표시와 같다.
  */
 
+import type { Grade } from '@/domain/risk/grade';
+
 export const money = (n: number): string =>
   `${n.toLocaleString('ko-KR', { maximumFractionDigits: 0 })} 억원`;
 
 export const percent = (n: number): string => `${n.toFixed(1)}%`;
+
+/** 4단계 등급의 배지 색. 대금 회수 위험·유동성 Gap·건설경기 인식 지수가 함께 쓴다. */
+export const GRADE_BADGE: Record<Grade, 'success' | 'warning' | 'orange' | 'error'> = {
+  정상: 'success',
+  주의: 'warning',
+  경고: 'orange',
+  위기: 'error',
+};
