@@ -1,10 +1,11 @@
 /**
- * 도메인 경계 — 지표별 정책 분리를 약속이 아니라 테스트로 지킨다.
+ * 계층·지표 경계 — 지표별 정책 분리와 계층 방향을 약속이 아니라 테스트로 지킨다.
  *
  * 규칙
  *   1. risk/<지표>/ 아래 파일은 다른 지표 폴더를 import하지 않는다.
  *   2. risk/<지표>/policy.ts는 risk/grade와 domain/shared만 import한다.
  *   3. domain/ 아래 어떤 파일도 바깥 계층(application·infrastructure·app)과 xlsx를 모른다.
+ *   4. application/은 화면(app)·판독(infrastructure)·xlsx를 모른다. 회차를 받아 셈만 한다.
  *
  * 검사 범위: 정적 `import … from '…'`, `export … from '…'`, 부수효과 `import '…'`,
  * 동적 `import('…')`. 이 코드베이스에 그 밖의 모듈 적재 방식은 없다.
@@ -18,6 +19,7 @@ type SourceFile = { readonly path: string; readonly source: string };
 
 const INDICATOR = /^domain\/risk\/([^/]+)\//;
 const OUTER_LAYERS = ['application/', 'infrastructure/', 'app/'];
+const APPLICATION_MAY_NOT = ['infrastructure/', 'app/'];
 const FORBIDDEN_PACKAGES = ['xlsx'];
 const POLICY_MAY_IMPORT = [/^domain\/risk\/grade$/, /^domain\/shared\//];
 
@@ -46,6 +48,19 @@ function violations(files: readonly SourceFile[]): string[] {
   const found: string[] = [];
 
   for (const { path, source } of files) {
+    if (path.startsWith('application/')) {
+      for (const specifier of specifiersOf(source)) {
+        const target = resolveInternal(path, specifier);
+        const forbidden =
+          target === null
+            ? FORBIDDEN_PACKAGES.includes(specifier)
+            : APPLICATION_MAY_NOT.some((layer) => target.startsWith(layer));
+        if (forbidden) {
+          found.push(`${path} → ${specifier}: 유스케이스는 화면·판독·xlsx를 모른다`);
+        }
+      }
+      continue;
+    }
     if (!path.startsWith('domain/')) continue;
     const own = indicatorOf(path);
     const isPolicy = own !== null && path === `domain/risk/${own}/policy.ts`;
@@ -94,15 +109,13 @@ function walk(dir: string): string[] {
   });
 }
 
-const SELF = 'domain/boundaries.test.ts';
-
-// 이 파일은 위반 예시를 문자열로 품고 있으므로 검사 대상에서 뺀다.
-const sources: SourceFile[] = walk(join(SRC, 'domain'))
-  .map((full) => ({
+// 이 파일은 위반 예시를 문자열로 품고 있어서 검사 대상 폴더 밖(src/)에 둔다.
+const sources: SourceFile[] = [...walk(join(SRC, 'domain')), ...walk(join(SRC, 'application'))].map(
+  (full) => ({
     path: relative(SRC, full).split(sep).join('/'),
     source: readFileSync(full, 'utf8'),
-  }))
-  .filter((f) => f.path !== SELF);
+  }),
+);
 
 const indicators = [...new Set(sources.map((f) => indicatorOf(f.path)).filter((x) => x !== null))];
 
@@ -152,6 +165,22 @@ describe('경계 검사기', () => {
     expect(v).toHaveLength(2);
   });
 
+  it('유스케이스가 화면·판독·xlsx를 쓰면 잡는다', () => {
+    const v = violations([
+      file('application/dashboard.ts', `import { readStatement } from '@/infrastructure/xlsx/statement-reader';`),
+      file('application/dashboard.ts', `import Page from '../app/aifrm/page';`),
+      file('application/dashboard.ts', `import * as XLSX from 'xlsx';`),
+    ]);
+    expect(v).toHaveLength(3);
+  });
+
+  it('유스케이스가 도메인을 쓰는 것은 허용한다', () => {
+    const v = violations([
+      file('application/dashboard.ts', `import { checkConsecutive } from '@/domain/cashflow/statement';`),
+    ]);
+    expect(v).toEqual([]);
+  });
+
   it('제 폴더, 등급 도구, 회차, 금액을 쓰는 것은 허용한다', () => {
     const v = violations([
       file(
@@ -174,7 +203,7 @@ describe('경계 검사기', () => {
 
 // ── 실제 소스에 적용 ──────────────────────────────────────────────────────
 
-describe('도메인 경계', () => {
+describe('실제 소스의 경계', () => {
   // 경로를 잘못 잡아 아무것도 훑지 않고 통과하는 일을 막는다.
   it('지표 폴더를 둘 이상 찾는다', () => {
     expect(indicators.length).toBeGreaterThanOrEqual(2);
@@ -185,6 +214,10 @@ describe('도메인 경계', () => {
       expect(sources.some((f) => f.path === `domain/risk/${indicator}/policy.ts`)).toBe(true);
     }
     expect(sources.some((f) => f.path === 'domain/risk/policy.ts')).toBe(false);
+  });
+
+  it('유스케이스 파일도 검사한다', () => {
+    expect(sources.some((f) => f.path.startsWith('application/'))).toBe(true);
   });
 
   it('위반이 없다', () => {

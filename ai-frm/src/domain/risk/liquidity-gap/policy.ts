@@ -8,7 +8,7 @@
  *
  * 이 지표의 정책은 이 파일만 소유한다. 다른 지표의 정책과 한 파일에 두지 않는다 —
  * 한 지표의 기준을 바꿀 때 다른 지표의 코드와 테스트가 함께 흔들리면 안 된다
- * (docs/plans/2026-09-28-jipyo-bunri-plan.md). 경계는 domain/boundaries.test.ts가 지킨다.
+ * (docs/plans/2026-09-28-jipyo-bunri-plan.md). 경계는 src/boundaries.test.ts가 지킨다.
  *
  * 값은 비율이다. 회의록이 "0.5 이상"처럼 비율로 적고 있고,
  * 퍼센트 변환은 화면에서만 한다.

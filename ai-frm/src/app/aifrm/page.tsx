@@ -15,19 +15,18 @@ import { Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
-import { checkConsecutive, type Month, type Statement } from '@/domain/cashflow/statement';
+import {
+  assessDashboard,
+  type Dashboard,
+  type Outcome,
+  type PaymentRecoveryResult,
+} from '@/application/dashboard';
+import type { Month, Statement } from '@/domain/cashflow/statement';
 import type { Grade } from '@/domain/risk/grade';
 import {
-  assessLiquidityGap,
-  liquidityGapInputFrom,
   LIQUIDITY_WINDOW_MONTHS,
   type LiquidityGap,
 } from '@/domain/risk/liquidity-gap/liquidity-gap';
-import {
-  assessPaymentRecovery,
-  paymentRecoveryInputFrom,
-  type PaymentRecovery,
-} from '@/domain/risk/payment-recovery/payment-recovery';
 import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
@@ -55,7 +54,6 @@ const COLUMNS = [
 type Loaded = {
   readonly previous: Statement | null;
   readonly latest: Statement;
-  readonly warning: string | null;
 };
 
 // ── 화면 ─────────────────────────────────────────────────────────────────
@@ -96,7 +94,6 @@ export default function AifrmDashboardPage() {
       }
 
       let previous: Statement | null = null;
-      let warning: string | null = null;
 
       if (previousFile !== null) {
         const previousResult = readStatement(await previousFile.arrayBuffer());
@@ -105,14 +102,9 @@ export default function AifrmDashboardPage() {
           return;
         }
         previous = previousResult.statement;
-
-        // 자리가 뒤바뀌면 회수율이 뒤집힌다. 알리되 임의로 고치지 않는다.
-        // 대금 회수 판정 자체는 도메인(paymentRecoveryInputFrom)이 막는다.
-        const order = checkConsecutive(previous, latestResult.statement);
-        if (!order.ok) warning = order.reason;
       }
 
-      setLoaded({ previous, latest: latestResult.statement, warning });
+      setLoaded({ previous, latest: latestResult.statement });
       setBaseMonthLabel(latestResult.statement.defaultBaseMonth.label);
     } catch {
       setError('파일을 처리하는 중 문제가 생겼습니다.');
@@ -127,23 +119,11 @@ export default function AifrmDashboardPage() {
   }, [loaded, baseMonthLabel]);
 
   // 기준월을 바꿔도 파일을 다시 읽지 않는다. 이미 읽어 둔 회차로 다시 셈한다.
-  const gap = useMemo((): LiquidityGap | string | null => {
+  // 어느 회차로 어느 지표를 셈하는지, 실패를 어떻게 격리하는지는 유스케이스가 정한다.
+  const dashboard = useMemo((): Dashboard | null => {
     if (loaded === null || baseMonth === null) return null;
-    try {
-      return assessLiquidityGap(liquidityGapInputFrom(loaded.latest, baseMonth));
-    } catch (e) {
-      return e instanceof Error ? e.message : '유동성 Gap을 산출할 수 없습니다.';
-    }
+    return assessDashboard(loaded.previous, loaded.latest, baseMonth);
   }, [loaded, baseMonth]);
-
-  const recovery = useMemo((): PaymentRecovery | string | null => {
-    if (loaded === null || loaded.previous === null) return null;
-    try {
-      return assessPaymentRecovery(paymentRecoveryInputFrom(loaded.previous, loaded.latest));
-    } catch (e) {
-      return e instanceof Error ? e.message : '대금 회수 위험을 산출할 수 없습니다.';
-    }
-  }, [loaded]);
 
   return (
     <Layout
@@ -197,18 +177,12 @@ export default function AifrmDashboardPage() {
               <Banner status="error" title="판정할 수 없습니다" description={error} />
             )}
 
-            {loaded !== null && loaded.warning !== null && (
-              <Banner
-                status="warning"
-                title="회차 순서를 확인해 주세요"
-                description={`${loaded.warning} 대금 회수 위험은 서로 다른 달을 비교하게 되므로 판정하지 않았습니다. 유동성 Gap은 최신 회차 자리에 올린 파일로 산출했습니다.`}
-              />
-            )}
+            {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
 
-            {loaded !== null && (
+            {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
                 <Selector
-                  label={`유동성 Gap 기준월 (${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달)`}
+                  label={`기준월 (${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달)`}
                   options={loaded.latest.months.map((m) => m.label)}
                   value={baseMonthLabel ?? undefined}
                   onChange={setBaseMonthLabel}
@@ -218,14 +192,14 @@ export default function AifrmDashboardPage() {
 
                 <VStack gap={3}>
                   <Heading level={2}>대금 회수 위험</Heading>
-                  <RecoveryResult recovery={recovery} />
+                  <RecoveryResult recovery={dashboard.paymentRecovery} />
                 </VStack>
 
                 <Divider />
 
                 <VStack gap={3}>
                   <Heading level={2}>유동성 Gap</Heading>
-                  <GapResult gap={gap} baseMonth={baseMonth} />
+                  <GapResult gap={dashboard.liquidityGap} baseMonth={baseMonth} />
                 </VStack>
               </VStack>
             )}
@@ -236,9 +210,42 @@ export default function AifrmDashboardPage() {
   );
 }
 
+// ── 진단 ─────────────────────────────────────────────────────────────────
+
+// 판정을 막지 않는 신호들. 결과보다 위에 두어 결과를 읽기 전에 보이게 한다.
+function Diagnostics({ diagnostics }: { diagnostics: Dashboard['diagnostics'] }) {
+  const { order, rollForward, unreadable } = diagnostics;
+
+  return (
+    <>
+      {order !== null && !order.ok && (
+        <Banner
+          status="warning"
+          title="회차 순서를 확인해 주세요"
+          description={`${order.reason} 대금 회수 위험은 서로 다른 달을 비교하게 되므로 판정하지 않았습니다. 유동성 Gap은 최신 회차 자리에 올린 파일로 산출했습니다.`}
+        />
+      )}
+      {unreadable.length > 0 && (
+        <Banner
+          status="warning"
+          title="최신 회차에서 읽지 못한 항목이 있습니다"
+          description={`${unreadable.map(({ item, reason }) => `${item}: ${reason}`).join(' / ')} 이 항목을 쓰는 지표만 산출하지 않았습니다.`}
+        />
+      )}
+      {rollForward.length > 0 && (
+        <Banner
+          status="warning"
+          title="시재가 다음 달로 이어지지 않습니다"
+          description={`${rollForward.join(' ')} 판독이 엉뚱한 행을 읽었을 수 있습니다.`}
+        />
+      )}
+    </>
+  );
+}
+
 // ── 결과 ─────────────────────────────────────────────────────────────────
 
-function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | null }) {
+function RecoveryResult({ recovery }: { recovery: Outcome<PaymentRecoveryResult> | null }) {
   if (recovery === null) {
     return (
       <Text type="supporting">
@@ -247,14 +254,14 @@ function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | nul
     );
   }
 
-  if (typeof recovery === 'string') {
-    return <Banner status="error" title="산출할 수 없습니다" description={recovery} />;
-  }
-
-  if (recovery.kind === 'invalid') {
+  if (!recovery.ok) {
     return <Banner status="error" title="판정하지 않았습니다" description={recovery.reason} />;
   }
 
+  return <RecoveryDetail recovery={recovery.value} />;
+}
+
+function RecoveryDetail({ recovery }: { recovery: PaymentRecoveryResult }) {
   const rows: Row[] = [
     { 항목: '판정 대상월', 값: recovery.targetMonthLabel ?? '—' },
     { 항목: '계획값 (분양회수)', 값: money(recovery.plan) },
@@ -275,19 +282,15 @@ function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | nul
   );
 }
 
-function GapResult({
-  gap,
-  baseMonth,
-}: {
-  gap: LiquidityGap | string | null;
-  baseMonth: Month | null;
-}) {
-  if (gap === null) return null;
-
-  if (typeof gap === 'string') {
-    return <Banner status="error" title="산출할 수 없습니다" description={gap} />;
+function GapResult({ gap, baseMonth }: { gap: Outcome<LiquidityGap>; baseMonth: Month | null }) {
+  if (!gap.ok) {
+    return <Banner status="error" title="산출할 수 없습니다" description={gap.reason} />;
   }
 
+  return <GapDetail gap={gap.value} baseMonth={baseMonth} />;
+}
+
+function GapDetail({ gap, baseMonth }: { gap: LiquidityGap; baseMonth: Month | null }) {
   const windowLabel = `${baseMonth?.label ?? '—'}부터 ${LIQUIDITY_WINDOW_MONTHS}개월`;
 
   const rows: Row[] =

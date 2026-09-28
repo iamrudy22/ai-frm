@@ -21,7 +21,7 @@
 |---|---|---|---|
 | P1 | 대금 회수 월 일치 검증 | `risk/payment-recovery.ts` | `fix: 대금 회수 위험이 서로 다른 달을 비교하지 않는다` |
 | P2-1 | 지표별 폴더·정책 분리 | `risk/{payment-recovery,liquidity-gap}/policy.ts` | `refactor: 지표별 정책 분리` |
-| P2-2 | 경계 테스트 | `domain/boundaries.test.ts` | (P2-1과 같은 커밋) |
+| P2-2 | 경계 테스트 | `src/boundaries.test.ts` (P4에서 옮김) | (P2-1과 같은 커밋) |
 | P3-1 | 회차가 읽지 못한 항목을 품는다 | `cashflow/statement.ts` | `refactor: 판독 실패를 항목 단위로 격리` |
 | P3-2 | 판독 실패를 항목 단위로 기록 | `infrastructure/xlsx/statement-reader.ts` | (P3-1과 같은 커밋) |
 | P4-1 | 애플리케이션 서비스 | `application/dashboard.ts` | `feat: 대시보드 유스케이스와 지표별 실패 격리` |
@@ -246,3 +246,14 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
 - `checkRollForward`는 기초시재·수입계·지출 중 하나라도 못 읽으면 "확인할 수 없습니다"를 돌려준다. 빈 목록은 "확인했고 맞다"로 읽히기 때문이다.
 - 판독 테스트 3개의 기대를 "거부"에서 "그 항목만 못 읽음"으로 바꿨다. 새로 추가한 테스트 두 가지: "어떤 항목도 못 읽으면 거부", "분양회수 칸이 비어도 유동성 Gap 169%".
 - 테스트 95 → 104개. `tsc`·`eslint`·`next build` 통과.
+
+### P4 결과 (2026-09-28)
+
+- `application/dashboard.ts`의 `assessDashboard(previous, latest, base)`가 지표 조율을 맡는다. 결과는 `Outcome<T>` 한 모양이고, 대금 회수의 `kind: 'invalid'`도 여기서 `ok: false`로 모인다.
+- **화면에 숨어 있던 규칙을 테스트로 고정했다.** 대금 회수는 회차 기준월, 유동성 Gap은 고른 기준월로 셈한다. 이전 회차가 없으면 대금 회수는 `null`이다.
+- 실패 격리 테스트 5개: 비연속 회차, 창 부족, 분양회수 못 읽음, 수입 못 읽음, 계획값 0. 모두 한 지표만 실패하고 다른 지표는 산출된다.
+- 진단(`order`·`rollForward`·`unreadable`)을 모아 화면 상단 경고 배너로 띄운다. 롤포워드 진단이 처음으로 사용자에게 보인다.
+- **경계 테스트를 `src/boundaries.test.ts`로 옮겼다.** 유스케이스 규칙("application은 app·infrastructure·xlsx를 모른다")을 검사하려면 domain 밖을 봐야 하기 때문이다. 검사 대상 폴더 밖에 두니 자기 제외 필터도 필요 없어졌다.
+- 기준월 선택자 라벨을 "기준월"로 바꿨다.
+- **브라우저 확인**: 합성 xlsx(실수치 아님)를 `public/`에 잠시 두고, 파일 입력에 넣어 세 경우를 확인한 뒤 지웠다. ① 정상: 대금 회수 0.8 주의, 유동성 Gap 정상. ② 최신 회차의 분양회수 칸 비움: 경고 배너, 대금 회수만 "판정하지 않았습니다", Gap은 정상. ③ 회차 순서 뒤바꿈: 순서 경고, 대금 회수만 판정 안 함. 콘솔 오류 없음.
+- 테스트 104 → 117개. `tsc`·`eslint`·`next build` 통과.
