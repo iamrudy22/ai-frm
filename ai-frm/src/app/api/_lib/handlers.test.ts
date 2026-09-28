@@ -31,9 +31,11 @@ const post = (payload: unknown) =>
     body: typeof payload === 'string' ? payload : JSON.stringify(payload),
   });
 
+const get = (query = '') => new Request('http://localhost/api/construction-perception' + query);
+
 describe('GET /api/construction-perception', () => {
   it('산출 결과를 JSON으로 돌려준다 — 키가 없으면 산출불가와 사유다', async () => {
-    const res = await handlePerception(noKey, new MemoryRepository());
+    const res = await handlePerception(get(), noKey, new MemoryRepository());
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
@@ -49,9 +51,35 @@ describe('GET /api/construction-perception', () => {
       },
       save: async () => {},
     };
-    const res = await handlePerception(noKey, broken);
+    const res = await handlePerception(get(), noKey, broken);
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ ok: false, reason: '이력 파일이 JSON이 아닙니다' });
+  });
+});
+
+describe('GET 기준월 인자', () => {
+  const basisOf = async (query: string) => (await (await handlePerception(get(query), noKey, new MemoryRepository())).json()).value.basis;
+
+  it('인자가 없으면 오늘 − 2', async () => {
+    expect((await basisOf('')).source).toBe('오늘');
+  });
+
+  it('reportMonth가 있으면 회차 − 2', async () => {
+    expect(await basisOf('?reportMonth=2026%2F08')).toEqual({ baseMonth: '2026/06', reportMonth: '2026/08', source: '회차' });
+  });
+
+  it('baseMonth가 있으면 그 달', async () => {
+    expect(await basisOf('?baseMonth=2026/05&reportMonth=2026/08')).toEqual({
+      baseMonth: '2026/05',
+      reportMonth: '2026/08',
+      source: '선택',
+    });
+  });
+
+  it.each(['?baseMonth=202605', '?reportMonth=2026/13', '?baseMonth='])('형식이 틀리면 400이다 — %s', async (query) => {
+    const res = await handlePerception(get(query), noKey, new MemoryRepository());
+    expect(res.status).toBe(400);
+    expect((await res.json()).reason).toMatch(/YYYY\/MM|1~12/);
   });
 });
 

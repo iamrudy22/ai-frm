@@ -8,17 +8,39 @@
  * 테스트한다. route.ts는 조립한 의존성을 넘기기만 한다.
  */
 
-import { assessPerception } from '@/application/construction-perception';
+import { assessPerception, type PerceptionRequest } from '@/application/construction-perception';
 import type { EconomicIndicatorSource, ForecastLedgerRepository } from '@/application/ports';
 import { recordRound } from '@/application/record-round';
 import { roundEntry } from '@/domain/cashflow/round-entry';
+import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
+/**
+ * GET ?baseMonth=YYYY/MM&reportMonth=YYYY/MM — 둘 다 없어도 된다.
+ * baseMonth는 사용자가 고른 기준월, reportMonth는 올린 최신 회차의 기준월이다.
+ */
 export async function handlePerception(
+  request: Request,
   source: EconomicIndicatorSource,
   repo: ForecastLedgerRepository,
 ): Promise<Response> {
-  const out = await assessPerception(source, repo);
+  let perceptionRequest: PerceptionRequest;
+  try {
+    const params = new URL(request.url).searchParams;
+    perceptionRequest = {
+      baseMonth: monthParam(params, 'baseMonth'),
+      reportMonth: monthParam(params, 'reportMonth'),
+    };
+  } catch (e) {
+    return Response.json({ ok: false, reason: e instanceof Error ? e.message : '인자가 올바르지 않습니다.' }, { status: 400 });
+  }
+
+  const out = await assessPerception(source, repo, perceptionRequest);
   return Response.json(out, { status: out.ok ? 200 : 500 });
+}
+
+function monthParam(params: URLSearchParams, name: string): YearMonth | undefined {
+  const value = params.get(name);
+  return value === null ? undefined : parseYearMonth(value);
 }
 
 export async function handleRecordRound(request: Request, repo: ForecastLedgerRepository): Promise<Response> {
