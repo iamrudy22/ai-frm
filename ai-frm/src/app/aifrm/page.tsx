@@ -4,9 +4,11 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
 import { FileInput } from '@astryxdesign/core/FileInput';
+import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
@@ -32,9 +34,9 @@ import {
 import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
-import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
+import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
-import { ConstructionPerceptionCard } from './construction-perception-card';
+import { ConstructionPerceptionCard, usePerception } from './construction-perception-card';
 import {
   arrangeRounds,
   requirementsOf,
@@ -44,6 +46,14 @@ import {
   type UploadedRound,
 } from './uploaded-rounds';
 import { calendarOfLabel, calendarOptions, monthAt, spanText } from './dashboard-view';
+import {
+  adequateCashTile,
+  gapTile,
+  perceptionTile,
+  recoveryTile,
+  type SummaryStatus,
+  type SummaryTile,
+} from './summary-view';
 import { GRADE_BADGE, money, percent } from './format';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
@@ -145,6 +155,9 @@ export default function AifrmDashboardPage() {
     return assessDashboard(loaded.previous?.statement ?? null, loaded.latest.statement, baseMonth);
   }, [loaded, baseMonth]);
 
+  // 위쪽 요약과 아래 카드가 같은 결과를 쓴다. 산출 전에는 부르지 않는다.
+  const perception = usePerception(loaded?.latest.statement ?? null, loaded?.rounds ?? null);
+
   return (
     <Layout
       contentWidth={960}
@@ -195,6 +208,8 @@ export default function AifrmDashboardPage() {
 
             {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
+                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception.response)} />
+
                 <Divider />
 
                 <VStack gap={3}>
@@ -232,14 +247,68 @@ export default function AifrmDashboardPage() {
             {loaded !== null && (
               <>
                 <Divider />
-                {/* 회차를 새로 읽으면 카드를 새로 만든다 — 고른 기준월이 기본값으로 돌아간다. */}
-                <ConstructionPerceptionCard key={loaded.rounds.map((r) => `${r.round}:${r.file}`).join()} latest={loaded.latest.statement} rounds={loaded.rounds} />
+                <ConstructionPerceptionCard perception={perception} />
               </>
             )}
           </VStack>
         </LayoutContent>
       }
     />
+  );
+}
+
+// ── 요약 ─────────────────────────────────────────────────────────────────
+
+function summaryTiles(
+  loaded: Loaded,
+  dashboard: Dashboard,
+  gapMonth: YearMonth | null,
+  perception: Parameters<typeof perceptionTile>[0],
+): SummaryTile[] {
+  const statement = loaded.latest.statement;
+  const recovery = dashboard.paymentRecovery;
+  const target =
+    recovery?.ok && recovery.value.targetMonthLabel !== undefined
+      ? calendarOfLabel(statement, recovery.value.targetMonthLabel)
+      : null;
+  const adequate = dashboard.adequateCash;
+  return [
+    recoveryTile(recovery, { target, previousRound: addMonths(loaded.latest.round, -1) }),
+    gapTile(dashboard.liquidityGap, gapMonth === null ? '—' : spanText(gapMonth, LIQUIDITY_WINDOW_MONTHS)),
+    adequateCashTile(adequate, adequate.ok ? windowText(statement, adequate.value) : '—'),
+    perceptionTile(perception),
+  ];
+}
+
+/** 네 지표를 먼저 한 줄로. 상세는 아래 섹션에 있다. */
+function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
+  return (
+    <Grid gap={4} columns={{ minWidth: 200, repeat: 'fit' }}>
+      {tiles.map((tile) => (
+        <Card key={tile.title}>
+          <VStack gap={2}>
+            <Text type="label">{tile.title}</Text>
+            <HStack>
+              <StatusMark status={tile.status} />
+            </HStack>
+            <Text type="display-3">{tile.value}</Text>
+            <Text type="supporting" size="xsm">
+              {tile.note}
+            </Text>
+          </VStack>
+        </Card>
+      ))}
+    </Grid>
+  );
+}
+
+function StatusMark({ status }: { status: SummaryStatus }) {
+  if (status.kind === 'grade') return <Badge variant={BADGE_VARIANT[status.grade]} label={status.grade} />;
+  return (
+    <HStack gap={2} vAlign="center">
+      <StatusDot variant={status.variant} label={status.label} />
+      <Text type="supporting">{status.label}</Text>
+    </HStack>
   );
 }
 

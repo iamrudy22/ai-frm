@@ -1,18 +1,18 @@
 'use client';
 
 /**
- * 건설경기 인식 지수 카드 — 표시만 한다(구현 계획 §11).
+ * 건설경기 인식 지수 — 조회 훅과 표시 카드(구현 계획 §11).
  *
- * 흐름 조율은 서버의 유스케이스가 맡는다. 이 카드는 페이지가 읽어 둔 회차들에서
- * 분양회수 기재분만 떼어 기준월과 함께 POST로 보내고, 받은 결과를 그린다.
- * 파일은 페이지 위쪽 한 곳에서만 올린다.
+ * 흐름 조율은 서버의 유스케이스가 맡는다. usePerception은 페이지가 읽어 둔 회차들에서
+ * 분양회수 기재분만 떼어 기준월과 함께 POST로 보내고 결과를 들고 있는다. 페이지는
+ * 그 결과를 위쪽 요약과 이 카드에 함께 쓴다. 카드는 그리기만 한다.
  *
  * 회차는 저장하지 않는다(2026-09-28). 올린 회차만으로 매번 계산한다.
  * 분양회수 예측오차(기준월 t)에는 t−3 ~ t월 회차 네 개가 필요하다.
  *
  * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2.
- * 서버가 정한다. 카드는 보고월(최신 회차)과 사용자가 고른 달만 보낸다. 페이지는
- * 회차를 새로 읽을 때마다 카드를 새로 만들어, 고른 달이 기본값으로 돌아간다.
+ * 서버가 정한다. 훅은 보고월(최신 회차)과 사용자가 고른 달만 보낸다. 고른 달은
+ * 그때의 회차 묶음에 묶여 있어서, 회차를 새로 읽으면 기본값으로 돌아간다.
  *
  * 서버 전용 모듈(ECOS)을 import하지 않는다(경계 규칙 6).
  */
@@ -60,30 +60,39 @@ const MISSING_COLUMNS = [
   { key: '사유', header: '사유' },
 ];
 
+export type Perception = {
+  /** 이 회차 묶음의 결과. 아직 한 번도 받지 못했으면 null. */
+  readonly response: PerceptionResponse | null;
+  /** 기준월을 바꿔 다시 받는 중. response는 앞선 결과다. */
+  readonly isLoading: boolean;
+  /** 분양회수를 떼지 못한 회차. */
+  readonly unreadable: { readonly text: string } | null;
+  readonly choose: (month: YearMonth) => void;
+  readonly reset: () => void;
+};
+
+type Choice = { readonly for: readonly NamedStatement[]; readonly month: YearMonth };
+
 type Loaded = {
-  /** 이 결과가 어느 선택에 대한 것인가. 다르면 아직 불러오는 중이다. */
+  /** 어느 회차 묶음·선택에 대한 결과인가. 다르면 아직 불러오는 중이다. */
+  readonly for: readonly NamedStatement[];
   readonly chosen: YearMonth | undefined;
   readonly response: PerceptionResponse;
 };
 
-export function ConstructionPerceptionCard({
-  latest,
-  rounds: named,
-}: {
-  latest: Statement;
-  /** 올린 회차 전부. 분양회수 예측오차에 쓴다. */
-  rounds: readonly NamedStatement[];
-}) {
-  const [chosen, setChosen] = useState<YearMonth | undefined>(undefined);
+/** named가 null이면(아직 산출 전) 부르지 않는다. */
+export function usePerception(latest: Statement | null, named: readonly NamedStatement[] | null): Perception {
+  const [choice, setChoice] = useState<Choice | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
 
-  const reportMonth = calendarOf(latest, latest.defaultBaseMonth);
+  const chosen = named !== null && choice?.for === named ? choice.month : undefined;
+  const reportMonth = latest === null ? undefined : calendarOf(latest, latest.defaultBaseMonth);
 
   // 회차마다 분양회수 기재분을 뗀다. 못 뗀 회차는 알리고 빼고 보낸다.
   const { rounds, unreadable } = useMemo(() => {
     const entries: RoundEntry[] = [];
     const failures: BatchResult[] = [];
-    for (const { file, statement } of named) {
+    for (const { file, statement } of named ?? []) {
       try {
         entries.push(roundEntryOf(statement));
       } catch (e) {
@@ -94,35 +103,43 @@ export function ConstructionPerceptionCard({
   }, [named]);
 
   useEffect(() => {
+    if (named === null) return;
     let cancelled = false;
     (async () => {
       const response = await fetchPerception(rounds, reportMonth, chosen);
-      if (!cancelled) setLoaded({ chosen, response });
+      if (!cancelled) setLoaded({ for: named, chosen, response });
     })();
     return () => {
       cancelled = true;
     };
-  }, [rounds, chosen, reportMonth]);
+  }, [named, rounds, chosen, reportMonth]);
 
-  const isLoading = loaded === null || loaded.chosen !== chosen;
+  const current = named !== null && loaded?.for === named ? loaded : null;
+  return {
+    response: current?.response ?? null,
+    isLoading: current === null || current.chosen !== chosen,
+    unreadable,
+    choose: (month) => {
+      if (named !== null) setChoice({ for: named, month });
+    },
+    reset: () => setChoice(null),
+  };
+}
 
+export function ConstructionPerceptionCard({ perception }: { perception: Perception }) {
+  const { response, isLoading, unreadable, choose, reset } = perception;
   return (
     <VStack gap={3}>
       <Heading level={2}>건설경기 인식 지수</Heading>
       {unreadable !== null && (
         <Banner status="warning" title="분양회수를 읽지 못한 회차가 있습니다" description={unreadable.text} />
       )}
-      {loaded === null ? (
+      {response === null ? (
         <Text type="supporting">한국은행 ECOS에서 지표를 불러오는 중…</Text>
-      ) : loaded.response.ok ? (
-        <PerceptionResult
-          report={loaded.response.value}
-          isLoading={isLoading}
-          onChoose={setChosen}
-          onReset={() => setChosen(undefined)}
-        />
+      ) : response.ok ? (
+        <PerceptionResult report={response.value} isLoading={isLoading} onChoose={choose} onReset={reset} />
       ) : (
-        <Banner status="error" title="산출할 수 없습니다" description={loaded.response.reason} />
+        <Banner status="error" title="산출할 수 없습니다" description={response.reason} />
       )}
     </VStack>
   );
