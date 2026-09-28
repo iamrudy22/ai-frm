@@ -1,0 +1,964 @@
+<?xml version="1.0" encoding="UTF-8"?><root><message><proframeHeader>
+<pfmAppName>BIS-KOFIABOND</pfmAppName>
+<pfmSvcName>BISBndSrtPrcSrchSO</pfmSvcName>
+<pfmFnName>selectTrm</pfmFnName>
+<pfmGlobalNo>recorded</pfmGlobalNo>
+<pfmTrDate>20260928</pfmTrDate>
+<pfmTrTime>20260928221417089</pfmTrTime>
+<pfmClntIp>0.0.0.0</pfmClntIp>
+<pfmResponseDtal></pfmResponseDtal>
+</proframeHeader>
+<systemHeader>
+</systemHeader>
+<BISBndSrtPrcTrmListDTO>
+<dbio_total_count_>22</dbio_total_count_>
+<dbio_fetch_seq_>0</dbio_fetch_seq_>
+<dbio_fetch_size_>0</dbio_fetch_size_>
+<dbio_affected_count_>0</dbio_affected_count_>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260731</standardDt>
+<val1>3.680</val1>
+<val2>3.665</val2>
+<val3>3.679</val3>
+<val4 />
+<val5 />
+<val6>3.674</val6>
+<val7 />
+<val8>3.395</val8>
+<val9>3.390</val9>
+<val10>3.395</val10>
+<val11 />
+<val12 />
+<val13>3.393</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260730</standardDt>
+<val1>3.695</val1>
+<val2>3.688</val2>
+<val3>3.704</val3>
+<val4 />
+<val5 />
+<val6>3.695</val6>
+<val7 />
+<val8>3.400</val8>
+<val9>3.395</val9>
+<val10>3.405</val10>
+<val11 />
+<val12 />
+<val13>3.400</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260729</standardDt>
+<val1>3.700</val1>
+<val2>3.683</val2>
+<val3>3.694</val3>
+<val4 />
+<val5 />
+<val6>3.692</val6>
+<val7 />
+<val8>3.395</val8>
+<val9>3.390</val9>
+<val10>3.395</val10>
+<val11 />
+<val12 />
+<val13>3.393</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260728</standardDt>
+<val1>3.710</val1>
+<val2>3.698</val2>
+<val3>3.704</val3>
+<val4 />
+<val5 />
+<val6>3.704</val6>
+<val7 />
+<val8>3.400</val8>
+<val9>3.390</val9>
+<val10>3.395</val10>
+<val11 />
+<val12 />
+<val13>3.395</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260727</standardDt>
+<val1>3.720</val1>
+<val2>3.713</val2>
+<val3>3.714</val3>
+<val4 />
+<val5 />
+<val6>3.715</val6>
+<val7 />
+<val8>3.400</val8>
+<val9>3.390</val9>
+<val10>3.395</val10>
+<val11 />
+<val12 />
+<val13>3.395</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260724</standardDt>
+<val1>3.735</val1>
+<val2>3.728</val2>
+<val3>3.734</val3>
+<val4 />
+<val5 />
+<val6>3.732</val6>
+<val7 />
+<val8>3.410</val8>
+<val9>3.405</val9>
+<val10>3.410</val10>
+<val11 />
+<val12 />
+<val13>3.408</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260723</standardDt>
+<val1>3.725</val1>
+<val2>3.718</val2>
+<val3>3.729</val3>
+<val4 />
+<val5 />
+<val6>3.724</val6>
+<val7 />
+<val8>3.370</val8>
+<val9>3.370</val9>
+<val10>3.370</val10>
+<val11 />
+<val12 />
+<val13>3.370</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260722</standardDt>
+<val1>3.735</val1>
+<val2>3.718</val2>
+<val3>3.734</val3>
+<val4 />
+<val5 />
+<val6>3.729</val6>
+<val7 />
+<val8>3.360</val8>
+<val9>3.365</val9>
+<val10>3.370</val10>
+<val11 />
+<val12 />
+<val13>3.365</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260721</standardDt>
+<val1>3.730</val1>
+<val2>3.723</val2>
+<val3>3.724</val3>
+<val4 />
+<val5 />
+<val6>3.725</val6>
+<val7 />
+<val8>3.355</val8>
+<val9>3.355</val9>
+<val10>3.370</val10>
+<val11 />
+<val12 />
+<val13>3.360</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260720</standardDt>
+<val1>3.745</val1>
+<val2>3.738</val2>
+<val3>3.744</val3>
+<val4 />
+<val5 />
+<val6>3.742</val6>
+<val7 />
+<val8>3.360</val8>
+<val9>3.365</val9>
+<val10>3.370</val10>
+<val11 />
+<val12 />
+<val13>3.365</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260716</standardDt>
+<val1>3.745</val1>
+<val2>3.728</val2>
+<val3>3.739</val3>
+<val4 />
+<val5 />
+<val6>3.737</val6>
+<val7 />
+<val8>3.350</val8>
+<val9>3.365</val9>
+<val10>3.370</val10>
+<val11 />
+<val12 />
+<val13>3.361</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260715</standardDt>
+<val1>3.770</val1>
+<val2>3.768</val2>
+<val3>3.764</val3>
+<val4 />
+<val5 />
+<val6>3.767</val6>
+<val7 />
+<val8>3.370</val8>
+<val9>3.375</val9>
+<val10>3.380</val10>
+<val11 />
+<val12 />
+<val13>3.375</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260714</standardDt>
+<val1>3.790</val1>
+<val2>3.783</val2>
+<val3>3.784</val3>
+<val4 />
+<val5 />
+<val6>3.785</val6>
+<val7 />
+<val8>3.380</val8>
+<val9>3.385</val9>
+<val10>3.385</val10>
+<val11 />
+<val12 />
+<val13>3.383</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260713</standardDt>
+<val1>3.770</val1>
+<val2>3.763</val2>
+<val3>3.759</val3>
+<val4 />
+<val5 />
+<val6>3.764</val6>
+<val7 />
+<val8>3.355</val8>
+<val9>3.355</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.351</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260710</standardDt>
+<val1>3.760</val1>
+<val2>3.748</val2>
+<val3>3.749</val3>
+<val4 />
+<val5 />
+<val6>3.752</val6>
+<val7 />
+<val8>3.335</val8>
+<val9>3.345</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.341</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260709</standardDt>
+<val1>3.755</val1>
+<val2>3.743</val2>
+<val3>3.744</val3>
+<val4 />
+<val5 />
+<val6>3.747</val6>
+<val7 />
+<val8>3.350</val8>
+<val9>3.350</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.348</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260708</standardDt>
+<val1>3.745</val1>
+<val2>3.745</val2>
+<val3>3.744</val3>
+<val4 />
+<val5 />
+<val6>3.744</val6>
+<val7 />
+<val8>3.345</val8>
+<val9>3.345</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.345</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260707</standardDt>
+<val1>3.745</val1>
+<val2>3.745</val2>
+<val3>3.739</val3>
+<val4 />
+<val5 />
+<val6>3.743</val6>
+<val7 />
+<val8>3.350</val8>
+<val9>3.345</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.346</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260706</standardDt>
+<val1>3.740</val1>
+<val2>3.742</val2>
+<val3>3.739</val3>
+<val4 />
+<val5 />
+<val6>3.740</val6>
+<val7 />
+<val8>3.350</val8>
+<val9>3.345</val9>
+<val10>3.345</val10>
+<val11 />
+<val12 />
+<val13>3.346</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260703</standardDt>
+<val1>3.735</val1>
+<val2>3.737</val2>
+<val3>3.739</val3>
+<val4 />
+<val5 />
+<val6>3.737</val6>
+<val7 />
+<val8>3.345</val8>
+<val9>3.345</val9>
+<val10>3.350</val10>
+<val11 />
+<val12 />
+<val13>3.346</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260702</standardDt>
+<val1>3.747</val1>
+<val2>3.737</val2>
+<val3>3.739</val3>
+<val4 />
+<val5 />
+<val6>3.741</val6>
+<val7 />
+<val8>3.345</val8>
+<val9>3.345</val9>
+<val10>3.350</val10>
+<val11 />
+<val12 />
+<val13>3.346</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+<BISBndSrtPrcTrmDTO>
+<standardDt>20260701</standardDt>
+<val1>3.755</val1>
+<val2>3.752</val2>
+<val3>3.749</val3>
+<val4 />
+<val5 />
+<val6>3.752</val6>
+<val7 />
+<val8>3.360</val8>
+<val9>3.355</val9>
+<val10>3.350</val10>
+<val11 />
+<val12 />
+<val13>3.355</val13>
+<val14 />
+<val15 />
+<val16 />
+<val17 />
+<val18 />
+<val19 />
+<val20 />
+<val21 />
+<val22 />
+<val23 />
+<val24 />
+<val25 />
+<val26 />
+<val27 />
+<val28 />
+<val29 />
+<standardDt1 />
+<standardDt2 />
+<creditEstOrgCd />
+<val31 />
+<val32 />
+<val33 />
+<val34 />
+<val35 />
+<val36 />
+<val37 />
+<val38 />
+</BISBndSrtPrcTrmDTO>
+</BISBndSrtPrcTrmListDTO></message></root>

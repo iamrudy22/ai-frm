@@ -9,7 +9,8 @@
  */
 
 import { assessPerception, type PerceptionRequest } from '@/application/construction-perception';
-import type { EconomicIndicatorSource } from '@/application/ports';
+import { assessFundingRiskReport } from '@/application/funding-risk';
+import type { BondYieldSource, EconomicIndicatorSource } from '@/application/ports';
 import { ledgerOf, type ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
@@ -35,6 +36,27 @@ export async function handlePerception(request: Request, source: EconomicIndicat
   }
 
   const out = await assessPerception(source, ledger, perceptionRequest);
+  return Response.json(out, { status: out.ok ? 200 : 500 });
+}
+
+/**
+ * POST { judgedMonth?: 'YYYY/MM' }
+ *
+ * judgedMonth는 판단월 = 올린 최신 회차의 달이다. 없으면 오늘이 속한 달로 판정한다.
+ */
+export async function handleFundingRisk(
+  request: Request,
+  yields: BondYieldSource,
+  now?: () => Date,
+): Promise<Response> {
+  let judgedMonth: YearMonth | undefined;
+  try {
+    judgedMonth = monthField(await readBody(request), 'judgedMonth');
+  } catch (e) {
+    return Response.json({ ok: false, reason: e instanceof Error ? e.message : '본문이 올바르지 않습니다.' }, { status: 400 });
+  }
+
+  const out = await assessFundingRiskReport(yields, { judgedMonth }, now);
   return Response.json(out, { status: out.ok ? 200 : 500 });
 }
 

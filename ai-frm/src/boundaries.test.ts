@@ -8,8 +8,9 @@
  *   4. application/은 화면(app)·판독(infrastructure)·xlsx를 모른다. 회차를 받아 셈만 한다.
  *   5. 등급이 없는 지표(적정 시재)는 risk/grade를 import하지 않는다. 적정 시재는
  *      T/F와 '안정적'/'적정시재 부족' 표기만 있다(적정 시재 PRD §9-6).
- *   6. 서버 전용 모듈(infrastructure/ecos)은 라우트(app/api/)만 import한다.
- *      ECOS 인증키와 이력 파일이 브라우저 번들에 들어가지 않게 한다.
+ *   6. 서버 전용 모듈(infrastructure/ecos, infrastructure/kofia)은 라우트(app/api/)만 import한다.
+ *      ECOS 인증키와 이력 파일이 브라우저 번들에 들어가지 않게 한다. 채권정보센터는
+ *      CORS 헤더가 없어 브라우저에서 부를 수 없다.
  *   7. application/은 포트를 통해서만 바깥을 쓴다. 규칙 4가 막고, 새 유스케이스
  *      파일이 그 검사 대상에 들어가는지 확인한다.
  *
@@ -111,7 +112,7 @@ function violations(files: readonly SourceFile[]): string[] {
   return found;
 }
 
-const SERVER_ONLY = ['infrastructure/ecos/'];
+const SERVER_ONLY = ['infrastructure/ecos/', 'infrastructure/kofia/'];
 const COMPOSITION_ROOT = 'app/api/';
 
 /** 규칙 6. 서버 전용 모듈을 라우트 밖에서 import하면 잡는다. 제 폴더 안은 허용한다. */
@@ -289,6 +290,14 @@ describe('서버 전용 모듈 검사기 (규칙 6)', () => {
     expect(v[0]).toMatch(/page\.tsx.*infrastructure\/ecos/);
   });
 
+  it('화면이나 다른 서버 전용 폴더가 채권정보센터를 import하면 잡는다', () => {
+    const v = serverOnlyViolations([
+      file('app/aifrm/funding-risk-card.tsx', `import { KofiaYieldSource } from '@/infrastructure/kofia/kofia-yield-source';`),
+      file('infrastructure/ecos/ecos-indicator-source.ts', `import { X } from '../kofia/kofia-yield-source';`),
+    ]);
+    expect(v).toHaveLength(2);
+  });
+
   it('도메인·유스케이스·다른 판독 계층이 import해도 잡는다', () => {
     const v = serverOnlyViolations([
       file('application/construction-perception.ts', `import { X } from '@/infrastructure/ecos/ecos-indicator-source';`),
@@ -323,7 +332,7 @@ describe('실제 소스의 서버 전용 경계 (규칙 6)', () => {
   });
 
   it('새 유스케이스 파일도 규칙 4의 검사 대상이다 (규칙 7)', () => {
-    for (const path of ['application/construction-perception.ts', 'application/ports.ts']) {
+    for (const path of ['application/construction-perception.ts', 'application/funding-risk.ts', 'application/ports.ts']) {
       expect(sources.some((f) => f.path === path)).toBe(true);
     }
   });

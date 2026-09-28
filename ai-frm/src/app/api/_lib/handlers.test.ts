@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { handlePerception } from '@/app/api/_lib/handlers';
-import type { EconomicIndicatorSource } from '@/application/ports';
+import { handleFundingRisk, handlePerception } from '@/app/api/_lib/handlers';
+import type { BondYieldSource, EconomicIndicatorSource, YieldFetch } from '@/application/ports';
 
 const noKey: EconomicIndicatorSource = {
   fetchAll: async () => {
@@ -87,5 +87,55 @@ describe('기준월 인자', () => {
     const res = await call({ rounds: [], ...payload });
     expect(res.status).toBe(400);
     expect((await res.json()).reason).toMatch(/YYYY\/MM|1~12/);
+  });
+});
+
+describe('POST /api/funding-risk', () => {
+  const july31: YieldFetch = {
+    days: [
+      {
+        date: '2026/07/31' as never,
+        publicAaa: { average: 3.674, byAgency: { 나이스피앤아이: 3.68, 한국자산평가: 3.665, KIS자산평가: 3.679 } },
+        treasury: { average: 3.393, byAgency: { 나이스피앤아이: 3.395, 한국자산평가: 3.39, KIS자산평가: 3.395 } },
+      },
+    ],
+    fetchedAt: new Date('2026-09-28T00:30:00Z'),
+  };
+  const asked: string[] = [];
+  const yields: BondYieldSource = {
+    dailyYields: async (month) => {
+      asked.push(month);
+      return month === '2026/07' ? july31 : { days: [], fetchedAt: new Date() };
+    },
+  };
+  const NOW = () => new Date(2026, 8, 28);
+  const callFunding = (payload: unknown) =>
+    handleFundingRisk(
+      new Request('http://localhost/api/funding-risk', {
+        method: 'POST',
+        body: typeof payload === 'string' ? payload : JSON.stringify(payload),
+      }),
+      yields,
+      NOW,
+    );
+
+  it('판단월의 판정을 JSON으로 돌려준다 — 조회 시각은 문자열이다', async () => {
+    const res = await callFunding({ judgedMonth: '2026/08' });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.value.source).toBe('회차');
+    expect(json.value.result).toMatchObject({ kind: 'ok', evaluationDate: '2026/07/31', spread: 0.281, grade: '주의' });
+    expect(json.value.fetchedAt).toBe('2026-09-28T00:30:00.000Z');
+  });
+
+  it('판단월이 없으면 오늘이 속한 달이다', async () => {
+    asked.length = 0;
+    const json = await (await callFunding({})).json();
+    expect(asked).toEqual(['2026/08']);
+    expect(json.value).toMatchObject({ source: '오늘', result: { judgedMonth: '2026/09' } });
+  });
+
+  it.each([{ judgedMonth: '202608' }, { judgedMonth: 8 }, '{ 깨진'])('본문이 틀리면 400이다 — %o', async (payload) => {
+    expect((await callFunding(payload)).status).toBe(400);
   });
 });

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?><root><message>
+<proframeHeader>
+<pfmAppName>BIS-KOFIABOND</pfmAppName>
+<pfmSvcName>BISBndSrtPrcSrchSO</pfmSvcName>
+<pfmFnName>selectTrmX</pfmFnName>
+<pfmGlobalNo>recorded</pfmGlobalNo>
+<pfmTrDate>20260928</pfmTrDate>
+<pfmTrTime>20260928221417431</pfmTrTime>
+<pfmClntIp>0.0.0.0</pfmClntIp>
+<pfmResponseType>S</pfmResponseType>
+<pfmResponseCode>COMS9009</pfmResponseCode>
+<pfmResponseTitle>MODULE ERROR</pfmResponseTitle>
+<pfmResponseBasc>proframe service operation [BIS-KOFIABOND] [BISBndSrtPrcSrchSO] [selectTrmX] is not found.</pfmResponseBasc>
+<pfmResponseDtal></pfmResponseDtal>
+</proframeHeader>
+<systemHeader>
+</systemHeader>
+<data /></message></root>
