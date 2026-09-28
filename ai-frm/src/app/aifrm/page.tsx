@@ -106,6 +106,7 @@ export default function AifrmDashboardPage() {
         previous = previousResult.statement;
 
         // 자리가 뒤바뀌면 회수율이 뒤집힌다. 알리되 임의로 고치지 않는다.
+        // 대금 회수 판정 자체는 도메인(paymentRecoveryInputFrom)이 막는다.
         const order = checkConsecutive(previous, latestResult.statement);
         if (!order.ok) warning = order.reason;
       }
@@ -199,7 +200,7 @@ export default function AifrmDashboardPage() {
               <Banner
                 status="warning"
                 title="회차 순서를 확인해 주세요"
-                description={`${loaded.warning} 그대로 산출한 결과이므로 자리를 바꿔 다시 올려야 할 수 있습니다.`}
+                description={`${loaded.warning} 대금 회수 위험은 서로 다른 달을 비교하게 되므로 판정하지 않았습니다. 유동성 Gap은 최신 회차 자리에 올린 파일로 산출했습니다.`}
               />
             )}
 

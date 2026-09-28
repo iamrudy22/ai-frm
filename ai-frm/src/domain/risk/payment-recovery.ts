@@ -15,7 +15,7 @@
 import { divide, type Amount, type Ratio } from '@/domain/shared/amount';
 import { gradeBy, type Grade } from '@/domain/risk/grade';
 import { PAYMENT_RECOVERY_BANDS } from '@/domain/risk/policy';
-import type { Statement } from '@/domain/cashflow/statement';
+import { checkConsecutive, type Statement } from '@/domain/cashflow/statement';
 
 export type PaymentRecoveryInput = {
   readonly plan: Amount;
@@ -67,7 +67,21 @@ export function paymentRecoveryInputFrom(prev: Statement, next: Statement): Paym
     );
   }
 
+  // 두 회차가 같은 달을 가리킬 때만 실적 ÷ 계획이 회수율이다. 다른 달끼리의
+  // 비율은 그럴듯한 숫자로 나오므로, 경고로 넘기지 않고 조립 단계에서 멈춘다.
+  // 달력(기준일)과 열(라벨)을 모두 본다 — 라벨만 보면 1년 떨어진 회차가 통과한다.
+  const order = checkConsecutive(prev, next);
+  if (!order.ok) {
+    throw new Error(`대금 회수 위험은 연속한 두 회차로만 판정합니다. ${order.reason}`);
+  }
+
   const targetInPrev = prev.defaultBaseMonth;
+
+  if (targetInPrev.label !== targetInNext.label) {
+    throw new Error(
+      `비교할 두 값이 같은 달이 아닙니다: 이전 회차의 기준월은 ${targetInPrev.label}, 최신 회차의 직전 월은 ${targetInNext.label}입니다.`,
+    );
+  }
 
   return {
     plan: prev.amountOf('분양회수', targetInPrev),

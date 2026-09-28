@@ -81,4 +81,29 @@ describe('두 회차에서 입력 조립', () => {
     const noPrior = createStatement(statementAt(new Date(2026, 5, 9), 0, [0, 0, 0, 0, 0]));
     expect(() => paymentRecoveryInputFrom(july, noPrior)).toThrow(/직전/);
   });
+
+  // 회차를 건너뛰면 6월 회차의 계획(6월)과 8월 회차의 실적(7월)을 맞대게 된다.
+  // 다른 달끼리의 비율은 회수율이 아니므로 등급을 내지 않는다.
+  it('회차를 건너뛰면 서로 다른 달을 비교하게 되므로 판정하지 않는다', () => {
+    const june = createStatement(statementAt(new Date(2026, 5, 9), 0, [50000, 0, 0, 0, 0]));
+    expect(() => paymentRecoveryInputFrom(june, august)).toThrow(/연속/);
+  });
+
+  it('회차 순서가 뒤바뀌면 판정하지 않는다 — 계획과 실적이 뒤집힌다', () => {
+    const september = createStatement(statementAt(new Date(2026, 8, 9), 3, [0, 0, 40000, 0, 0]));
+    expect(() => paymentRecoveryInputFrom(september, august)).toThrow(/연속/);
+  });
+
+  // 12개월 떨어진 회차는 라벨('7월')만 보면 같은 달처럼 보인다. 달력으로도 확인해야 한다.
+  it('라벨이 같아도 1년 떨어진 회차는 같은 달이 아니다', () => {
+    const nextYearAugust = createStatement(statementAt(new Date(2027, 7, 10), 2, [0, 40000, 0, 0, 0]));
+    expect(() => paymentRecoveryInputFrom(july, nextYearAugust)).toThrow(/연속/);
+  });
+
+  // 기준일은 연속인데 기준월 열이 기준일과 어긋난 회차. 판독 계층은 이를 막지만
+  // 회차 애그리거트는 둘을 따로 받으므로, 조립 단계에서도 같은 달인지 확인한다.
+  it('기준일이 연속이어도 비교 대상 열이 다른 달이면 판정하지 않는다', () => {
+    const misaligned = createStatement(statementAt(new Date(2026, 6, 8), 2, [0, 50000, 0, 0, 0]));
+    expect(() => paymentRecoveryInputFrom(misaligned, august)).toThrow(/같은 달/);
+  });
 });
