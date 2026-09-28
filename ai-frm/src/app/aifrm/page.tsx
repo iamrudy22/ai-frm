@@ -50,6 +50,7 @@ import {
   adequateCashTile,
   gapTile,
   perceptionTile,
+  recoveryBasis,
   recoveryTile,
   type SummaryStatus,
   type SummaryTile,
@@ -214,7 +215,11 @@ export default function AifrmDashboardPage() {
 
                 <VStack gap={3}>
                   <Heading level={2}>대금 회수 위험</Heading>
-                  <RecoveryResult recovery={dashboard.paymentRecovery} statement={loaded.latest.statement} />
+                  <RecoveryResult
+                    recovery={dashboard.paymentRecovery}
+                    statement={loaded.latest.statement}
+                    judged={loaded.latest.round}
+                  />
                 </VStack>
 
                 <Divider />
@@ -273,7 +278,7 @@ function summaryTiles(
       : null;
   const adequate = dashboard.adequateCash;
   return [
-    recoveryTile(recovery, { target, previousRound: addMonths(loaded.latest.round, -1) }),
+    recoveryTile(recovery, { judged: loaded.latest.round, target, previousRound: addMonths(loaded.latest.round, -1) }),
     gapTile(dashboard.liquidityGap, gapMonth === null ? '—' : spanText(gapMonth, LIQUIDITY_WINDOW_MONTHS)),
     adequateCashTile(adequate, adequate.ok ? windowText(statement, adequate.value) : '—'),
     perceptionTile(perception),
@@ -408,9 +413,12 @@ function Diagnostics({ diagnostics }: { diagnostics: Dashboard['diagnostics'] })
 function RecoveryResult({
   recovery,
   statement,
+  judged,
 }: {
   recovery: Outcome<PaymentRecoveryResult> | null;
   statement: Statement;
+  /** 판단월 = 최신 회차의 달. */
+  judged: YearMonth;
 }) {
   if (recovery === null) {
     return (
@@ -424,13 +432,23 @@ function RecoveryResult({
     return <Banner status="error" title="판정하지 않았습니다" description={recovery.reason} />;
   }
 
-  return <RecoveryDetail recovery={recovery.value} statement={statement} />;
+  return <RecoveryDetail recovery={recovery.value} statement={statement} judged={judged} />;
 }
 
-function RecoveryDetail({ recovery, statement }: { recovery: PaymentRecoveryResult; statement: Statement }) {
-  const target = recovery.targetMonthLabel;
+function RecoveryDetail({
+  recovery,
+  statement,
+  judged,
+}: {
+  recovery: PaymentRecoveryResult;
+  statement: Statement;
+  judged: YearMonth;
+}) {
+  const label = recovery.targetMonthLabel;
+  const target = label === undefined ? null : calendarOfLabel(statement, label);
   const rows: Row[] = [
-    { 항목: '판정 대상월', 값: target === undefined ? '—' : (calendarOfLabel(statement, target) ?? target) },
+    { 항목: '판단월', 값: judged },
+    { 항목: '실적 기준월', 값: target ?? '—' },
     { 항목: '계획값 (분양회수)', 값: money(recovery.plan) },
     { 항목: '실적값 (분양회수)', 값: money(recovery.actual) },
     { 항목: '회수율', 값: percent(toPercent(recovery.rate)) },
@@ -441,6 +459,10 @@ function RecoveryDetail({ recovery, statement }: { recovery: PaymentRecoveryResu
       <Badge variant={BADGE_VARIANT[recovery.grade]} label={recovery.grade} />
       <Table data={rows} columns={COLUMNS} />
       <Text type="supporting">{paymentRecoveryPolicy.commentFor(recovery.grade)}</Text>
+      <Text type="supporting" size="xsm">
+        {recoveryBasis(judged, target)}: 최신 회차에 적힌 가장 최근 실적(직전 달)을 이전 회차의 같은 달
+        계획과 견줍니다. 판단월의 실적은 다음 달 회차에야 나옵니다.
+      </Text>
       <Text type="supporting" size="xsm">
         자금수지표의 분양회수 항목을 읽습니다. 수입계나 수입이 아니라 분양 대금 회수만 봅니다 —
         국고보조금·기금·출자금은 걷는 일과 무관합니다.

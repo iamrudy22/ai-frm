@@ -1,24 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { adequateCashTile, gapTile, perceptionTile, recoveryTile } from '@/app/aifrm/summary-view';
+import { adequateCashTile, gapTile, perceptionTile, recoveryBasis, recoveryTile } from '@/app/aifrm/summary-view';
 
 const ym = (s: string) => s as never;
 
 describe('요약 — 대금 회수 위험', () => {
-  it('판정했으면 등급, 회수율, 대상월', () => {
-    const tile = recoveryTile({ ok: true, value: { kind: 'ok', rate: 1.022, grade: '정상' } as never }, {
-      target: ym('2026/07'),
-      previousRound: ym('2026/07'),
+  // 7월 판단은 7월 회차에 적힌 가장 최근 실적(6월)을 6월 회차의 6월 계획과 견준다.
+  it('판정했으면 등급, 회수율, 판단월과 실적 기준월', () => {
+    const tile = recoveryTile({ ok: true, value: { kind: 'ok', rate: 0.989, grade: '정상' } as never }, {
+      judged: ym('2026/07'),
+      target: ym('2026/06'),
+      previousRound: ym('2026/06'),
     });
     expect(tile).toEqual({
       title: '대금 회수 위험',
       status: { kind: 'grade', grade: '정상' },
-      value: '102.2%',
-      note: '회수율 · 대상월 2026/07',
+      value: '98.9%',
+      note: '회수율 · 2026/07 판단 · 2026/06 실적 기준',
     });
   });
 
+  it('판단월은 최신 회차의 달, 실적 기준월은 그 직전 달이다', () => {
+    expect(recoveryBasis(ym('2026/07'), ym('2026/06'))).toBe('2026/07 판단 · 2026/06 실적 기준');
+    expect(recoveryBasis(ym('2026/07'), null)).toBe('2026/07 판단');
+  });
+
   it('이전 회차가 없으면 판정 안 함과 빠진 회차', () => {
-    expect(recoveryTile(null, { target: null, previousRound: ym('2026/07') })).toEqual({
+    expect(recoveryTile(null, { judged: ym('2026/08'), target: null, previousRound: ym('2026/07') })).toEqual({
       title: '대금 회수 위험',
       status: { kind: 'dot', variant: 'neutral', label: '판정 안 함' },
       value: '—',
@@ -27,7 +34,7 @@ describe('요약 — 대금 회수 위험', () => {
   });
 
   it('판정하지 못했으면 판정 불가', () => {
-    expect(recoveryTile({ ok: false, reason: 'x' }, { target: null, previousRound: ym('2026/07') })).toMatchObject({
+    expect(recoveryTile({ ok: false, reason: 'x' }, { judged: ym('2026/08'), target: null, previousRound: ym('2026/07') })).toMatchObject({
       status: { kind: 'dot', variant: 'error', label: '판정 불가' },
       value: '—',
       note: '아래 사유를 확인하세요',

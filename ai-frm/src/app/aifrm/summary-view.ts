@@ -37,9 +37,19 @@ const dot = (variant: Extract<SummaryStatus, { kind: 'dot' }>['variant'], label:
   label,
 });
 
+/**
+ * 대금 회수 위험의 달 표기. 판단월은 최신 회차의 달이고, 회수율은 그 회차에 적힌
+ * 가장 최근 실적(직전 달)을 이전 회차의 같은 달 계획과 견준 값이다.
+ * 7월 판단 = 6월 회차의 6월 계획 vs 7월 회차의 6월 실적. 7월 실적은 8월 회차에야 있다.
+ * 건설경기 인식 지수의 7월 판단이 4~6월 실적을 쓰는 것과 같은 방식이다.
+ */
+export function recoveryBasis(judged: YearMonth, target: YearMonth | null): string {
+  return target === null ? `${judged} 판단` : `${judged} 판단 · ${target} 실적 기준`;
+}
+
 export function recoveryTile(
   recovery: Dashboard['paymentRecovery'],
-  context: { readonly target: YearMonth | null; readonly previousRound: YearMonth },
+  context: { readonly judged: YearMonth; readonly target: YearMonth | null; readonly previousRound: YearMonth },
 ): SummaryTile {
   const title = '대금 회수 위험';
   if (recovery === null) {
@@ -50,7 +60,7 @@ export function recoveryTile(
     title,
     status: { kind: 'grade', grade: recovery.value.grade },
     value: percent(toPercent(recovery.value.rate)),
-    note: context.target === null ? '회수율' : `회수율 · 대상월 ${context.target}`,
+    note: `회수율 · ${recoveryBasis(context.judged, context.target)}`,
   };
 }
 
