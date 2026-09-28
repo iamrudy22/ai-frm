@@ -212,7 +212,7 @@ export default function AifrmDashboardPage() {
 
             <Divider />
 
-            <ConstructionPerceptionCard latest={loaded?.latest ?? null} isReading={isReading} />
+            <ConstructionPerceptionCard latest={loaded?.latest ?? null} previous={loaded?.previous ?? null} isReading={isReading} />
           </VStack>
         </LayoutContent>
       }

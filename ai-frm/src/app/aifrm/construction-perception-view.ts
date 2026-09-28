@@ -6,7 +6,6 @@
  */
 
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
-import type { RoundEntry } from '@/domain/cashflow/round-entry';
 import {
   defaultBaseMonth,
   type ConstructionPerception,
@@ -127,12 +126,21 @@ export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'],
   return `분양회수 계획·실적 이력: ${range}${holes}. ${need}`;
 }
 
-/** 회차를 이력에 반영했을 때의 안내. */
-export function roundRecordedText(entry: RoundEntry): string {
-  const plans = `계획 ${entry.plans.length}개월(${entry.plans[0].month}~${entry.plans[entry.plans.length - 1].month})`;
-  if (entry.actuals.length === 0) {
-    return `${entry.round} 회차의 ${plans}을 반영했습니다. 이 회차에는 실적 열이 없어 전년 실적은 전년도 파일에서 채웁니다.`;
-  }
-  const actuals = `실적 ${entry.actuals.length}개월(${entry.sheetStart}~${addMonths(entry.round, -1)})`;
-  return `${entry.round} 회차의 ${actuals}과 ${plans}을 반영했습니다.`;
+export type BatchResult =
+  | { readonly file: string; readonly round: YearMonth }
+  | { readonly file: string; readonly reason: string };
+
+/** 여러 회차를 한 번에 반영한 결과. 하나라도 실패하면 경고로 보인다. */
+export function batchRecordedText(results: readonly BatchResult[]): {
+  status: 'success' | 'warning';
+  text: string;
+} {
+  const rounds = results
+    .flatMap((r) => ('round' in r ? [r.round] : []))
+    .sort(compareYearMonth);
+  const failures = results.flatMap((r) => ('reason' in r ? [`${r.file} — ${r.reason}`] : []));
+
+  const done = rounds.length > 0 ? `회차 ${rounds.length}개를 반영했습니다: ${rounds.join('·')}.` : '반영한 회차가 없습니다.';
+  if (failures.length === 0) return { status: 'success', text: done };
+  return { status: 'warning', text: `${done} 반영하지 못한 파일: ${failures.join(' / ')}` };
 }

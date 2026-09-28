@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
 import {
   basisNote,
+  batchRecordedText,
   changeText,
   indicatorRows,
   ledgerNote,
   missingRows,
   monthOptions,
   revisionNote,
-  roundRecordedText,
 } from '@/app/aifrm/construction-perception-view';
 import type { IndicatorKey } from '@/domain/risk/construction-perception/policy';
 
@@ -201,19 +201,32 @@ describe('이력 안내 (회차 단위)', () => {
   });
 });
 
-describe('회차 반영 안내', () => {
-  const plans = (start: number) =>
-    [0, 1, 2, 3].map((i) => ({ month: `2026/${String(start + i).padStart(2, '0')}`, value: 1 })) as never;
-
-  it('어느 회차의 무엇을 반영했는지 알린다', () => {
-    const entry = { round: '2026/07', sheetStart: '2026/01', actuals: [{}, {}, {}, {}, {}, {}], plans: plans(7) } as never;
-    expect(roundRecordedText(entry)).toBe('2026/07 회차의 실적 6개월(2026/01~2026/06)과 계획 4개월(2026/07~2026/10)을 반영했습니다.');
+describe('여러 회차 반영 결과', () => {
+  it('반영한 회차를 달 순서로 알린다', () => {
+    expect(
+      batchRecordedText([
+        { file: 'b.xlsx', round: '2026/05' as never },
+        { file: 'a.xlsx', round: '2026/04' as never },
+      ]),
+    ).toEqual({ status: 'success', text: '회차 2개를 반영했습니다: 2026/04·2026/05.' });
   });
 
-  it('1월 회차는 실적이 없다는 것을 함께 알린다', () => {
-    const entry = { round: '2026/01', sheetStart: '2026/01', actuals: [], plans: plans(1) } as never;
-    expect(roundRecordedText(entry)).toBe(
-      '2026/01 회차의 계획 4개월(2026/01~2026/04)을 반영했습니다. 이 회차에는 실적 열이 없어 전년 실적은 전년도 파일에서 채웁니다.',
-    );
+  it('반영하지 못한 파일은 사유와 함께 알리고, 경고로 보인다', () => {
+    expect(
+      batchRecordedText([
+        { file: 'a.xlsx', round: '2026/04' as never },
+        { file: 'x.xlsx', reason: '시트를 찾을 수 없습니다.' },
+      ]),
+    ).toEqual({
+      status: 'warning',
+      text: '회차 1개를 반영했습니다: 2026/04. 반영하지 못한 파일: x.xlsx — 시트를 찾을 수 없습니다.',
+    });
+  });
+
+  it('하나도 반영하지 못했으면', () => {
+    expect(batchRecordedText([{ file: 'x.xlsx', reason: '깨진 파일' }])).toEqual({
+      status: 'warning',
+      text: '반영한 회차가 없습니다. 반영하지 못한 파일: x.xlsx — 깨진 파일',
+    });
   });
 });
