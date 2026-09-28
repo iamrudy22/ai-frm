@@ -147,8 +147,8 @@ function PerceptionResult({
     <VStack gap={3} align="start">
       <HStack gap={2} vAlign="end">
         <Selector
-          label="기준월"
-          description="기본값은 보고월 − 2개월입니다"
+          label="건설경기 기준월"
+          description="기본값은 최신 회차 − 2개월입니다(ECOS 공표 시차)"
           options={monthOptions(report.selectable, basis.baseMonth)}
           value={basis.baseMonth}
           onChange={(value) => onChoose(parseYearMonth(value))}
@@ -203,8 +203,8 @@ function PerceptionResult({
           {ledgerNote(diagnostics.ledger, basis.baseMonth)}
         </Text>
         <Text type="supporting" size="xsm">
-          종합위기단계: 20 미만 정상 · 40 미만 주의 · 60 미만 경고 · 60 이상 위기. 기준월은 최신 회차(없으면
-          오늘)의 달에서 2개월 전이며, 자금수지표 기준월 선택과는 따로 움직입니다.
+          종합위기단계: 20 미만 정상 · 40 미만 주의 · 60 미만 경고 · 60 이상 위기. 건설경기 기준월은
+          Gap·시재 기준월과 따로 움직입니다.
         </Text>
       </VStack>
     </VStack>

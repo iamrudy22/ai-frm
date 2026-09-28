@@ -22,7 +22,7 @@ import {
   type Outcome,
   type PaymentRecoveryResult,
 } from '@/application/dashboard';
-import type { Month } from '@/domain/cashflow/statement';
+import { calendarOf, type Month, type Statement } from '@/domain/cashflow/statement';
 import type { AdequateCashMonth } from '@/domain/risk/adequate-cash/adequate-cash';
 import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
 import {
@@ -32,9 +32,11 @@ import {
 import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
+import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { ConstructionPerceptionCard } from './construction-perception-card';
 import { arrangeRounds, type NamedStatement, type UploadedRound } from './uploaded-rounds';
+import { calendarOfLabel, calendarOptions, monthAt, spanText } from './dashboard-view';
 import { GRADE_BADGE, money, percent } from './format';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
@@ -76,12 +78,13 @@ export default function AifrmDashboardPage() {
   const [isReading, setIsReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [baseMonthLabel, setBaseMonthLabel] = useState<string | null>(null);
+  // 유동성 Gap·적정 시재의 기준월(3개월 창의 첫 달). 건설경기 인식 지수의 기준월과 따로다.
+  const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
 
   const reset = useCallback(() => {
     setLoaded(null);
     setError(null);
-    setBaseMonthLabel(null);
+    setGapMonth(null);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -106,7 +109,7 @@ export default function AifrmDashboardPage() {
         return;
       }
       setLoaded(arranged);
-      setBaseMonthLabel(arranged.latest.statement.defaultBaseMonth.label);
+      setGapMonth(arranged.latest.round);
     } catch {
       setError('파일을 처리하는 중 문제가 생겼습니다.');
     } finally {
@@ -115,9 +118,9 @@ export default function AifrmDashboardPage() {
   }, [files, reset]);
 
   const baseMonth: Month | null = useMemo(() => {
-    if (loaded === null || baseMonthLabel === null) return null;
-    return loaded.latest.statement.months.find((m) => m.label === baseMonthLabel) ?? null;
-  }, [loaded, baseMonthLabel]);
+    if (loaded === null || gapMonth === null) return null;
+    return monthAt(loaded.latest.statement, gapMonth);
+  }, [loaded, gapMonth]);
 
   // 기준월을 바꿔도 파일을 다시 읽지 않는다. 이미 읽어 둔 회차로 다시 셈한다.
   // 어느 회차로 어느 지표를 셈하는지, 실패를 어떻게 격리하는지는 유스케이스가 정한다.
@@ -185,32 +188,36 @@ export default function AifrmDashboardPage() {
                   </VStack>
                 </Collapsible>
 
-                <Selector
-                  label={`기준월 (${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달)`}
-                  options={loaded.latest.statement.months.map((m) => m.label)}
-                  value={baseMonthLabel ?? undefined}
-                  onChange={setBaseMonthLabel}
-                />
-
                 <Divider />
 
                 <VStack gap={3}>
                   <Heading level={2}>대금 회수 위험</Heading>
-                  <RecoveryResult recovery={dashboard.paymentRecovery} />
+                  <RecoveryResult recovery={dashboard.paymentRecovery} statement={loaded.latest.statement} />
                 </VStack>
 
                 <Divider />
 
-                <VStack gap={3}>
-                  <Heading level={2}>유동성 Gap</Heading>
-                  <GapResult gap={dashboard.liquidityGap} baseMonth={baseMonth} />
-                </VStack>
+                <VStack gap={5}>
+                  <VStack gap={3} align="start">
+                    <Heading level={2}>유동성 Gap · 적정 시재</Heading>
+                    <Selector
+                      label="Gap·시재 기준월"
+                      description={`${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달입니다. 기본값은 최신 회차의 기준월입니다`}
+                      options={calendarOptions(loaded.latest.statement)}
+                      value={gapMonth ?? undefined}
+                      onChange={(value) => setGapMonth(parseYearMonth(value))}
+                    />
+                  </VStack>
 
-                <Divider />
+                  <VStack gap={3}>
+                    <Heading level={3}>유동성 Gap</Heading>
+                    <GapResult gap={dashboard.liquidityGap} gapMonth={gapMonth} />
+                  </VStack>
 
-                <VStack gap={3}>
-                  <Heading level={2}>적정 시재</Heading>
-                  <AdequateCashResult adequateCash={dashboard.adequateCash} />
+                  <VStack gap={3}>
+                    <Heading level={3}>적정 시재</Heading>
+                    <AdequateCashResult adequateCash={dashboard.adequateCash} statement={loaded.latest.statement} />
+                  </VStack>
                 </VStack>
               </VStack>
             )}
@@ -268,7 +275,13 @@ function Diagnostics({ diagnostics }: { diagnostics: Dashboard['diagnostics'] })
 
 // ── 결과 ─────────────────────────────────────────────────────────────────
 
-function RecoveryResult({ recovery }: { recovery: Outcome<PaymentRecoveryResult> | null }) {
+function RecoveryResult({
+  recovery,
+  statement,
+}: {
+  recovery: Outcome<PaymentRecoveryResult> | null;
+  statement: Statement;
+}) {
   if (recovery === null) {
     return (
       <Text type="supporting">
@@ -281,12 +294,13 @@ function RecoveryResult({ recovery }: { recovery: Outcome<PaymentRecoveryResult>
     return <Banner status="error" title="판정하지 않았습니다" description={recovery.reason} />;
   }
 
-  return <RecoveryDetail recovery={recovery.value} />;
+  return <RecoveryDetail recovery={recovery.value} statement={statement} />;
 }
 
-function RecoveryDetail({ recovery }: { recovery: PaymentRecoveryResult }) {
+function RecoveryDetail({ recovery, statement }: { recovery: PaymentRecoveryResult; statement: Statement }) {
+  const target = recovery.targetMonthLabel;
   const rows: Row[] = [
-    { 항목: '판정 대상월', 값: recovery.targetMonthLabel ?? '—' },
+    { 항목: '판정 대상월', 값: target === undefined ? '—' : (calendarOfLabel(statement, target) ?? target) },
     { 항목: '계획값 (분양회수)', 값: money(recovery.plan) },
     { 항목: '실적값 (분양회수)', 값: money(recovery.actual) },
     { 항목: '회수율', 값: percent(toPercent(recovery.rate)) },
@@ -305,16 +319,16 @@ function RecoveryDetail({ recovery }: { recovery: PaymentRecoveryResult }) {
   );
 }
 
-function GapResult({ gap, baseMonth }: { gap: Outcome<LiquidityGap>; baseMonth: Month | null }) {
+function GapResult({ gap, gapMonth }: { gap: Outcome<LiquidityGap>; gapMonth: YearMonth | null }) {
   if (!gap.ok) {
     return <Banner status="error" title="산출할 수 없습니다" description={gap.reason} />;
   }
 
-  return <GapDetail gap={gap.value} baseMonth={baseMonth} />;
+  return <GapDetail gap={gap.value} gapMonth={gapMonth} />;
 }
 
-function GapDetail({ gap, baseMonth }: { gap: LiquidityGap; baseMonth: Month | null }) {
-  const windowLabel = `${baseMonth?.label ?? '—'}부터 ${LIQUIDITY_WINDOW_MONTHS}개월`;
+function GapDetail({ gap, gapMonth }: { gap: LiquidityGap; gapMonth: YearMonth | null }) {
+  const windowLabel = gapMonth === null ? '—' : spanText(gapMonth, LIQUIDITY_WINDOW_MONTHS);
 
   const rows: Row[] =
     gap.kind === 'gap'
@@ -358,8 +372,8 @@ function verdictText(isAdequate: boolean): string {
   return `${isAdequate ? 'T' : 'F'} · ${verdictLabel(isAdequate)}`;
 }
 
-function windowText(m: AdequateCashMonth): string {
-  return `${m.month.label}~${m.windowEnd.label}`;
+function windowText(statement: Statement, m: AdequateCashMonth): string {
+  return `${calendarOf(statement, m.month)}~${calendarOf(statement, m.windowEnd)}`;
 }
 
 function remarkText(m: AdequateCashMonth): string {
@@ -378,7 +392,13 @@ const BREAKDOWN_COLUMNS = [
 ];
 
 // 고른 기준월 한 달치만 보여 준다. 8월 기준이면 8월만 — 다음 달들의 추이는 내지 않는다.
-function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCashMonth> }) {
+function AdequateCashResult({
+  adequateCash,
+  statement,
+}: {
+  adequateCash: Outcome<AdequateCashMonth>;
+  statement: Statement;
+}) {
   if (!adequateCash.ok) {
     return <Banner status="error" title="산출할 수 없습니다" description={adequateCash.reason} />;
   }
@@ -387,7 +407,7 @@ function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCa
   const remark = remarkText(current);
 
   const summary: Row[] = [
-    { 항목: '관측 구간', 값: windowText(current) },
+    { 항목: '관측 구간', 값: windowText(statement, current) },
     { 항목: '현재시재 (기초시재)', 값: money(current.openingCash) },
     { 항목: '적정시재 (LCR)', 값: money(current.adequateCash) },
     { 항목: '차이 (현재 − 적정)', 값: money(current.surplus) },
