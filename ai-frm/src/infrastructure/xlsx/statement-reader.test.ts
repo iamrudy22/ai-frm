@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
-import { liquidityGapInputFrom, assessLiquidityGap } from '@/domain/risk/liquidity-gap';
+import { liquidityGapInputFrom, assessLiquidityGap } from '@/domain/risk/liquidity-gap/liquidity-gap';
 import { toPercent } from '@/domain/shared/amount';
 
 // 실물 시트를 본뜬 헤더. 월 사이에 소계가 끼어 있고, 뒤쪽에 집계·과거연도 열이 붙는다.

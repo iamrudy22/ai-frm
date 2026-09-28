@@ -229,3 +229,12 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
 - 검사 순서: 직전 월 존재 → 회차 연속 → 같은 달. 기존 "직전 월이 없다" 테스트의 기대 메시지가 유지된다.
 - 순서 경고 배너 문구를 "그대로 산출했다"에서 "대금 회수 위험은 판정하지 않았다"로 고쳤다. 이제 그 경우 등급이 나오지 않기 때문이다.
 - 테스트 82 → 86개(건너뛴 회차, 뒤바뀐 순서, 1년 차이, 열 어긋남). `tsc`·`eslint`·`next build` 통과.
+
+### P2 결과 (2026-09-28)
+
+- `risk/payment-recovery/`, `risk/liquidity-gap/`로 옮기고 `policy.ts`를 지표마다 하나씩 뒀다. 공용 `COMMENTS`·`IndicatorKey`·`commentFor(indicator, grade)`는 없어졌다. 화면은 `import * as <지표>Policy`로 각 지표의 `commentFor(grade)`를 부른다.
+- **테스트 수 계산을 바로잡는다.** 계획은 "82 − 1 + 경계"였지만, "네 등급 모두 문구가 있다"가 지표별 2개로 나뉘어 +1이 된다. 정책 테스트는 12개 그대로이고, 전체는 86 + 경계 9 = 95개다.
+- 경계 검사기 작성 중 버그 둘을 잡았다. ① `risk/grade`에 `/`를 붙여 검사하면 `grade`가 지표 폴더로 오인된다. ② 위반 예시를 문자열로 품은 테스트 파일 자신이 위반으로 잡힌다(검사 대상에서 제외).
+- 실제 위반을 심어(`liquidity-gap.ts`에 `../payment-recovery/…` import) 경계 테스트가 실패하는 것을 확인하고 되돌렸다.
+- `grade.ts` 머리 주석을 "등급을 쓰는 지표만, 적정 시재는 등급 없음"으로 고쳤다.
+- `tsc`·`eslint`·`next build` 통과. `/aifrm`이 콘솔 오류 없이 렌더된다.

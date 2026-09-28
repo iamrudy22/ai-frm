@@ -17,7 +17,7 @@
 
 import { divide, minus, sumOf, type Amount, type Ratio } from '@/domain/shared/amount';
 import { gradeBy, type Grade } from '@/domain/risk/grade';
-import { GRADE_WHEN_NET_INFLOW, LIQUIDITY_GAP_BANDS } from '@/domain/risk/policy';
+import { GRADE_WHEN_NET_INFLOW, LIQUIDITY_GAP_BANDS } from '@/domain/risk/liquidity-gap/policy';
 import { windowFrom, type Month, type Statement } from '@/domain/cashflow/statement';
 
 /** 회의록이 정한 관측 구간. */

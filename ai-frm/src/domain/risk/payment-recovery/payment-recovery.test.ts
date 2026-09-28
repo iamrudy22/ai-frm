@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assessPaymentRecovery, paymentRecoveryInputFrom } from '@/domain/risk/payment-recovery';
+import { assessPaymentRecovery, paymentRecoveryInputFrom } from '@/domain/risk/payment-recovery/payment-recovery';
 import { createStatement, type StatementInput } from '@/domain/cashflow/statement';
 import { amount } from '@/domain/shared/amount';
 

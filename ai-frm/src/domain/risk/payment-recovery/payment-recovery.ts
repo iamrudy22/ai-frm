@@ -14,7 +14,7 @@
 
 import { divide, type Amount, type Ratio } from '@/domain/shared/amount';
 import { gradeBy, type Grade } from '@/domain/risk/grade';
-import { PAYMENT_RECOVERY_BANDS } from '@/domain/risk/policy';
+import { PAYMENT_RECOVERY_BANDS } from '@/domain/risk/payment-recovery/policy';
 import { checkConsecutive, type Statement } from '@/domain/cashflow/statement';
 
 export type PaymentRecoveryInput = {

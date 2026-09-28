@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
-import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap';
+import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap/liquidity-gap';
 import { checkRollForward, type Statement } from '@/domain/cashflow/statement';
 import { toPercent } from '@/domain/shared/amount';
 

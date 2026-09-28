@@ -22,13 +22,14 @@ import {
   liquidityGapInputFrom,
   LIQUIDITY_WINDOW_MONTHS,
   type LiquidityGap,
-} from '@/domain/risk/liquidity-gap';
+} from '@/domain/risk/liquidity-gap/liquidity-gap';
 import {
   assessPaymentRecovery,
   paymentRecoveryInputFrom,
   type PaymentRecovery,
-} from '@/domain/risk/payment-recovery';
-import { commentFor } from '@/domain/risk/policy';
+} from '@/domain/risk/payment-recovery/payment-recovery';
+import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
+import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 
@@ -265,7 +266,7 @@ function RecoveryResult({ recovery }: { recovery: PaymentRecovery | string | nul
     <VStack gap={3} align="start">
       <Badge variant={BADGE_VARIANT[recovery.grade]} label={recovery.grade} />
       <Table data={rows} columns={COLUMNS} />
-      <Text type="supporting">{commentFor('payment-recovery', recovery.grade)}</Text>
+      <Text type="supporting">{paymentRecoveryPolicy.commentFor(recovery.grade)}</Text>
       <Text type="supporting" size="xsm">
         자금수지표의 분양회수 항목을 읽습니다. 수입계나 수입이 아니라 분양 대금 회수만 봅니다 —
         국고보조금·기금·출자금은 걷는 일과 무관합니다.
@@ -312,7 +313,7 @@ function GapResult({
     <VStack gap={3} align="start">
       <Badge variant={BADGE_VARIANT[gap.grade]} label={gap.grade} />
       <Table data={rows} columns={COLUMNS} />
-      <Text type="supporting">{commentFor('liquidity-gap', gap.grade)}</Text>
+      <Text type="supporting">{liquidityGapPolicy.commentFor(gap.grade)}</Text>
       <Text type="supporting" size="xsm">
         수입은 운영 수입 기준입니다. 공사채·금융기관 차입은 빼고 셉니다 — 조달은 유동성 위험의
         해결책이지 완충재가 아니기 때문입니다.

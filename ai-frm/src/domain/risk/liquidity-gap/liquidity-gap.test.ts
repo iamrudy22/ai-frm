@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap';
+import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap/liquidity-gap';
 import { createStatement } from '@/domain/cashflow/statement';
 import { amount, toPercent } from '@/domain/shared/amount';
 
