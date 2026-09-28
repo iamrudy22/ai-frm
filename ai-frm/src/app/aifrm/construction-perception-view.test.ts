@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
 import {
-  baseMonthNote,
+  basisNote,
   changeText,
   indicatorRows,
   ledgerNote,
   missingRows,
+  monthOptions,
+  revisionNote,
 } from '@/app/aifrm/construction-perception-view';
 import type { IndicatorKey } from '@/domain/risk/construction-perception/policy';
 
@@ -98,20 +100,71 @@ describe('빠진 지표', () => {
   });
 });
 
-describe('기준월 설명', () => {
-  it('먼저 나온 지표가 있으면 무엇이 기준월을 늦추는지 알린다', () => {
-    expect(baseMonthNote(report())).toBe(
-      '주택매매가격지수·환율·주가는 2026/08까지 나왔지만, 나머지 지표가 2026/07까지라 2026/07 기준입니다.',
+describe('기준월 설명 (정책 §5, 2026-09-28 개정)', () => {
+  const basis = (over: Partial<PerceptionReportDto['basis']>): PerceptionReportDto['basis'] => ({
+    baseMonth: '2026/07' as never,
+    reportMonth: '2026/09' as never,
+    source: '오늘',
+    ...over,
+  });
+
+  it('회차를 올렸으면 회차가 보고월이다', () => {
+    expect(basisNote(basis({ baseMonth: '2026/06' as never, reportMonth: '2026/08' as never, source: '회차' }))).toBe(
+      '보고월 2026/08(최신 회차) → 기준월 2026/06',
     );
   });
 
-  it('모두 같은 달이면 설명하지 않는다', () => {
-    const r = report();
-    const same = {
-      ...r,
-      diagnostics: { ...r.diagnostics, indicators: r.diagnostics.indicators.map((i) => ({ ...i, latest: '2026/07' as never })) },
-    };
-    expect(baseMonthNote(same)).toBeNull();
+  it('회차가 없으면 오늘이 보고월이다', () => {
+    expect(basisNote(basis({}))).toBe('보고월 2026/09(오늘) → 기준월 2026/07');
+  });
+
+  it('직접 골랐으면 기본값도 함께 알린다', () => {
+    expect(basisNote(basis({ baseMonth: '2026/05' as never, reportMonth: '2026/08' as never, source: '선택' }))).toBe(
+      '직접 고른 기준월 2026/05 · 기본값은 보고월 2026/08 − 2 = 2026/06',
+    );
+  });
+
+  it('보고월 없이 골랐으면 고른 달만 알린다', () => {
+    expect(basisNote(basis({ baseMonth: '2026/05' as never, reportMonth: null, source: '선택' }))).toBe(
+      '직접 고른 기준월 2026/05',
+    );
+  });
+});
+
+describe('과거 달 알림', () => {
+  // 지금의 기본 기준월(오늘 − 2)보다 앞선 달은 그동안 수정된 ECOS 값으로 계산된다.
+  it('지금의 기본 기준월보다 앞선 달이면 알린다', () => {
+    const r = report({ basis: { baseMonth: '2026/06' as never, reportMonth: '2026/08' as never, source: '회차' } });
+    expect(revisionNote(r)).toBe(
+      'ECOS 현재 값으로 계산합니다. 잠정치 수정이나 기준연도 개편으로 당시 보고한 값과 다를 수 있습니다.',
+    );
+  });
+
+  it('지금의 기본 기준월이면 알리지 않는다', () => {
+    expect(revisionNote(report())).toBeNull();
+  });
+});
+
+describe('기준월 선택지', () => {
+  it('고를 수 있는 범위를 최신 달부터 늘어놓는다', () => {
+    expect(monthOptions({ from: '2026/05' as never, to: '2026/08' as never }, '2026/07' as never)).toEqual([
+      '2026/08',
+      '2026/07',
+      '2026/06',
+      '2026/05',
+    ]);
+  });
+
+  it('지금 기준월이 범위 밖이어도 선택지에 넣는다 — 선택 상자가 비지 않게', () => {
+    expect(monthOptions({ from: '2026/05' as never, to: '2026/06' as never }, '2026/07' as never)).toEqual([
+      '2026/07',
+      '2026/06',
+      '2026/05',
+    ]);
+  });
+
+  it('이력이 비어 범위의 시작이 없으면 지금 기준월만', () => {
+    expect(monthOptions({ from: null, to: '2026/08' as never }, '2026/07' as never)).toEqual(['2026/07']);
   });
 });
 

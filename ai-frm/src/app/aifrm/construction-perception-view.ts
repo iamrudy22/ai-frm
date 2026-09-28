@@ -6,8 +6,12 @@
  */
 
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
-import type { ConstructionPerception } from '@/domain/risk/construction-perception/construction-perception';
-import { SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import {
+  defaultBaseMonth,
+  type ConstructionPerception,
+} from '@/domain/risk/construction-perception/construction-perception';
+import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
 /** 화면 표기. 코드 식별자와 띄어쓰기가 다른 것만 적는다. */
 const LABEL: Partial<Record<IndicatorKey, string>> = {
@@ -68,16 +72,37 @@ export function missingRows(result: ConstructionPerception | PerceptionReportDto
   return result.missing.map((m) => ({ 지표: indicatorLabel(m.key), 사유: m.reason }));
 }
 
-/** 기준월보다 늦게까지 나온 지표가 있으면, 무엇이 기준월을 정했는지 알린다. */
-export function baseMonthNote(report: PerceptionReportDto): string | null {
-  const month = report.result.month;
-  if (month === null) return null;
+/** 기준월이 어디서 왔는지(정책 §5, 2026-09-28 개정). */
+export function basisNote(basis: PerceptionReportDto['basis']): string {
+  const { baseMonth, reportMonth, source } = basis;
+  if (source === '회차') return `보고월 ${reportMonth}(최신 회차) → 기준월 ${baseMonth}`;
+  if (source === '오늘') return `보고월 ${reportMonth}(오늘) → 기준월 ${baseMonth}`;
+  const chosen = `직접 고른 기준월 ${baseMonth}`;
+  if (reportMonth === null) return chosen;
+  return `${chosen} · 기본값은 보고월 ${reportMonth} − ${REPORT_LAG_MONTHS} = ${defaultBaseMonth(reportMonth)}`;
+}
 
-  const ahead = report.diagnostics.indicators.filter((i) => i.latest !== null && i.latest > month);
-  if (ahead.length === 0) return null;
+/**
+ * 지금의 기본 기준월(오늘 − 2)보다 앞선 달이면, 그동안 수정된 ECOS 값으로
+ * 계산된다는 것을 알린다(정책 §5, §6-2).
+ */
+export function revisionNote(report: PerceptionReportDto): string | null {
+  const todayDefault = addMonths(report.selectable.to, 1 - REPORT_LAG_MONTHS);
+  if (compareYearMonth(report.basis.baseMonth, todayDefault) >= 0) return null;
+  return 'ECOS 현재 값으로 계산합니다. 잠정치 수정이나 기준연도 개편으로 당시 보고한 값과 다를 수 있습니다.';
+}
 
-  const latest = ahead.map((i) => i.latest as string).sort().at(-1);
-  return `${ahead.map((i) => indicatorLabel(i.key)).join('·')}는 ${latest}까지 나왔지만, 나머지 지표가 ${month}까지라 ${month} 기준입니다.`;
+/** 기준월 선택지. 최신 달부터. 지금 기준월이 범위 밖이어도 넣는다. */
+export function monthOptions(
+  selectable: PerceptionReportDto['selectable'],
+  current: YearMonth,
+): YearMonth[] {
+  const months: YearMonth[] = [];
+  if (selectable.from !== null) {
+    for (let m = selectable.to; compareYearMonth(m, selectable.from) >= 0; m = addMonths(m, -1)) months.push(m);
+  }
+  if (!months.includes(current)) months.push(current);
+  return months.sort((a, b) => compareYearMonth(b, a));
 }
 
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger']): string {
