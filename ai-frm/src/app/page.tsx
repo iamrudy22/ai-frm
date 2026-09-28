@@ -9,12 +9,13 @@ import { VStack } from '@astryxdesign/core/VStack';
 /**
  * AIFRM 홈.
  *
- * 월별 자금 리스크 모니터링은 네 지표를 각각 따로 판정한다. 지금 자동으로
- * 내는 것은 세 개이고, 나머지 하나는 아직 사람이 엑셀로 한다. 무엇이 자동이고
- * 무엇이 아닌지 여기서 드러나 있어야 결과를 잘못 믿지 않는다.
+ * 월별 자금 리스크 모니터링은 네 지표를 각각 따로 판정한다. 넷 다 자동으로
+ * 낸다. 다만 건설경기 인식 지수는 매달 올리는 최신 회차에서 분양회수 이력을
+ * 이어 가므로, 사람이 해야 하는 일이 하나 남는다. 무엇이 자동이고 무엇이
+ * 아닌지 여기서 드러나 있어야 결과를 잘못 믿지 않는다.
  *
- * 판정 형태도 지표마다 다르다. 대금 회수·유동성 Gap은 4단계 등급이고,
- * 적정 시재는 등급 없이 T/F(안정적/적정시재 부족)다.
+ * 판정 형태도 지표마다 다르다. 대금 회수·유동성 Gap·건설경기 인식 지수는
+ * 4단계 등급이고, 적정 시재는 등급 없이 T/F(안정적/적정시재 부족)다.
  */
 export default function Home() {
   return (
@@ -27,7 +28,8 @@ export default function Home() {
             <VStack gap={2}>
               <Heading level={1}>AIFRM</Heading>
               <Text type="supporting">
-                월별 자금 리스크 모니터링. 자금수지표에서 지표를 자동으로 판정합니다.
+                월별 자금 리스크 모니터링. 자금수지표와 한국은행 ECOS 지표로 네 지표를 자동으로
+                판정합니다.
               </Text>
             </VStack>
 
@@ -40,6 +42,10 @@ export default function Home() {
                   label="적정 시재"
                   description="LCR 모델 적정시재 대비 현재시재 — 등급 없이 안정적 / 적정시재 부족"
                 />
+                <ListItem
+                  label="건설경기 인식 지수"
+                  description="ECOS 경제지표 9종과 분양회수 예측오차의 가중합 — 종합위기단계"
+                />
               </List>
               <HStack>
                 {/* Button은 클라이언트 컴포넌트라 next/link를 as로 넘길 수 없다.
@@ -50,11 +56,11 @@ export default function Home() {
             </VStack>
 
             <VStack gap={3}>
-              <Heading level={2}>아직 사람이 하는 것</Heading>
+              <Heading level={2}>사람이 해야 하는 것</Heading>
               <List>
                 <ListItem
-                  label="건설 경기 인식 지수"
-                  description="한국은행·국토부 자료를 손으로 옮겨 씁니다"
+                  label="매달 최신 회차 올리기"
+                  description="건설경기 인식 지수의 분양회수 계획·실적 이력이 이어집니다. 한 달을 건너뛰면 그 달이 든 세 달이 산출불가가 됩니다"
                 />
               </List>
             </VStack>

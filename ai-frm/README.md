@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AIFRM — 월별 자금 리스크 모니터링
 
-## Getting Started
+자금수지표 회차와 한국은행 ECOS 지표로 네 지표를 판정한다.
 
-First, run the development server:
+| 지표 | 입력 | 판정 |
+|---|---|---|
+| 대금 회수 위험 | 연속한 두 회차 | 4단계 등급 |
+| 유동성 Gap | 최신 회차 | 4단계 등급 |
+| 적정 시재 | 최신 회차 | 안정적 / 적정시재 부족 |
+| 건설경기 인식 지수 | ECOS 9종 + 분양회수 계획·실적 이력 | 종합위기단계(4단계) |
+
+정책과 설계는 저장소 루트의 `docs/`에 있다. 건설경기 인식 지수는
+`docs/plans/2026-09-28-geonseol-gyeonggi-policy.md`와 같은 폴더의 `-impl-plan.md`를 본다.
+
+## 실행
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`http://localhost:3000/aifrm`을 연다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+검증: `npm run verify`(tsc + vitest), `npx eslint src`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ECOS 인증키
 
-## Learn More
+건설경기 인식 지수는 서버가 한국은행 ECOS Open API를 부른다. 키가 없으면 카드가
+산출불가와 함께 "ECOS_API_KEY가 설정되지 않았습니다"를 보인다.
 
-To learn more about Next.js, take a look at the following resources:
+1. https://ecos.bok.or.kr/api/ → 서비스 이용 → 인증키 신청(무료, 즉시 발급).
+2. 이 폴더의 `.env.local`에 한 줄을 넣는다. `.env*`는 커밋되지 않는다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```
+   ECOS_API_KEY=발급받은키
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+키는 서버(`src/app/api/_lib/composition.ts`)에서만 읽는다. `NEXT_PUBLIC_` 접두어를
+붙이지 않는다 — 붙이면 브라우저 번들에 들어간다.
 
-## Deploy on Vercel
+## 분양회수 계획·실적 이력
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+건설경기 인식 지수의 분양회수 예측오차는 두 달 전 회차가 세운 3개월 계획이 필요하다.
+최신 회차에는 과거 계획이 남아 있지 않으므로, 회차를 올릴 때마다 서버가 직전 월
+실적 1개와 3개월 계획을 떼어 `data/forecast-ledger.json`에 쌓는다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**매달 최신 회차를 올린다.** 한 달을 건너뛰면 그 달이 든 세 달이 산출불가가 된다.
+빠진 회차를 나중에 올리면 채워진다.
+
+### 처음 한 번: 엑셀에서 옮기기
+
+```bash
+node scripts/seed-forecast-ledger.mjs "<3. 건설경기인식지수(2026).xlsx>"
+```
+
+엑셀 `분양회수data` 시트를 이력으로 옮긴다. 이 시트의 날짜 라벨은 한 달 앞서 있어서
+스크립트가 한 달 당겨 바로잡는다. 엑셀 동등성 테스트용 fixture도 `fixtures/`에 만든다.
+이력 파일이 이미 있으면 멈춘다(쌓인 회차를 덮지 않도록). 덮으려면 `--force`.
+
+### 백업
+
+`data/`는 사내 자금 데이터라 커밋하지 않는다(`.gitignore`). 그리고 **되살릴 원천이
+없다** — 과거 회차의 계획은 이 파일에만 남는다. 서버 디스크 밖에 정기적으로 백업한다.
+
+이력 파일 저장은 서버 한 대, 디스크가 유지되는 환경을 전제로 한다. 서버리스로
+배포하려면 `src/infrastructure/ledger/`의 저장소만 DB 구현으로 바꾼다.
+
+## 사내 데이터
+
+`fixtures/`(자금수지표 회차, 엑셀 기대값)와 `data/`(이력)는 커밋하지 않는다.
+이 파일이 있을 때만 도는 테스트가 있고, 없으면 건너뛴다.
