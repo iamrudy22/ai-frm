@@ -35,6 +35,7 @@ import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
+import { money, percent } from './format';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -44,9 +45,6 @@ const BADGE_VARIANT: Record<Grade, 'success' | 'warning' | 'orange' | 'error'> =
   경고: 'orange',
   위기: 'error',
 };
-
-const money = (n: number) => `${n.toLocaleString('ko-KR', { maximumFractionDigits: 1 })} 억원`;
-const percent = (n: number) => `${n.toFixed(1)}%`;
 
 type Row = { 항목: string; 값: string } & Record<string, unknown>;
 
