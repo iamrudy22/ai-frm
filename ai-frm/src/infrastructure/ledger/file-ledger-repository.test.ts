@@ -8,9 +8,13 @@ import { amount } from '@/domain/shared/amount';
 import { parseYearMonth } from '@/domain/shared/year-month';
 
 const ENTRY: RoundEntry = {
-  round: parseYearMonth('2026/08'),
-  actual: { month: parseYearMonth('2026/07'), value: amount(107) },
-  plan: { month: parseYearMonth('2026/08'), values: [amount(1), amount(2), amount(3)], beyondPlanYear: false },
+  round: parseYearMonth('2026/03'),
+  sheetStart: parseYearMonth('2026/01'),
+  actuals: [
+    { month: parseYearMonth('2026/01'), value: amount(101) },
+    { month: parseYearMonth('2026/02'), value: amount(102) },
+  ],
+  plans: ['2026/03', '2026/04', '2026/05', '2026/06'].map((m, i) => ({ month: parseYearMonth(m), value: amount(i + 1) })) as unknown as RoundEntry['plans'],
 };
 
 describe('이력 파일 저장소', () => {
@@ -25,7 +29,7 @@ describe('이력 파일 저장소', () => {
 
   it('파일이 없으면 빈 이력이다', async () => {
     const ledger = await new FileLedgerRepository(path).load();
-    expect(ledger.latestActualMonth()).toBeNull();
+    expect(ledger.latestRound()).toBeNull();
   });
 
   it('저장했다가 불러오면 같은 이력이다 — 폴더가 없으면 만든다', async () => {
@@ -42,14 +46,14 @@ describe('이력 파일 저장소', () => {
     expect(readdirSync(join(dir, 'data'))).toEqual(['forecast-ledger.json']);
   });
 
-  it('불변식이 깨진 파일은 거부한다 — 손으로 고친 파일도 그냥 쓰지 않는다', async () => {
+  it('판형 1(달 단위) 파일은 거부한다 — 새 정의로 계산할 수 없다', async () => {
     const repo = new FileLedgerRepository(path);
     await repo.save((await repo.load()).record(ENTRY));
     writeFileSync(
       path,
       JSON.stringify({ version: 1, rows: [{ month: '2026/07', actual: 1, actualFrom: '2026/07' }] }),
     );
-    await expect(repo.load()).rejects.toThrow(/주인 회차/);
+    await expect(repo.load()).rejects.toThrow(/판형 1/);
   });
 
   it('JSON이 아닌 파일은 거부한다', async () => {

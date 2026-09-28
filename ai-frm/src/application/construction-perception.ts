@@ -55,7 +55,12 @@ export type IndicatorStatus = {
 export type PerceptionDiagnostics = {
   /** 엑셀 열 순서(1~10번). */
   readonly indicators: readonly IndicatorStatus[];
-  readonly ledger: { readonly latestActualMonth: YearMonth | null; readonly gaps: readonly YearMonth[] };
+  /** 분양회수 계획·실적 이력: 올라온 회차와 그 사이에 빠진 회차. */
+  readonly ledger: {
+    readonly latestRound: YearMonth | null;
+    readonly rounds: readonly YearMonth[];
+    readonly missingRounds: readonly YearMonth[];
+  };
   readonly fetchedAt: Date;
 };
 
@@ -97,24 +102,30 @@ export async function assessPerception(
         statuses.set(key, { key, latest: lastMonthOf(f.values), unit: f.unit });
       }
     }
-    statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestActualMonth() });
+    // 분양회수의 최신월 = 이력의 마지막 회차(기준월 t에는 t월·t−2월 회차가 필요하다).
+    statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestRound() });
 
     const result = assessConstructionPerception(
       { series, forecastError: (t) => forecastErrorAt(ledger, t) },
       basis.baseMonth,
     );
 
-    const firstPlan = ledger.firstPlanMonth();
+    const firstRound = ledger.firstRound();
     return succeed({
       basis,
       selectable: {
-        from: firstPlan === null ? null : addMonths(firstPlan, REPORT_LAG_MONTHS),
+        // 기준월 t에는 t−2월 회차가 필요하므로 첫 회차 + 2부터 고를 수 있다.
+        from: firstRound === null ? null : addMonths(firstRound, REPORT_LAG_MONTHS),
         to: addMonths(today, -1),
       },
       result: explain(result, statuses, ledger),
       diagnostics: {
         indicators: SCORING_RULES.map((r) => statuses.get(r.key) as IndicatorStatus),
-        ledger: { latestActualMonth: ledger.latestActualMonth(), gaps: [...ledger.gaps()] },
+        ledger: {
+          latestRound: ledger.latestRound(),
+          rounds: [...ledger.rounds()],
+          missingRounds: [...ledger.missingRounds()],
+        },
         fetchedAt: earliestFetch(fetched) ?? now(),
       },
     });
@@ -183,15 +194,9 @@ function explain(
     missing: result.missing.map(({ key, reason }) => {
       const status = statuses.get(key);
       if (key === '분양회수예측오차') {
-        const latest = ledger.latestActualMonth();
-        if (latest === null) {
+        // 도메인 사유가 이미 어느 회차를 올릴지 적는다. 이력이 통째로 비었을 때만 따로 안내한다.
+        if (ledger.latestRound() === null) {
           return { key, reason: '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.' };
-        }
-        if (compareYearMonth(month, latest) > 0) {
-          return {
-            key,
-            reason: `분양회수 실적이 이력에 ${latest}까지만 있습니다. ${addMonths(month, 1)} 회차를 올리세요.`,
-          };
         }
         return { key, reason };
       }

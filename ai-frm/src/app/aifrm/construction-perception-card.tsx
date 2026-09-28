@@ -30,6 +30,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 import type { PerceptionReportDto, PerceptionResponse, RecordRoundResponse } from '@/app/api/construction-perception/dto';
 import {
   basisNote,
+  roundRecordedText,
   indicatorRows,
   ledgerNote,
   missingRows,
@@ -203,7 +204,7 @@ function PerceptionResult({
           </Text>
         )}
         <Text type="supporting" size="xsm">
-          {ledgerNote(diagnostics.ledger)}
+          {ledgerNote(diagnostics.ledger, basis.baseMonth)}
         </Text>
         <Text type="supporting" size="xsm">
           종합위기단계: 20 미만 정상 · 40 미만 주의 · 60 미만 경고 · 60 이상 위기. 기준월은 최신 회차(없으면
@@ -248,8 +249,5 @@ async function recordLatestRound(latest: Statement): Promise<RecordNote> {
     return { status: 'warning', text: '서버에 연결하지 못했습니다.' };
   }
 
-  const actual = 'value' in entry.actual ? `${entry.actual.month} 실적` : null;
-  const parts = [actual, `${entry.plan.month}부터 3개월 계획`].filter((x) => x !== null).join('과 ');
-  const caveat = 'missing' in entry.actual ? ` ${entry.actual.missing}` : '';
-  return { status: 'success', text: `${entry.round} 회차의 ${parts}을 반영했습니다.${caveat}` };
+  return { status: 'success', text: roundRecordedText(entry) };
 }

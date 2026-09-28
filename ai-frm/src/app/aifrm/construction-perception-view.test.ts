@@ -8,6 +8,7 @@ import {
   missingRows,
   monthOptions,
   revisionNote,
+  roundRecordedText,
 } from '@/app/aifrm/construction-perception-view';
 import type { IndicatorKey } from '@/domain/risk/construction-perception/policy';
 
@@ -41,7 +42,7 @@ function report(over: Partial<PerceptionReportDto> = {}): PerceptionReportDto {
         latest: (['주택매매가격지수', '환율', '주가'].includes(key) ? '2026/08' : '2026/07') as never,
         ...(key === '분양회수예측오차' ? {} : { unit: key === '대출금리' ? '연%' : key === '총수주액' ? '백만원' : '지수' }),
       })),
-      ledger: { latestActualMonth: '2026/07' as never, gaps: [] },
+      ledger: { latestRound: '2026/08' as never, rounds: ['2026/05', '2026/06', '2026/07', '2026/08'] as never, missingRounds: [] },
       fetchedAt: '2026-09-28T00:00:00.000Z',
     },
     ...over,
@@ -168,22 +169,51 @@ describe('기준월 선택지', () => {
   });
 });
 
-describe('이력 안내', () => {
-  it('빈 달이 없으면 마지막 실적 달만 알린다', () => {
-    expect(ledgerNote({ latestActualMonth: '2026/07' as never, gaps: [] })).toBe(
-      '분양회수 계획·실적 이력: 2026/07 실적까지 쌓였습니다.',
+describe('이력 안내 (회차 단위)', () => {
+  const ledger = (rounds: string[], missingRounds: string[] = []) => ({
+    latestRound: (rounds.at(-1) ?? null) as never,
+    rounds: rounds as never,
+    missingRounds: missingRounds as never,
+  });
+
+  it('올라온 회차 범위와, 기준월에 필요한 두 회차가 다 있음을 알린다', () => {
+    expect(ledgerNote(ledger(['2026/01', '2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08']), '2026/07' as never)).toBe(
+      '분양회수 계획·실적 이력: 2026/01~2026/08 회차 8개. 기준월 2026/07에 필요한 2026/05·2026/07 회차가 모두 있습니다.',
     );
   });
 
-  it('빈 달이 있으면 채우는 법을 알린다', () => {
-    expect(ledgerNote({ latestActualMonth: '2026/08' as never, gaps: ['2026/06', '2026/07'] as never })).toBe(
-      '분양회수 계획·실적 이력: 2026/08 실적까지 쌓였지만 2026/06, 2026/07이(가) 비어 있습니다. 그 달과 다음 달 회차를 올리면 채워집니다.',
+  it('필요한 회차가 없으면 무엇을 올릴지 알린다', () => {
+    expect(ledgerNote(ledger(['2026/05', '2026/06']), '2026/07' as never)).toBe(
+      '분양회수 계획·실적 이력: 2026/05~2026/06 회차 2개. 기준월 2026/07에는 2026/05·2026/07 회차가 필요합니다 — 2026/07 회차를 올리세요.',
+    );
+  });
+
+  it('사이에 빠진 회차도 알린다', () => {
+    expect(ledgerNote(ledger(['2026/04', '2026/07'], ['2026/05', '2026/06']), '2026/06' as never)).toBe(
+      '분양회수 계획·실적 이력: 2026/04~2026/07 회차 2개, 빠진 회차 2026/05·2026/06. 기준월 2026/06에는 2026/04·2026/06 회차가 필요합니다 — 2026/06 회차를 올리세요.',
     );
   });
 
   it('이력이 비어 있으면 회차를 올리라고 알린다', () => {
-    expect(ledgerNote({ latestActualMonth: null, gaps: [] })).toBe(
-      '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.',
+    expect(ledgerNote(ledger([]), '2026/07' as never)).toBe(
+      '분양회수 계획·실적 이력이 비어 있습니다. 기준월 2026/07에는 2026/05·2026/07 회차가 필요합니다.',
+    );
+  });
+});
+
+describe('회차 반영 안내', () => {
+  const plans = (start: number) =>
+    [0, 1, 2, 3].map((i) => ({ month: `2026/${String(start + i).padStart(2, '0')}`, value: 1 })) as never;
+
+  it('어느 회차의 무엇을 반영했는지 알린다', () => {
+    const entry = { round: '2026/07', sheetStart: '2026/01', actuals: [{}, {}, {}, {}, {}, {}], plans: plans(7) } as never;
+    expect(roundRecordedText(entry)).toBe('2026/07 회차의 실적 6개월(2026/01~2026/06)과 계획 4개월(2026/07~2026/10)을 반영했습니다.');
+  });
+
+  it('1월 회차는 실적이 없다는 것을 함께 알린다', () => {
+    const entry = { round: '2026/01', sheetStart: '2026/01', actuals: [], plans: plans(1) } as never;
+    expect(roundRecordedText(entry)).toBe(
+      '2026/01 회차의 계획 4개월(2026/01~2026/04)을 반영했습니다. 이 회차에는 실적 열이 없어 전년 실적은 전년도 파일에서 채웁니다.',
     );
   });
 });

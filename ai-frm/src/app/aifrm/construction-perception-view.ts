@@ -6,6 +6,7 @@
  */
 
 import type { PerceptionReportDto } from '@/app/api/construction-perception/dto';
+import type { RoundEntry } from '@/domain/cashflow/round-entry';
 import {
   defaultBaseMonth,
   type ConstructionPerception,
@@ -105,11 +106,33 @@ export function monthOptions(
   return months.sort((a, b) => compareYearMonth(b, a));
 }
 
-export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger']): string {
-  if (ledger.latestActualMonth === null) {
-    return '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.';
+/**
+ * 분양회수 계획·실적 이력 안내(정책 §3-3, 2026-09-28 개정). 기준월 t에는 t−2월 회차
+ * (계획)와 t월 회차(실적)가 필요하다. 무엇이 있고 무엇을 올려야 하는지 알린다.
+ */
+export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
+  const needed = [addMonths(baseMonth, -REPORT_LAG_MONTHS), baseMonth];
+  const neededText = `기준월 ${baseMonth}에는 ${needed.join('·')} 회차가 필요합니다`;
+  if (ledger.rounds.length === 0) {
+    return `분양회수 계획·실적 이력이 비어 있습니다. ${neededText}.`;
   }
-  const head = `분양회수 계획·실적 이력: ${ledger.latestActualMonth} 실적까지 쌓였`;
-  if (ledger.gaps.length === 0) return `${head}습니다.`;
-  return `${head}지만 ${ledger.gaps.join(', ')}이(가) 비어 있습니다. 그 달과 다음 달 회차를 올리면 채워집니다.`;
+
+  const range = `${ledger.rounds[0]}~${ledger.latestRound} 회차 ${ledger.rounds.length}개`;
+  const holes = ledger.missingRounds.length > 0 ? `, 빠진 회차 ${ledger.missingRounds.join('·')}` : '';
+  const absent = needed.filter((r) => !ledger.rounds.includes(r));
+  const need =
+    absent.length === 0
+      ? `기준월 ${baseMonth}에 필요한 ${needed.join('·')} 회차가 모두 있습니다.`
+      : `${neededText} — ${absent.join('·')} 회차를 올리세요.`;
+  return `분양회수 계획·실적 이력: ${range}${holes}. ${need}`;
+}
+
+/** 회차를 이력에 반영했을 때의 안내. */
+export function roundRecordedText(entry: RoundEntry): string {
+  const plans = `계획 ${entry.plans.length}개월(${entry.plans[0].month}~${entry.plans[entry.plans.length - 1].month})`;
+  if (entry.actuals.length === 0) {
+    return `${entry.round} 회차의 ${plans}을 반영했습니다. 이 회차에는 실적 열이 없어 전년 실적은 전년도 파일에서 채웁니다.`;
+  }
+  const actuals = `실적 ${entry.actuals.length}개월(${entry.sheetStart}~${addMonths(entry.round, -1)})`;
+  return `${entry.round} 회차의 ${actuals}과 ${plans}을 반영했습니다.`;
 }

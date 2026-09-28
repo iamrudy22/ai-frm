@@ -13,10 +13,10 @@ import type { RoundEntry } from '@/domain/cashflow/round-entry';
 import type { YearMonth } from '@/domain/shared/year-month';
 
 export type RecordedRound = {
-  /** 반영 뒤 이력의 최신 실적 달. */
-  readonly latestActualMonth: YearMonth | null;
-  /** 반영 뒤에도 비어 있는 달. 어느 회차를 더 올려야 하는지 알려 줄 때 쓴다. */
-  readonly gaps: readonly YearMonth[];
+  /** 반영 뒤 이력의 마지막 회차. */
+  readonly latestRound: YearMonth | null;
+  /** 첫 회차와 마지막 회차 사이에 빠진 회차. 어느 회차를 더 올려야 하는지 알려 줄 때 쓴다. */
+  readonly missingRounds: readonly YearMonth[];
 };
 
 export async function recordRound(
@@ -26,6 +26,6 @@ export async function recordRound(
   return settleAsync(async () => {
     const ledger = (await repo.load()).record(entry);
     await repo.save(ledger);
-    return succeed({ latestActualMonth: ledger.latestActualMonth(), gaps: [...ledger.gaps()] });
+    return succeed({ latestRound: ledger.latestRound(), missingRounds: [...ledger.missingRounds()] });
   }, '회차를 이력에 반영하지 못했습니다.');
 }

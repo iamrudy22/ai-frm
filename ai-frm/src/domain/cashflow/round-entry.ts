@@ -1,102 +1,105 @@
 /**
- * 회차 기재분 — 한 회차에서 분양회수 계획·실적 이력으로 떼어 가는 몫.
+ * 회차 기재분 — 한 회차에서 분양회수 계획·실적 이력으로 떼어 가는 몫(판형 2).
  *
- * 기준월 b인 회차에서 두 가지를 뗀다(정책 §3-3).
- *   - b−1월 분양회수 실적 1개
- *   - b, b+1, b+2월 분양회수 계획 3개 (엑셀 분양회수data의 M0·M1·M2)
+ * 기준월 b인 회차에서 떼어 두는 것(정책 §3-3, 2026-09-28 개정):
+ *   - 그 시트에서 실적인 달 전부 — 시트 첫 달(계획연도 1월) ~ b−1월
+ *   - b, b+1, b+2, b+3월 계획 4개
  *
- * 과거 계획은 최신 회차에 남아 있지 않다. 회차가 지나면 그 달 열이 실적으로
- * 덮이기 때문이다. 그래서 매달 이만큼만 떼어 이력에 쌓는다.
+ * 분양회수 예측오차(기준월 t)는 t월 회차의 t−3~t−1월 실적과 t−2월 회차의
+ * t−2~t+1월 계획을 쓴다. 실적을 직전 3개월만이 아니라 시트 전체로 떼어 두는
+ * 것은 전년 달을 채우기 위해서다 — 1~3월 회차에는 전년 달 열이 없어서, 그 달이
+ * 실적으로 들어 있는 다른 회차(전년도 파일)에서 채운다(forecast-ledger.ts).
  *
  * 브라우저에서 회차를 읽어 만들든(roundEntryOf) 서버가 요청 본문으로 받든
- * (roundEntry) 같은 불변식을 지난다. 자금수지표 원본은 서버로 가지 않고 이
- * 네 값만 간다.
+ * (roundEntry) 같은 불변식을 지난다. 자금수지표 원본은 서버로 가지 않는다.
  */
 
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
 import { amount, type Amount } from '@/domain/shared/amount';
-import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
+import { addMonths, compareYearMonth, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
+
+export type ActualCell = { readonly month: YearMonth; readonly value: Amount };
+
+export type PlanCell =
+  | {
+      readonly month: YearMonth;
+      readonly value: Amount;
+      /** 계획연도 끝을 넘는 칸(다음 해 열). 그 열은 일부만 채워져 있다. */
+      readonly beyondPlanYear?: true;
+    }
+  | { readonly month: YearMonth; readonly missing: string };
 
 export type RoundEntry = {
   /** 회차 = 기준월 b. */
   readonly round: YearMonth;
-  /**
-   * b−1월 실적. 1월 회차는 시트가 계획연도 1월부터라 전년 12월 열이 없다.
-   * 그때는 값 대신 사유를 남긴다(구현 계획 R7). 0으로 채우지 않는다.
-   */
-  readonly actual:
-    | { readonly month: YearMonth; readonly value: Amount }
-    | { readonly month: YearMonth; readonly missing: string };
-  readonly plan: {
-    readonly month: YearMonth;
-    readonly values: readonly [Amount, Amount, Amount];
-    /** 계획 3개 중 계획연도 끝을 넘는 칸이 있다(11·12월 회차). 그 열은 일부만 채워져 있다. */
-    readonly beyondPlanYear: boolean;
-  };
+  /** 시트가 시작하는 달. 이보다 앞선 달은 이 회차에 열이 없다(전년 달). */
+  readonly sheetStart: YearMonth;
+  /** sheetStart ~ b−1월 실적. 1월 회차면 비어 있다. */
+  readonly actuals: readonly ActualCell[];
+  /** b ~ b+3월 계획. */
+  readonly plans: readonly [PlanCell, PlanCell, PlanCell, PlanCell];
 };
 
-const PLAN_MONTHS = 3;
+export const PLAN_MONTHS = 4;
 
 export function roundEntryOf(statement: Statement): RoundEntry {
   const base = statement.defaultBaseMonth;
   const round = calendarOf(statement, base);
+  const sheetStart = calendarOf(statement, statement.months[0]);
 
-  const planMonths = statement.months.slice(base.index, base.index + PLAN_MONTHS);
-  if (planMonths.length < PLAN_MONTHS) {
-    throw new Error(`${base.label}부터 계획 3개월을 뗄 수 없습니다. 시트에 ${planMonths.length}개월뿐입니다.`);
-  }
-  const [m0, m1, m2] = planMonths.map((m) => statement.amountOf('분양회수', m));
+  const actuals = statement.months
+    .slice(0, base.index)
+    .map((m) => ({ month: calendarOf(statement, m), value: statement.amountOf('분양회수', m) }));
 
-  const prev = statement.months[base.index - 1];
-  const actualMonth = addMonths(round, -1);
-  const actual: RoundEntry['actual'] =
-    prev === undefined
-      ? {
-          month: actualMonth,
-          missing: `${base.label} 회차에는 직전 월(${actualMonth}) 열이 없어 12월 실적을 뗄 수 없습니다.`,
-        }
-      : { month: actualMonth, value: statement.amountOf('분양회수', prev) };
+  const plans = Array.from({ length: PLAN_MONTHS }, (_, i): PlanCell => {
+    const month = addMonths(round, i);
+    const column = statement.months[base.index + i];
+    if (column === undefined) {
+      return { month, missing: `${round} 회차 시트에 ${month} 열이 없습니다.` };
+    }
+    const value = statement.amountOf('분양회수', column);
+    return column.index > statement.planYearEnd.index ? { month, value, beyondPlanYear: true } : { month, value };
+  }) as unknown as RoundEntry['plans'];
 
-  return {
-    round,
-    actual,
-    plan: {
-      month: round,
-      values: [m0, m1, m2],
-      beyondPlanYear: base.index + PLAN_MONTHS - 1 > statement.planYearEnd.index,
-    },
-  };
+  return { round, sheetStart, actuals, plans };
 }
 
 /** 요청 본문처럼 믿을 수 없는 값을 검사해 기재분으로 만든다. */
 export function roundEntry(raw: unknown): RoundEntry {
   const body = object(raw, '본문');
   const round = parseYearMonth(string(body.round, 'round'));
-
-  const a = object(body.actual, 'actual');
-  const actualMonth = parseYearMonth(string(a.month, 'actual.month'));
-  if (actualMonth !== addMonths(round, -1)) {
-    throw new Error(`실적 달(${actualMonth})은 회차(${round})의 직전 달이어야 합니다.`);
-  }
-  const actual: RoundEntry['actual'] =
-    'missing' in a
-      ? { month: actualMonth, missing: string(a.missing, 'actual.missing') }
-      : { month: actualMonth, value: money(a.value, 'actual.value') };
-
-  const p = object(body.plan, 'plan');
-  const planMonth = parseYearMonth(string(p.month, 'plan.month'));
-  if (planMonth !== round) {
-    throw new Error(`계획 달(${planMonth})은 회차(${round})와 같아야 합니다.`);
-  }
-  if (!Array.isArray(p.values) || p.values.length !== PLAN_MONTHS) {
-    throw new Error('계획은 세 칸이어야 합니다.');
-  }
-  const [m0, m1, m2] = p.values.map((v, i) => money(v, `plan.values[${i}]`));
-  if (typeof p.beyondPlanYear !== 'boolean') {
-    throw new Error('plan.beyondPlanYear는 참/거짓이어야 합니다.');
+  const sheetStart = parseYearMonth(string(body.sheetStart, 'sheetStart'));
+  if (compareYearMonth(sheetStart, round) > 0) {
+    throw new Error(`시트 첫 달(${sheetStart})이 회차(${round})보다 뒤입니다.`);
   }
 
-  return { round, actual, plan: { month: planMonth, values: [m0, m1, m2], beyondPlanYear: p.beyondPlanYear } };
+  if (!Array.isArray(body.actuals)) throw new Error('actuals는 배열이어야 합니다.');
+  const actuals = body.actuals.map((raw, i): ActualCell => {
+    const cell = object(raw, `actuals[${i}]`);
+    const month = parseYearMonth(string(cell.month, `actuals[${i}].month`));
+    const expected = addMonths(sheetStart, i);
+    if (month !== expected) throw new Error(`실적 ${i}번째 달은 ${expected}여야 하는데 ${month}입니다.`);
+    return { month, value: money(cell.value, `actuals[${i}].value`) };
+  });
+  const lastActual = actuals.at(-1)?.month ?? addMonths(sheetStart, -1);
+  if (lastActual !== addMonths(round, -1)) {
+    throw new Error(`실적은 시트 첫 달부터 회차 직전 달(${addMonths(round, -1)})까지여야 합니다.`);
+  }
+
+  if (!Array.isArray(body.plans) || body.plans.length !== PLAN_MONTHS) {
+    throw new Error(`계획은 ${PLAN_MONTHS}칸이어야 합니다.`);
+  }
+  const plans = body.plans.map((raw, i): PlanCell => {
+    const cell = object(raw, `plans[${i}]`);
+    const month = parseYearMonth(string(cell.month, `plans[${i}].month`));
+    const expected = addMonths(round, i);
+    if (month !== expected) throw new Error(`계획 ${i}번째 달은 ${expected}여야 하는데 ${month}입니다.`);
+    if ('missing' in cell) return { month, missing: string(cell.missing, `plans[${i}].missing`) };
+    const value = money(cell.value, `plans[${i}].value`);
+    return cell.beyondPlanYear === true ? { month, value, beyondPlanYear: true } : { month, value };
+  }) as unknown as RoundEntry['plans'];
+
+  return { round, sheetStart, actuals, plans };
 }
 
 function object(v: unknown, what: string): Record<string, unknown> {

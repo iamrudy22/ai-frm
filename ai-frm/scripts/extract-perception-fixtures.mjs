@@ -1,46 +1,37 @@
 /**
- * 엑셀 → 분양회수 계획·실적 초기 이력, 그리고 엑셀 동등성 검증용 fixture.
+ * 엑셀 → 건설경기 인식 지수 동등성 검증용 fixture.
  *
- *   node scripts/seed-forecast-ledger.mjs "<3. 건설경기인식지수(2026).xlsx>" [--force]
+ *   node scripts/extract-perception-fixtures.mjs "<3. 건설경기인식지수(2026).xlsx>"
  *
- * 레거시 ACL이다(DDD 검토 §10-4). 엑셀 모양을 이력의 모양으로 옮기는 일만 한다.
- * 산식은 두지 않는다 — 산식이 두 벌이 되면 어긋난다. 옮긴 값이 맞는지는
- * construction-perception.fixture.test.ts가 도메인 함수로 검사한다.
+ * 레거시 ACL이다(DDD 검토 §10-4). 엑셀 모양을 CSV로 옮기기만 하고 산식은 두지
+ * 않는다. 옮긴 값으로 산식이 엑셀과 같은지는 construction-perception.fixture.test.ts가
+ * 도메인 함수로 검사한다.
  *
- * 만드는 파일 (모두 사내 데이터라 커밋하지 않는다)
- *   data/forecast-ledger.json                    초기 이력
- *   fixtures/건설경기인식지수-원값.csv             ecos기초데이터의 9종 원값
- *   fixtures/분양회수-오차율-엑셀.csv              분양회수data H열 (라벨 보정)
- *   fixtures/건설경기인식지수-엑셀결과.csv          위기단계 L(지수)·M(단계)열
+ * 만드는 파일 (사내 데이터라 커밋하지 않는다)
+ *   fixtures/건설경기인식지수-원값.csv       ecos기초데이터의 9종 원값
+ *   fixtures/분양회수-오차율-엑셀.csv        분양회수data H열 (라벨 보정)
+ *   fixtures/건설경기인식지수-엑셀결과.csv    위기단계 L(지수)·M(단계)열
+ *
+ * 2026-09-28 개정: 분양회수 예측오차의 정의가 엑셀과 달라져(정책 §3-2) 엑셀에서
+ * 이력을 옮기지 않는다. 엑셀 오차율은 ECOS 9종·산식의 동등성을 검증할 때 주입용으로만 쓴다.
  *
  * 라벨 보정(정책 §7 D8): 분양회수data의 날짜 라벨은 실제 데이터 월보다 한 달
- * 앞서 있다. "2026/08" 행은 7월 실적과 7월 회차 계획이다. 이 보정은 이 파일
- * 한 곳에만 있다.
- *
- * 이미 이력 파일이 있으면 멈춘다. 실제 회차가 쌓인 뒤 다시 돌리면 그 값을 덮기
- * 때문이다. 정말 덮으려면 --force.
+ * 앞서 있다. "2026/08" 행은 7월 데이터다. 이 보정은 이 파일 한 곳에만 있다.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 
 const XLSX = createRequire(import.meta.url)('xlsx');
 
-const [source, ...flags] = process.argv.slice(2);
+const [source] = process.argv.slice(2);
 if (source === undefined) {
-  console.error('사용법: node scripts/seed-forecast-ledger.mjs "<건설경기인식지수.xlsx>" [--force]');
+  console.error('사용법: node scripts/extract-perception-fixtures.mjs "<건설경기인식지수.xlsx>"');
   process.exit(2);
 }
-const force = flags.includes('--force');
 
-const LEDGER = resolve('data/forecast-ledger.json');
 const FIXTURES = resolve('fixtures');
-
-if (existsSync(LEDGER) && !force) {
-  console.error(`${LEDGER}이(가) 이미 있습니다. 쌓인 회차를 덮지 않도록 멈춥니다. 덮으려면 --force.`);
-  process.exit(1);
-}
 
 const wb = XLSX.readFile(source);
 const sheet = (name) => {
@@ -87,40 +78,20 @@ function expectDescending(months, what) {
   }
 }
 
-// ── 분양회수data → 이력 ───────────────────────────────────────────────────
+// ── 분양회수data H열 → 엑셀 오차율 (라벨 보정) ─────────────────────────
 
 const bd = sheet('분양회수data');
-const rows = [];
 const errorRates = [];
 const labels = [];
-
 for (let r = 6; ; r++) {
   const label = cell(bd, `B${r}`);
   if (blank(label)) break;
   const labelMonth = parseMonth(label, `분양회수data!B${r}`);
   labels.push(labelMonth);
-  const month = addMonths(labelMonth, -1); // 라벨 보정 (D8)
-
-  const row = { month };
-  const actual = cell(bd, `C${r}`);
-  if (!blank(actual)) {
-    row.actual = number(actual, `분양회수data!C${r}`);
-    row.actualFrom = addMonths(month, 1);
-    row.actualSeeded = true;
-  }
-  const plan = ['D', 'E', 'F'].map((c) => cell(bd, `${c}${r}`));
-  if (plan.some((v) => !blank(v))) {
-    row.plan = plan.map((v, i) => number(v, `분양회수data!${'DEF'[i]}${r}`));
-    row.planFrom = month;
-    row.planSeeded = true;
-  }
-  if (row.actual !== undefined || row.plan !== undefined) rows.push(row);
-
   const h = cell(bd, `H${r}`);
-  if (typeof h === 'number') errorRates.push([month, h]);
+  if (typeof h === 'number') errorRates.push([addMonths(labelMonth, -1), h]); // 라벨 보정 (D8)
 }
 expectDescending(labels, '분양회수data B열');
-rows.reverse(); // 이력 스냅샷은 달 순서(오름차순)다
 
 // ── ecos기초데이터 → 원값 ─────────────────────────────────────────────────
 
@@ -173,12 +144,8 @@ const write = (path, text) => {
   console.log(`썼습니다: ${path}`);
 };
 
-write(LEDGER, JSON.stringify({ version: 1, rows }, null, 2) + '\n');
 write(resolve(FIXTURES, '건설경기인식지수-원값.csv'), csv(['시점', ...ECOS_COLUMNS.map(([, k]) => k)], raw));
 write(resolve(FIXTURES, '분양회수-오차율-엑셀.csv'), csv(['시점', '오차율'], errorRates));
 write(resolve(FIXTURES, '건설경기인식지수-엑셀결과.csv'), csv(['시점', '종합위기인식지수', '종합위기단계'], results));
 
-console.log(
-  `이력 ${rows.length}개월(${rows[0].month}~${rows[rows.length - 1].month}), ` +
-    `오차율 ${errorRates.length}개월, 원값 ${raw.length}개월, 엑셀 결과 ${results.length}개월.`,
-);
+console.log(`오차율 ${errorRates.length}개월, 원값 ${raw.length}개월, 엑셀 결과 ${results.length}개월.`);

@@ -21,8 +21,14 @@ const noKey: EconomicIndicatorSource = {
 
 const body = {
   round: '2026/08',
-  actual: { month: '2026/07', value: 107 },
-  plan: { month: '2026/08', values: [108, 109, 110], beyondPlanYear: false },
+  sheetStart: '2026/08',
+  actuals: [],
+  plans: [
+    { month: '2026/08', value: 108 },
+    { month: '2026/09', value: 109 },
+    { month: '2026/10', value: 110 },
+    { month: '2026/11', value: 111 },
+  ],
 };
 
 const post = (payload: unknown) =>
@@ -88,16 +94,16 @@ describe('POST /api/forecast-ledger/rounds', () => {
     const repo = new MemoryRepository();
     const res = await handleRecordRound(post(body), repo);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, value: { latestActualMonth: '2026/07', gaps: [] } });
-    expect(repo.ledger.latestActualMonth()).toBe('2026/07');
+    expect(await res.json()).toEqual({ ok: true, value: { latestRound: '2026/08', missingRounds: [] } });
+    expect(repo.ledger.latestRound()).toBe('2026/08');
   });
 
   it('형식이 틀린 본문은 400이고 이력을 건드리지 않는다', async () => {
     const repo = new MemoryRepository();
-    const res = await handleRecordRound(post({ ...body, actual: { month: '2026/06', value: 1 } }), repo);
+    const res = await handleRecordRound(post({ ...body, plans: body.plans.slice(0, 3) }), repo);
     expect(res.status).toBe(400);
-    expect((await res.json()).reason).toContain('직전 달');
-    expect(repo.ledger.latestActualMonth()).toBeNull();
+    expect((await res.json()).reason).toContain('4칸');
+    expect(repo.ledger.latestRound()).toBeNull();
   });
 
   it('JSON이 아닌 본문은 400이다', async () => {

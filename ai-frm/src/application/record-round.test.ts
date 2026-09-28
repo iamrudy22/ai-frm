@@ -20,20 +20,20 @@ class MemoryRepository implements ForecastLedgerRepository {
 
 function entry(round: string): RoundEntry {
   const r = parseYearMonth(round);
-  return {
-    round: r,
-    actual: { month: addMonths(r, -1), value: amount(107) },
-    plan: { month: r, values: [amount(1), amount(2), amount(3)], beyondPlanYear: false },
-  };
+  const sheetStart = parseYearMonth(`${round.slice(0, 4)}/01`);
+  const actuals = [];
+  for (let m = sheetStart; m < r; m = addMonths(m, 1)) actuals.push({ month: m, value: amount(107) });
+  const plan = (i: number) => ({ month: addMonths(r, i), value: amount(i + 1) });
+  return { round: r, sheetStart, actuals, plans: [plan(0), plan(1), plan(2), plan(3)] };
 }
 
 describe('회차 반영', () => {
   it('이력을 불러와 기재분을 반영하고 저장한다', async () => {
     const repo = new MemoryRepository();
     const out = await recordRound(repo, entry('2026/08'));
-    expect(out).toEqual({ ok: true, value: { latestActualMonth: '2026/07', gaps: [] } });
+    expect(out).toEqual({ ok: true, value: { latestRound: '2026/08', missingRounds: [] } });
     expect(repo.saves).toBe(1);
-    expect(repo.ledger.actualOf(parseYearMonth('2026/07'))).toBe(107);
+    expect(repo.ledger.actualFor(parseYearMonth('2026/08'), parseYearMonth('2026/07'))).toBe(107);
   });
 
   it('같은 회차를 두 번 반영해도 저장된 이력이 같다', async () => {
@@ -44,11 +44,11 @@ describe('회차 반영', () => {
     expect(repo.ledger.snapshot()).toEqual(first);
   });
 
-  it('빈 달이 생기면 알려 준다', async () => {
+  it('빠진 회차가 생기면 알려 준다', async () => {
     const repo = new MemoryRepository();
     await recordRound(repo, entry('2026/06'));
     const out = await recordRound(repo, entry('2026/08'));
-    expect(out.ok && out.value.gaps).toEqual(['2026/06', '2026/07']);
+    expect(out.ok && out.value.missingRounds).toEqual(['2026/07']);
   });
 
   it('저장소가 실패하면 사유를 돌려주고 던지지 않는다', async () => {
