@@ -373,7 +373,7 @@ export async function assessPerception(source: EconomicIndicatorSource, repo: Fo
   - `DATA_VALUE` 문자열 → 수
   - `UNIT_NAME` → 공백을 걷어 낸 단위
   - 가장 늦은 달 → `latest`
-- 응답에 `RESULT`가 있으면 실패다(HTTP 200으로 온다). `ERROR-200`은 빈 계열로 본다. 9종을 병렬로 부르고, 실패는 지표 단위로 격리한다.
+- 응답에 `RESULT`가 있으면 실패다(HTTP 200으로 온다). "데이터 없음"은 빈 계열로 본다. **실제 코드는 인계 문서의 `ERROR-200`이 아니라 `INFO-200`이다**(키 오류도 `INFO-100`). 그래서 앞머리가 아니라 번호(`-200`)로 가른다(W8에서 녹화로 확인). 받은 행이 `list_total_count`보다 적으면 잘린 계열이라 실패로 본다. 9종을 병렬로 부르고, 실패는 지표 단위로 격리한다.
 - 키는 생성자 인자로 받는다. `process.env.ECOS_API_KEY`는 조립 지점(W9)에서만 읽는다. `NEXT_PUBLIC_` 접두어를 쓰지 않는다. **오류 메시지와 로그에 키가 들어간 URL을 남기지 않는다.**
 - 테스트: 실제 응답을 녹화한 JSON(공개 통계)으로 번역, `RESULT` 오류, 빈 행, 항목코드 두 개(환율)를 검증한다. 네트워크는 부르지 않는다.
 
@@ -404,7 +404,7 @@ export async function POST(request: Request) {
 }
 ```
 
-- 라우트는 조립과 직렬화만 한다. 규칙을 두지 않는다.
+- 라우트는 조립과 직렬화만 한다. 규칙을 두지 않는다. `route.ts`는 정해진 이름만 내보낼 수 있어서 처리 함수는 `app/api/_lib/handlers.ts`에, 조립은 `app/api/_lib/composition.ts`에 두었다(W9).
 - 키가 없으면 산출불가와 "ECOS_API_KEY가 설정되지 않았습니다"를 돌려준다.
 - 잘못된 본문은 400을 돌려준다.
 - Next 16 Route Handler는 기본적으로 캐시하지 않는다. 처음에는 캐시 없이 간다. 필요해지면 ECOS 조회를 `'use cache'` + `cacheLife('hours')` 도우미로 감싼다(route-handlers 문서).

@@ -8,6 +8,10 @@
  *   4. application/은 화면(app)·판독(infrastructure)·xlsx를 모른다. 회차를 받아 셈만 한다.
  *   5. 등급이 없는 지표(적정 시재)는 risk/grade를 import하지 않는다. 적정 시재는
  *      T/F와 '안정적'/'적정시재 부족' 표기만 있다(적정 시재 PRD §9-6).
+ *   6. 서버 전용 모듈(infrastructure/ecos·ledger)은 라우트(app/api/)만 import한다.
+ *      ECOS 인증키와 이력 파일이 브라우저 번들에 들어가지 않게 한다.
+ *   7. application/은 포트를 통해서만 바깥을 쓴다. 규칙 4가 막고, 새 유스케이스
+ *      파일이 그 검사 대상에 들어가는지 확인한다.
  *
  * 검사 범위: 정적 `import … from '…'`, `export … from '…'`, 부수효과 `import '…'`,
  * 동적 `import('…')`. 이 코드베이스에 그 밖의 모듈 적재 방식은 없다.
@@ -104,6 +108,27 @@ function violations(files: readonly SourceFile[]): string[] {
     }
   }
 
+  return found;
+}
+
+const SERVER_ONLY = ['infrastructure/ecos/', 'infrastructure/ledger/'];
+const COMPOSITION_ROOT = 'app/api/';
+
+/** 규칙 6. 서버 전용 모듈을 라우트 밖에서 import하면 잡는다. 제 폴더 안은 허용한다. */
+function serverOnlyViolations(files: readonly SourceFile[]): string[] {
+  const found: string[] = [];
+  for (const { path, source } of files) {
+    if (path.startsWith(COMPOSITION_ROOT)) continue;
+    const own = SERVER_ONLY.find((folder) => path.startsWith(folder));
+    for (const specifier of specifiersOf(source)) {
+      const target = resolveInternal(path, specifier);
+      if (target === null) continue;
+      const folder = SERVER_ONLY.find((f) => target.startsWith(f));
+      if (folder !== undefined && folder !== own) {
+        found.push(`${path} → ${specifier}: 서버 전용 모듈은 라우트(app/api/)만 쓴다`);
+      }
+    }
+  }
   return found;
 }
 
@@ -247,5 +272,63 @@ describe('실제 소스의 경계', () => {
 
   it('위반이 없다', () => {
     expect(violations(sources)).toEqual([]);
+  });
+});
+
+// ── 규칙 6: 서버 전용 모듈 ─────────────────────────────────────────────────
+
+describe('서버 전용 모듈 검사기 (규칙 6)', () => {
+  const file = (path: string, source: string): SourceFile => ({ path, source });
+
+  it('화면이 ECOS·이력 저장소를 import하면 잡는다', () => {
+    const v = serverOnlyViolations([
+      file('app/aifrm/page.tsx', `import { EcosIndicatorSource } from '@/infrastructure/ecos/ecos-indicator-source';`),
+      file('app/aifrm/page.tsx', `import { FileLedgerRepository } from '@/infrastructure/ledger/file-ledger-repository';`),
+    ]);
+    expect(v).toHaveLength(2);
+    expect(v[0]).toMatch(/page\.tsx.*infrastructure\/ecos/);
+  });
+
+  it('도메인·유스케이스·다른 판독 계층이 import해도 잡는다', () => {
+    const v = serverOnlyViolations([
+      file('application/construction-perception.ts', `import { X } from '@/infrastructure/ecos/ecos-indicator-source';`),
+      file('infrastructure/xlsx/statement-reader.ts', `import { X } from '../ledger/file-ledger-repository';`),
+    ]);
+    expect(v).toHaveLength(2);
+  });
+
+  it('라우트(app/api/)와 제 폴더 안은 허용한다', () => {
+    expect(
+      serverOnlyViolations([
+        file('app/api/construction-perception/route.ts', `import { X } from '@/infrastructure/ecos/ecos-indicator-source';`),
+        file('app/api/_lib/composition.ts', `import { X } from '@/infrastructure/ledger/file-ledger-repository';`),
+        file('infrastructure/ecos/ecos-indicator-source.test.ts', `import { X } from './ecos-indicator-source';`),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('실제 소스의 서버 전용 경계 (규칙 6)', () => {
+  const everything = walk(SRC)
+    .map((full) => ({ path: relative(SRC, full).split(sep).join('/'), source: readFileSync(full, 'utf8') }))
+    // 이 파일은 위반 예시를 문자열로 품고 있다.
+    .filter((f) => f.path !== 'boundaries.test.ts');
+
+  // 폴더 이름이 바뀌면 규칙 6이 아무것도 검사하지 않고 통과한다. 그걸 막는다.
+  it('서버 전용 폴더가 실제로 있고, 화면 파일도 훑는다', () => {
+    for (const folder of SERVER_ONLY) {
+      expect(everything.some((f) => f.path.startsWith(folder))).toBe(true);
+    }
+    expect(everything.some((f) => f.path === 'app/aifrm/page.tsx')).toBe(true);
+  });
+
+  it('새 유스케이스 파일도 규칙 4의 검사 대상이다 (규칙 7)', () => {
+    for (const path of ['application/construction-perception.ts', 'application/record-round.ts', 'application/ports.ts']) {
+      expect(sources.some((f) => f.path === path)).toBe(true);
+    }
+  });
+
+  it('위반이 없다', () => {
+    expect(serverOnlyViolations(everything)).toEqual([]);
   });
 });

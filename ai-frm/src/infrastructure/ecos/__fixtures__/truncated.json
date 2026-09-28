@@ -1,0 +1,39 @@
+{
+  "StatisticSearch": {
+    "list_total_count": 4,
+    "row": [
+      {
+        "STAT_CODE": "901Y020",
+        "STAT_NAME": "8.4.1. 국내건설수주액",
+        "ITEM_CODE1": "I42A",
+        "ITEM_NAME1": "총수주액",
+        "ITEM_CODE2": null,
+        "ITEM_NAME2": null,
+        "ITEM_CODE3": null,
+        "ITEM_NAME3": null,
+        "ITEM_CODE4": null,
+        "ITEM_NAME4": null,
+        "UNIT_NAME": "백만원",
+        "WGT": null,
+        "TIME": "202604",
+        "DATA_VALUE": "20728032"
+      },
+      {
+        "STAT_CODE": "901Y020",
+        "STAT_NAME": "8.4.1. 국내건설수주액",
+        "ITEM_CODE1": "I42A",
+        "ITEM_NAME1": "총수주액",
+        "ITEM_CODE2": null,
+        "ITEM_NAME2": null,
+        "ITEM_CODE3": null,
+        "ITEM_NAME3": null,
+        "ITEM_CODE4": null,
+        "ITEM_NAME4": null,
+        "UNIT_NAME": "백만원",
+        "WGT": null,
+        "TIME": "202605",
+        "DATA_VALUE": "22947476"
+      }
+    ]
+  }
+}
