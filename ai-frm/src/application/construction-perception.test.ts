@@ -54,8 +54,8 @@ function entry(round: YearMonth): RoundEntry {
   return { round, sheetStart, actuals, plans: [plan(0), plan(1), plan(2), plan(3)] };
 }
 
-/** 3~8월 회차가 모두 올라온 이력 — 오차율 (330 − 300) ÷ 300 = +10%(0점). */
-const ROUNDS = ['2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08'];
+/** 2~8월 회차가 모두 올라온 이력 — 오차율 (330 − 300) ÷ 300 = +10%(0점). */
+const ROUNDS = ['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08'];
 function ledgerThrough(rounds: string[] = ROUNDS): ForecastLedger {
   return rounds.reduce((l, r) => l.record(entry(ym(r))), emptyLedger());
 }
@@ -93,7 +93,7 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/05' });
   });
 
-  it('고를 수 있는 범위: 이력의 첫 회차 + 2부터 오늘의 전달까지', async () => {
+  it('고를 수 있는 범위: 이력의 첫 회차 + 3부터 오늘의 전달까지', async () => {
     expect((await assess()).selectable).toEqual({ from: '2026/05', to: '2026/08' });
     expect((await assess({}, new FixedSource(), repoOf(emptyLedger()))).selectable).toEqual({
       from: null,
@@ -113,13 +113,13 @@ describe('산출불가 사유', () => {
   });
 
   it('기준월 회차가 이력에 아직 없으면 그 회차를 올리라고 알린다', async () => {
-    const repo = repoOf(ledgerThrough(ROUNDS.slice(0, 4))); // 3~6월 회차만 — 7월 회차 없음
+    const repo = repoOf(ledgerThrough(ROUNDS.slice(0, 5))); // 2~6월 회차만 — 6월 실적을 적을 7월 회차 없음
     const r = await assess({}, new FixedSource(), repo);
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
       missing: [
-        { key: '분양회수예측오차', reason: '분양회수: 2026/07 회차가 이력에 없습니다. 올리세요.' },
+        { key: '분양회수예측오차', reason: '분양회수: 2026/06 실적은 직후 회차인 2026/07 회차에서 읽는데, 그 회차가 이력에 없습니다. 올리세요.' },
       ],
     });
   });
@@ -159,7 +159,7 @@ describe('산출불가 사유', () => {
   });
 
   it('기준월 회차가 빠지면 이전 달로 내려가지 않고 산출불가, 진단에 빠진 회차', async () => {
-    const repo = repoOf(ledgerThrough(['2026/03', '2026/04', '2026/05', '2026/06', '2026/08'])); // 7월 회차 누락
+    const repo = repoOf(ledgerThrough(['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/08'])); // 7월 회차 누락
     const r = await assess({}, new FixedSource(), repo);
     expect(r.result).toMatchObject({ kind: 'unavailable', month: '2026/07' });
     expect(r.diagnostics.ledger.missingRounds).toEqual(['2026/07']);

@@ -23,8 +23,8 @@ import {
   type EcosIndicatorKey,
   type RawSeries,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { forecastErrorAt } from '@/domain/risk/construction-perception/forecast-error';
-import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import { PLAN_ROUND_LAG, forecastErrorAt } from '@/domain/risk/construction-perception/forecast-error';
+import { SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
 import { addMonths, compareYearMonth, yearMonthOfDate, type YearMonth } from '@/domain/shared/year-month';
 
 export type PerceptionRequest = {
@@ -102,7 +102,7 @@ export async function assessPerception(
         statuses.set(key, { key, latest: lastMonthOf(f.values), unit: f.unit });
       }
     }
-    // 분양회수의 최신월 = 이력의 마지막 회차(기준월 t에는 t월·t−2월 회차가 필요하다).
+    // 분양회수의 최신월 = 이력의 마지막 회차(기준월 t에는 t−3 ~ t월 회차가 필요하다).
     statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestRound() });
 
     const result = assessConstructionPerception(
@@ -114,8 +114,8 @@ export async function assessPerception(
     return succeed({
       basis,
       selectable: {
-        // 기준월 t에는 t−2월 회차가 필요하므로 첫 회차 + 2부터 고를 수 있다.
-        from: firstRound === null ? null : addMonths(firstRound, REPORT_LAG_MONTHS),
+        // 기준월 t에는 t−3월 회차(계획)가 필요하므로 첫 회차 + 3부터 고를 수 있다.
+        from: firstRound === null ? null : addMonths(firstRound, PLAN_ROUND_LAG),
         to: addMonths(today, -1),
       },
       result: explain(result, statuses, ledger),

@@ -177,7 +177,7 @@ export function ConstructionPerceptionCard({
           )}
           <FileInput
             label="이력용 회차 추가"
-            description="분양회수 예측오차에는 기준월 회차와 두 달 전 회차가 필요합니다. 과거·전년도 회차를 여러 개 올리면 이력에 더합니다. 파일 원본은 서버로 보내지 않습니다."
+            description="분양회수 예측오차에는 기준월과 그 전 석 달의 회차(모두 네 개)가 필요합니다. 과거·전년도 회차를 여러 개 올리면 이력에 더합니다. 파일 원본은 서버로 보내지 않습니다."
             placeholder={isAdding ? '반영하는 중…' : '자금수지표 파일 선택(여러 개)'}
             accept=".xlsx,.xls"
             isMultiple

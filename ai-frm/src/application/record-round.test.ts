@@ -33,7 +33,7 @@ describe('회차 반영', () => {
     const out = await recordRound(repo, entry('2026/08'));
     expect(out).toEqual({ ok: true, value: { latestRound: '2026/08', missingRounds: [] } });
     expect(repo.saves).toBe(1);
-    expect(repo.ledger.actualFor(parseYearMonth('2026/08'), parseYearMonth('2026/07'))).toBe(107);
+    expect(repo.ledger.actualOf(parseYearMonth('2026/07'))).toBe(107);
   });
 
   it('같은 회차를 두 번 반영해도 저장된 이력이 같다', async () => {

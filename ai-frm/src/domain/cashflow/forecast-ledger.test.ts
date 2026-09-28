@@ -46,32 +46,29 @@ describe('분양회수 계획·실적 이력 (판형 2, 회차 단위)', () => {
   });
 });
 
-describe('실적 — 기준월 회차 한 장에서 읽는다 (정책 §3-2)', () => {
-  it('회차 시트에 있는 달은 그 회차의 값이다 — 다른 회차가 같은 달을 적었어도', () => {
+describe('실적 — 각 달의 직후 회차 값이다 (정책 §3-2, 2026-09-28 재개정)', () => {
+  it('m월 실적은 m+1월 회차가 적은 값이다 — 나중 회차가 다르게 적었어도', () => {
     const ledger = emptyLedger().record(entry('2026/07')).record(entry('2026/08'));
-    expect(ledger.actualFor(ym('2026/07'), ym('2026/04'))).toBe(7004);
+    expect(ledger.actualOf(ym('2026/06'))).toBe(7006);
+    expect(ledger.actualOf(ym('2026/07'))).toBe(8007);
   });
 
-  it('회차가 이력에 없으면 결측이다', () => {
-    expect(emptyLedger().actualFor(ym('2026/07'), ym('2026/04'))).toEqual({
-      missing: expect.stringContaining('2026/07 회차'),
-    });
+  it('직후 회차가 이력에 없으면 결측이고, 올릴 회차를 알린다', () => {
+    const ledger = emptyLedger().record(entry('2026/08'));
+    expect(ledger.actualOf(ym('2026/06'))).toEqual({ missing: expect.stringContaining('2026/07 회차') });
   });
 
-  it('회차 시트에 없는 전년 달은 그 달이 실적인 가장 최근 회차에서 채운다', () => {
+  it('직후 회차 시트에 그 달 열이 없으면(전년 달) 그 달이 실적인 가장 이른 회차에서 채운다', () => {
     const ledger = emptyLedger()
       .record(entry('2026/01')) // 2026년 파일 — 전년 열 없음
-      .record(entry('2025/11', '2025/01')) // 전년도 파일 — 2025/01~10 실적
-      .record(entry('2025/12', '2025/01')); // 전년도 파일 — 2025/01~11 실적
-    expect(ledger.actualFor(ym('2026/01'), ym('2025/10'))).toBe(12010);
-    expect(ledger.actualFor(ym('2026/01'), ym('2025/11'))).toBe(12011);
+      .record(entry('2026/03', '2025/10')) // 전년 10월부터 든 파일
+      .record(entry('2026/04', '2025/10'));
+    expect(ledger.actualOf(ym('2025/12'))).toBe(3012);
   });
 
-  it('그 달이 실적인 회차가 없으면 결측이고, 어느 달인지 알린다', () => {
-    const ledger = emptyLedger().record(entry('2026/01')).record(entry('2025/12', '2025/01'));
-    expect(ledger.actualFor(ym('2026/01'), ym('2025/12'))).toEqual({
-      missing: expect.stringContaining('2025/12'),
-    });
+  it('그 달이 실적인 회차가 없으면 결측이고, 전년도 파일을 올리라고 알린다', () => {
+    const ledger = emptyLedger().record(entry('2026/01'));
+    expect(ledger.actualOf(ym('2025/12'))).toEqual({ missing: expect.stringMatching(/2025\/12.*전년도 파일/) });
   });
 });
 
@@ -80,7 +77,7 @@ describe('저장 형태와 복원', () => {
     const ledger = emptyLedger().record(entry('2026/05')).record(entry('2026/07'));
     const restored = ledgerFrom(JSON.parse(JSON.stringify(ledger.snapshot())));
     expect(restored.snapshot()).toEqual(ledger.snapshot());
-    expect(restored.actualFor(ym('2026/07'), ym('2026/04'))).toBe(7004);
+    expect(restored.actualOf(ym('2026/06'))).toBe(7006);
   });
 
   it('스냅샷은 판형 2이고 회차 순서로 정렬되어 있다', () => {

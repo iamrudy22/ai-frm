@@ -10,6 +10,7 @@ import {
   defaultBaseMonth,
   type ConstructionPerception,
 } from '@/domain/risk/construction-perception/construction-perception';
+import { PLAN_ROUND_LAG } from '@/domain/risk/construction-perception/forecast-error';
 import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
 import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
@@ -106,12 +107,14 @@ export function monthOptions(
 }
 
 /**
- * 분양회수 계획·실적 이력 안내(정책 §3-3, 2026-09-28 개정). 기준월 t에는 t−2월 회차
- * (계획)와 t월 회차(실적)가 필요하다. 무엇이 있고 무엇을 올려야 하는지 알린다.
+ * 분양회수 계획·실적 이력 안내(정책 §3-2·§3-3). 기준월 t에는 t−3월 회차(계획)와
+ * t−2·t−1·t월 회차(각 달의 직후 회차 실적)가 필요하다. 무엇이 있고 무엇을 올려야
+ * 하는지 알린다.
  */
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
-  const needed = [addMonths(baseMonth, -REPORT_LAG_MONTHS), baseMonth];
-  const neededText = `기준월 ${baseMonth}에는 ${needed.join('·')} 회차가 필요합니다`;
+  const needed = Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(baseMonth, i - PLAN_ROUND_LAG));
+  const span = `${needed[0]}~${baseMonth}`;
+  const neededText = `기준월 ${baseMonth}에는 ${span} 회차가 필요합니다`;
   if (ledger.rounds.length === 0) {
     return `분양회수 계획·실적 이력이 비어 있습니다. ${neededText}.`;
   }
@@ -121,7 +124,7 @@ export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'],
   const absent = needed.filter((r) => !ledger.rounds.includes(r));
   const need =
     absent.length === 0
-      ? `기준월 ${baseMonth}에 필요한 ${needed.join('·')} 회차가 모두 있습니다.`
+      ? `기준월 ${baseMonth}에 필요한 ${span} 회차가 모두 있습니다.`
       : `${neededText} — ${absent.join('·')} 회차를 올리세요.`;
   return `분양회수 계획·실적 이력: ${range}${holes}. ${need}`;
 }

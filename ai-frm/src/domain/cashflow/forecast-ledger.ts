@@ -4,12 +4,13 @@
  * 특정 지표의 개념이 아니라 자금수지의 사실이라 회차와 같은 곳에 둔다(DDD 검토
  * §10-2). 건설경기 인식 지수의 분양회수 예측오차가 이 이력을 읽는다.
  *
- * 단위는 **회차**다(정책 §3-3, 2026-09-28 개정). 분양회수 예측오차(기준월 t)는
- * t월 회차의 실적과 t−2월 회차의 계획을 쓰므로, 회차를 키로 담는다. 같은 회차를
+ * 단위는 **회차**다(정책 §3-3). 분양회수 예측오차(기준월 t)는 t−3월 회차의 계획과
+ * t−3~t−1월 각 달의 직후 회차 실적을 쓰므로, 회차를 키로 담는다. 같은 회차를
  * 다시 올리면 그 회차의 기재분을 통째로 바꾼다. 다른 회차는 건드리지 않는다.
  *
- * 실적은 기준월 회차 한 장에서 읽는다. 그 회차 시트에 그 달 열이 아예 없을 때
- * (1~3월 회차의 전년 달)만, 그 달이 실적으로 들어 있는 가장 최근 회차에서 채운다.
+ * m월 실적은 **m+1월 회차가 적은 값**이다(엑셀 분양회수data와 같다). 나중 회차에서
+ * 정산된 값은 쓰지 않는다. 직후 회차 시트에 그 달 열이 아예 없을 때(2026년 1월
+ * 회차의 2025년 12월)만, 그 달이 실적으로 들어 있는 가장 이른 회차에서 채운다.
  *
  * 판형 1(달 단위, 회차마다 실적 1개·계획 3개)은 새 정의에 쓸 수 없어 거부한다.
  */
@@ -33,8 +34,8 @@ export type ForecastLedger = {
   missingRounds(): readonly YearMonth[];
   entryOf(round: YearMonth): RoundEntry | undefined;
   planOf(round: YearMonth): RoundEntry['plans'] | undefined;
-  /** round 회차가 적은 month 실적. 그 시트에 없는 전년 달만 다른 회차에서 채운다. */
-  actualFor(round: YearMonth, month: YearMonth): Amount | LedgerMissing;
+  /** month 실적 = 직후 회차(month+1)가 적은 값. 그 시트에 없는 전년 달만 다른 회차에서 채운다. */
+  actualOf(month: YearMonth): Amount | LedgerMissing;
   snapshot(): LedgerSnapshot;
 };
 
@@ -88,23 +89,24 @@ function build(entries: ReadonlyMap<YearMonth, RoundEntry>): ForecastLedger {
     entryOf: (round) => entries.get(round),
     planOf: (round) => entries.get(round)?.plans,
 
-    actualFor(round, month) {
-      const entry = entries.get(round);
+    actualOf(month) {
+      const next = addMonths(month, 1);
+      const entry = entries.get(next);
       if (entry === undefined) {
-        return { missing: `${round} 회차가 이력에 없습니다. 올리세요.` };
+        return { missing: `${month} 실적은 직후 회차인 ${next} 회차에서 읽는데, 그 회차가 이력에 없습니다. 올리세요.` };
       }
       if (compareYearMonth(month, entry.sheetStart) >= 0) {
         const cell = entry.actuals.find((a) => a.month === month);
-        return cell?.value ?? { missing: `${round} 회차에 ${month} 실적이 없습니다.` };
+        return cell?.value ?? { missing: `${next} 회차에 ${month} 실적이 없습니다.` };
       }
 
-      // 그 회차 시트에 열이 없는 전년 달 — 그 달이 실적인 가장 최근 회차에서 채운다.
-      for (const r of [...sorted()].reverse()) {
+      // 직후 회차 시트에 열이 없는 전년 달 — 그 달이 실적인 가장 이른 회차에서 채운다.
+      for (const r of sorted()) {
         const cell = entries.get(r)?.actuals.find((a) => a.month === month);
         if (cell !== undefined) return cell.value;
       }
       return {
-        missing: `${round} 회차에는 ${month} 열이 없고, ${month}이(가) 실적인 회차도 이력에 없습니다. 전년도 파일을 올리세요.`,
+        missing: `${next} 회차에는 ${month} 열이 없고, ${month}이(가) 실적인 회차도 이력에 없습니다. 전년도 파일을 올리세요.`,
       };
     },
 
