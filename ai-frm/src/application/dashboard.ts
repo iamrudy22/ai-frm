@@ -29,10 +29,9 @@ import {
   paymentRecoveryInputFrom,
   type PaymentRecovery,
 } from '@/domain/risk/payment-recovery/payment-recovery';
+import { fail, settle, succeed, type Outcome } from '@/application/outcome';
 
-export type Outcome<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly reason: string };
+export type { Outcome };
 
 export type PaymentRecoveryResult = Extract<PaymentRecovery, { kind: 'ok' }>;
 
@@ -72,21 +71,4 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
       unreadable: latest.unreadableItems(),
     },
   };
-}
-
-function succeed<T>(value: T): Outcome<T> {
-  return { ok: true, value };
-}
-
-function fail<T>(reason: string): Outcome<T> {
-  return { ok: false, reason };
-}
-
-/** 던진 오류를 실패 값으로 바꾼다. 지표 하나의 실패가 여기서 멈춘다. */
-function settle<T>(run: () => Outcome<T>, fallback: string): Outcome<T> {
-  try {
-    return run();
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : fallback);
-  }
 }

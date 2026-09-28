@@ -314,14 +314,16 @@ export interface ForecastLedgerRepository {
   save(ledger: ForecastLedger): Promise<void>;
 }
 
-export type IndicatorSeries = { values: RawSeries; unit: string; latest: YearMonth | null };
+export type IndicatorFetch = { values: RawSeries; unit: string } | { error: string };
 export interface EconomicIndicatorSource {
   /** 9종. 한 지표의 실패가 다른 지표를 막지 않는다. */
-  fetchAll(): Promise<Readonly<Record<EcosKey, IndicatorSeries | { error: string }>>>;
+  fetchAll(): Promise<Readonly<Record<EcosIndicatorKey, IndicatorFetch>>>;
 }
 ```
 
 포트의 타입은 전부 도메인 언어다(`YearMonth`, `RawSeries`). ECOS 형식은 여기에 나오지 않는다.
+
+최신월은 포트로 받지 않는다(W7에서 변경). 계열의 마지막 달이 곧 최신월이라 두 칸으로 두면 어긋날 수 있다. 유스케이스가 계열에서 구한다. `Outcome`은 대시보드와 함께 쓰도록 `application/outcome.ts`로 옮겼다.
 
 ### 회차 반영 (`application/record-round.ts`)
 
