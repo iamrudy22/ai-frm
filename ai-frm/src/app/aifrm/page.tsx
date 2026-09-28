@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
 import { FileInput } from '@astryxdesign/core/FileInput';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -11,17 +12,21 @@ import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
+import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
 import {
   assessDashboard,
+  type AdequateCashReport,
   type Dashboard,
   type Outcome,
   type PaymentRecoveryResult,
 } from '@/application/dashboard';
 import type { Month, Statement } from '@/domain/cashflow/statement';
+import type { AdequateCashMonth } from '@/domain/risk/adequate-cash/adequate-cash';
+import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
 import type { Grade } from '@/domain/risk/grade';
 import {
   LIQUIDITY_WINDOW_MONTHS,
@@ -135,7 +140,7 @@ export default function AifrmDashboardPage() {
             <VStack gap={1}>
               <Heading level={1}>재무위험 선행지표</Heading>
               <Text type="supporting">
-                자금수지표 회차를 올리면 대금 회수 위험과 유동성 Gap을 함께 판정합니다.
+                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재를 함께 판정합니다.
               </Text>
             </VStack>
 
@@ -153,7 +158,7 @@ export default function AifrmDashboardPage() {
               />
               <FileInput
                 label="최신 회차"
-                description="유동성 Gap의 기준이 됩니다."
+                description="유동성 Gap과 적정 시재의 기준이 됩니다."
                 placeholder="자금수지표 파일 선택"
                 accept=".xlsx,.xls"
                 value={latestFile}
@@ -200,6 +205,13 @@ export default function AifrmDashboardPage() {
                 <VStack gap={3}>
                   <Heading level={2}>유동성 Gap</Heading>
                   <GapResult gap={dashboard.liquidityGap} baseMonth={baseMonth} />
+                </VStack>
+
+                <Divider />
+
+                <VStack gap={3}>
+                  <Heading level={2}>적정 시재</Heading>
+                  <AdequateCashResult adequateCash={dashboard.adequateCash} />
                 </VStack>
               </VStack>
             )}
@@ -321,6 +333,149 @@ function GapDetail({ gap, baseMonth }: { gap: LiquidityGap; baseMonth: Month | n
         수입은 운영 수입 기준입니다. 공사채·금융기관 차입은 빼고 셉니다 — 조달은 유동성 위험의
         해결책이지 완충재가 아니기 때문입니다.
       </Text>
+    </VStack>
+  );
+}
+
+// ── 적정 시재 ────────────────────────────────────────────────────────────
+//
+// 적정 시재에는 등급이 없다. T/F와 '안정적'/'적정시재 부족' 표기만 쓴다.
+// 두 지표의 등급 배지·색(BADGE_VARIANT)과 등급별 코멘트를 쓰지 않는다 —
+// 같은 모양이면 등급이 있는 지표로 읽히기 때문이다.
+
+function verdictText(isAdequate: boolean): string {
+  return `${isAdequate ? 'T' : 'F'} · ${verdictLabel(isAdequate)}`;
+}
+
+function windowText(m: AdequateCashMonth): string {
+  return `${m.month.label}~${m.windowEnd.label}`;
+}
+
+function remarkText(m: AdequateCashMonth): string {
+  return [m.isPlan ? '계획' : null, m.beyondPlanYear ? '다음 해 계획 미확정' : null]
+    .filter((x) => x !== null)
+    .join(' · ');
+}
+
+type BreakdownRow = { 항목: string; 합계: string; 가중치: string; 가중값: string } & Record<string, unknown>;
+
+const BREAKDOWN_COLUMNS = [
+  { key: '항목', header: '항목' },
+  { key: '합계', header: '3개월 합계' },
+  { key: '가중치', header: '가중치' },
+  { key: '가중값', header: '가중값' },
+];
+
+type SeriesRow = {
+  기준월: string;
+  구간: string;
+  현재시재: string;
+  적정시재: string;
+  판정: string;
+  비고: string;
+} & Record<string, unknown>;
+
+const SERIES_COLUMNS = [
+  { key: '기준월', header: '기준월' },
+  { key: '구간', header: '구간' },
+  { key: '현재시재', header: '현재시재' },
+  { key: '적정시재', header: '적정시재' },
+  { key: '판정', header: '적정 여부' },
+  { key: '비고', header: '비고' },
+];
+
+function AdequateCashResult({ adequateCash }: { adequateCash: Outcome<AdequateCashReport> }) {
+  if (!adequateCash.ok) {
+    return <Banner status="error" title="산출할 수 없습니다" description={adequateCash.reason} />;
+  }
+
+  const { current, series } = adequateCash.value;
+  const remark = remarkText(current);
+
+  const summary: Row[] = [
+    { 항목: '관측 구간', 값: windowText(current) },
+    { 항목: '현재시재 (기초시재)', 값: money(current.openingCash) },
+    { 항목: '적정시재 (LCR)', 값: money(current.adequateCash) },
+    { 항목: '차이 (현재 − 적정)', 값: money(current.surplus) },
+    { 항목: '적정 여부', 값: verdictText(current.isAdequate) },
+  ];
+
+  const breakdown: BreakdownRow[] = [
+    ...current.components.map((c) => ({
+      항목: c.key === '수지차' ? '수지차 (지출 − 수입)' : c.key,
+      합계: money(c.total),
+      가중치: `${Math.round(c.weight * 100)}%`,
+      가중값: money(c.weighted),
+    })),
+    { 항목: '적정시재', 합계: '', 가중치: '', 가중값: money(current.adequateCash) },
+  ];
+
+  const rows: SeriesRow[] = series.rows.map((m) => ({
+    기준월: m.month.label,
+    구간: windowText(m),
+    현재시재: money(m.openingCash),
+    적정시재: money(m.adequateCash),
+    판정: verdictText(m.isAdequate),
+    비고: remarkText(m),
+  }));
+
+  const hasBeyondPlanYear = series.rows.some((m) => m.beyondPlanYear);
+
+  return (
+    <VStack gap={3} align="start">
+      <HStack gap={2} vAlign="center">
+        <StatusDot
+          variant={current.isAdequate ? 'success' : 'warning'}
+          label={verdictLabel(current.isAdequate)}
+        />
+        <Text>{verdictText(current.isAdequate)}</Text>
+        {remark !== '' && <Text type="supporting">({remark})</Text>}
+      </HStack>
+
+      <Table data={summary} columns={COLUMNS} />
+
+      {/* 표가 부모의 첫·마지막 자식이면 Astryx가 위아래로 번지게(bleed) 그려 트리거와 겹친다.
+          설명 문장을 앞뒤에 두어 표를 가운데 자식으로 둔다. */}
+      <Collapsible trigger="산출 내역" defaultIsOpen={false}>
+        <VStack gap={2}>
+          <Text type="supporting" size="xsm">
+            각 항목의 3개월 합계에 가중치를 곱해 더한 값이 적정시재입니다.
+          </Text>
+          <Table data={breakdown} columns={BREAKDOWN_COLUMNS} />
+          <Text type="supporting" size="xsm">
+            수입은 자금조달을 뺀 수입 행입니다. 자금조달은 산식에 넣지 않습니다.
+          </Text>
+        </VStack>
+      </Collapsible>
+
+      <Heading level={3}>월별 추이</Heading>
+      {rows.length > 0 ? (
+        <Table data={rows} columns={SERIES_COLUMNS} />
+      ) : (
+        <Text type="supporting">이 기준월부터는 3개월 계획이 시트에 없어 추이를 내지 않았습니다.</Text>
+      )}
+
+      <VStack gap={1}>
+        {series.cutoff !== null && rows.length > 0 && (
+          <Text type="supporting" size="xsm">
+            {series.cutoff.label} 이후는 3개월 계획이 시트에 없어 산출하지 않았습니다.
+          </Text>
+        )}
+        {hasBeyondPlanYear && (
+          <Text type="supporting" size="xsm">
+            다음 해 계획 미확정: 창이 다음 해 열에 걸친 달입니다. 다음 해 계획이 일부만 입력되어
+            있어 적정시재가 작게 나올 수 있습니다.
+          </Text>
+        )}
+        <Text type="supporting" size="xsm">
+          계획: 회차 기준월 뒤의 달입니다. 기초시재가 계획된 조달까지 포함한 이월 잔고라서, 안정적
+          판정은 계획대로 조달한다는 전제 위에 있습니다.
+        </Text>
+        <Text type="supporting" size="xsm">
+          적정시재 = 분양회수 20% + 기타수입 10% + 지출 10% + 수지차(지출 − 수입) 40%, 각 3개월
+          합계. 등급 없이 현재시재가 적정시재 이상이면 안정적, 아니면 적정시재 부족입니다.
+        </Text>
+      </VStack>
     </VStack>
   );
 }

@@ -269,3 +269,21 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
 
   이렇게 하면 PRD §4-3 케이스를 회차 없이 검증할 수 있다. `adequateCashSeries`는 `{ rows, cutoff }`를 돌려준다.
 - 테스트 117 → 150개. `tsc`·`eslint` 통과.
+
+### A5~A7 결과 (2026-09-28)
+
+- **A5** `Dashboard.adequateCash: Outcome<AdequateCashReport>`(`current`·`series`)를 추가했다. 고른 기준월로 셈하고, 이전 회차 없이도 산출한다. 격리 테스트: 기타수입을 못 읽으면 적정 시재만 실패하고 다른 두 지표는 산출된다.
+- **A6** 적정 시재 카드의 구성:
+  - 판정 표시: `StatusDot`(success/warning)과 `T · 안정적`/`F · 적정시재 부족`
+  - 요약 표 → 접는 산출 내역 → 월별 추이 표 → 각주
+  - 등급 배지·색·코멘트는 쓰지 않았다. 헤더 문구와 최신 회차 설명에 적정 시재를 넣었다.
+- **화면에서 잡은 문제**: Astryx `Table`은 부모의 첫·마지막 자식일 때 위아래로 번지는(bleed) 음수 여백을 갖는다. `Collapsible` 안에 표만 두면 트리거와 다음 제목에 겹친다. 설명 문장을 앞뒤에 두어 표를 가운데 자식으로 두었다(주석으로 이유를 남김). `StatusDot`과 문구의 세로 정렬은 `vAlign="center"`로 맞췄다.
+- **브라우저 확인**: 합성 xlsx로 네 경우를 확인했다.
+  - 안정적: 손계산 870과 일치
+  - 적정시재 부족
+  - 기타수입 칸 비움: 적정 시재만 실패, 대금 회수·Gap은 산출
+  - 다크 모드
+
+  콘솔의 `AdequateCashResult is not defined`는 파일을 두 번에 나눠 고치는 사이 HMR이 중간 상태를 그린 흔적이고, 새로 읽은 뒤에는 재현되지 않는다.
+- **A7** 실물 fixture(8월 회차): 모든 항목 판독, 계획연도 끝 12월, 적정 시재는 8월 안정적 · 여섯 달 · 11월부터 다음 해 계획 미확정 · 등급 없음. 금액은 단언하지 않았다.
+- 테스트 150 → 158개. `tsc`·`eslint`·`next build` 통과.

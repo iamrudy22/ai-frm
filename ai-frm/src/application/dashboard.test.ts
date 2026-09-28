@@ -110,6 +110,46 @@ describe('대시보드 — 실패 격리', () => {
   });
 });
 
+describe('대시보드 — 적정 시재', () => {
+  it('고른 기준월로 한 달치와, 그 달부터의 매월 추이를 낸다', () => {
+    const d = assessDashboard(july, august, aug);
+    expect(d.adequateCash.ok).toBe(true);
+    if (!d.adequateCash.ok) return;
+    expect(d.adequateCash.value.current.month.label).toBe('8월');
+    // 6개월짜리 합성 회차: 8월(8~10월), 9월(9~11월)까지 창이 든다.
+    expect(d.adequateCash.value.series.rows.map((r) => r.month.label)).toEqual(['8월', '9월']);
+    expect(d.adequateCash.value.series.cutoff?.label).toBe('10월');
+  });
+
+  it('결과에 등급이 없다 — T/F만 있다', () => {
+    const d = assessDashboard(july, august, aug);
+    if (!d.adequateCash.ok) throw new Error('산출돼야 한다');
+    expect(d.adequateCash.value.current).not.toHaveProperty('grade');
+    expect(typeof d.adequateCash.value.current.isAdequate).toBe('boolean');
+  });
+
+  it('이전 회차 없이도 산출한다 — 최신 회차 한 장만 쓴다', () => {
+    expect(assessDashboard(null, august, aug).adequateCash.ok).toBe(true);
+  });
+
+  // 지표 분리의 최종 확인: 적정 시재만 쓰는 항목이 깨져도 다른 두 지표는 산출된다.
+  it('기타수입을 읽지 못하면 적정 시재만 실패하고 다른 두 지표는 산출된다', () => {
+    const broken = statement(new Date(2026, 7, 10), 2, {
+      분양회수: series([0, 40000, 0, 0, 0, 0]),
+      기타수입: unreadable('"기타수입"의 10월 칸이 비어 있습니다.'),
+    });
+    const d = assessDashboard(july, broken, aug);
+    expect(d.adequateCash.ok === false && d.adequateCash.reason).toMatch(/기타수입/);
+    expect(d.paymentRecovery?.ok).toBe(true);
+    expect(d.liquidityGap.ok).toBe(true);
+  });
+
+  it('기준월에서 3개월 창이 모자라면 적정 시재도 실패한다', () => {
+    const d = assessDashboard(july, august, august.months[5]);
+    expect(d.adequateCash.ok === false && d.adequateCash.reason).toMatch(/모자랍니다/);
+  });
+});
+
 describe('대시보드 — 진단', () => {
   it('롤포워드가 맞으면 진단이 비어 있다', () => {
     expect(assessDashboard(july, august, aug).diagnostics.rollForward).toEqual([]);

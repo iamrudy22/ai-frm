@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap/liquidity-gap';
 import { checkRollForward, type Statement } from '@/domain/cashflow/statement';
+import { adequateCashSeries } from '@/domain/risk/adequate-cash/adequate-cash';
 import { toPercent } from '@/domain/shared/amount';
 
 const FIXTURE = resolve(process.cwd(), 'fixtures/자금수지표-최신회차.xlsx');
@@ -72,5 +73,28 @@ describe.skipIf(!present)('실물 회차 판독', () => {
     // 분양회수만 떼어 쓰므로 반드시 더 작아야 하고, 0이어서도 안 된다.
     expect(분양회수).toBeGreaterThan(0);
     expect(분양회수).toBeLessThan(수입);
+  });
+
+  it('모든 항목을 읽는다 — 기타수입도 이웃 행과 헷갈리지 않는다', () => {
+    expect(statement.unreadableItems()).toEqual([]);
+    const august = statement.defaultBaseMonth;
+    // 분양회수 + 기타수입은 수입의 일부다.
+    expect(statement.amountOf('분양회수', august) + statement.amountOf('기타수입', august)).toBeLessThan(
+      statement.amountOf('수입', august),
+    );
+  });
+
+  it('계획연도 끝은 12월이다', () => {
+    expect(statement.planYearEnd.label).toBe('12월');
+  });
+
+  // 금액은 단언하지 않는다(사내 자금 데이터). 판정과 표시만 본다.
+  it('적정 시재 — 8월 기준 안정적, 8월~26.1월 여섯 달, 11월부터 다음 해 계획 미확정', () => {
+    const { rows } = adequateCashSeries(statement, statement.defaultBaseMonth);
+    expect(rows.map((r) => r.month.label)).toEqual(['8월', '9월', '10월', '11월', '12월', '26.1월']);
+    expect(rows[0]).toMatchObject({ isAdequate: true, isPlan: false, beyondPlanYear: false });
+    expect(rows.map((r) => r.beyondPlanYear)).toEqual([false, false, false, true, true, true]);
+    expect(rows.slice(1).every((r) => r.isPlan)).toBe(true);
+    expect(rows[0]).not.toHaveProperty('grade');
   });
 });

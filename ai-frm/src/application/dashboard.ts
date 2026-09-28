@@ -2,7 +2,7 @@
  * 대시보드 유스케이스 — 두 회차로 지표들을 산출하고 진단을 모은다.
  *
  * 화면(React)에 숨어 있던 조율 규칙을 여기로 옮긴다. 화면은 표시만 한다.
- *   - 대금 회수 위험은 회차 기준월로, 유동성 Gap은 사용자가 고른 기준월로 셈한다
+ *   - 대금 회수 위험은 회차 기준월로, 유동성 Gap·적정 시재는 사용자가 고른 기준월로 셈한다
  *   - 이전 회차가 없으면 대금 회수는 산출 대상이 아니다(null)
  *   - 한 지표의 실패가 다른 지표로 번지지 않는다 — 지표마다 따로 감싼다
  *
@@ -18,6 +18,12 @@ import {
   type Month,
   type Statement,
 } from '@/domain/cashflow/statement';
+import {
+  adequateCashAt,
+  adequateCashSeries,
+  type AdequateCashMonth,
+  type AdequateCashSeries,
+} from '@/domain/risk/adequate-cash/adequate-cash';
 import {
   assessLiquidityGap,
   liquidityGapInputFrom,
@@ -35,10 +41,17 @@ export type Outcome<T> =
 
 export type PaymentRecoveryResult = Extract<PaymentRecovery, { kind: 'ok' }>;
 
+/** 적정 시재 — 고른 기준월의 한 달치와 그 달부터의 매월 추이. 등급이 없다. */
+export type AdequateCashReport = {
+  readonly current: AdequateCashMonth;
+  readonly series: AdequateCashSeries;
+};
+
 export type Dashboard = {
   /** 이전 회차가 없으면 null — 실패가 아니라 산출 대상이 아니다. */
   readonly paymentRecovery: Outcome<PaymentRecoveryResult> | null;
   readonly liquidityGap: Outcome<LiquidityGap>;
+  readonly adequateCash: Outcome<AdequateCashReport>;
   readonly diagnostics: {
     /** 이전 회차가 없으면 null. */
     readonly order: ConsecutiveCheck | null;
@@ -61,6 +74,14 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
     liquidityGap: settle(
       () => succeed(assessLiquidityGap(liquidityGapInputFrom(latest, base))),
       '유동성 Gap을 산출할 수 없습니다.',
+    ),
+    adequateCash: settle(
+      () =>
+        succeed({
+          current: adequateCashAt(latest, base),
+          series: adequateCashSeries(latest, base),
+        }),
+      '적정 시재를 산출할 수 없습니다.',
     ),
     diagnostics: {
       order: previous === null ? null : checkConsecutive(previous, latest),
