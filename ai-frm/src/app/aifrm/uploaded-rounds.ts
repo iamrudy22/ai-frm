@@ -11,6 +11,8 @@
  */
 
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
+import { defaultBaseMonth } from '@/domain/risk/construction-perception/construction-perception';
+import { PLAN_ROUND_LAG } from '@/domain/risk/construction-perception/forecast-error';
 import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
 export type NamedStatement = { readonly file: string; readonly statement: Statement };
@@ -56,4 +58,51 @@ export function arrangeRounds(named: readonly NamedStatement[]): ArrangedRounds 
     previous: rounds.find((x) => x.role === '이전 회차') ?? null,
     rounds,
   };
+}
+
+/** 한 지표가 산출에 쓰는 회차와, 올린 회차에서 빠진 것. */
+export type Requirement = {
+  readonly indicator: string;
+  readonly needed: readonly YearMonth[];
+  readonly missing: readonly YearMonth[];
+  /** 빠졌을 때 벌어지는 일. 빠질 수 없으면 빈 문자열. */
+  readonly ifMissing: string;
+};
+
+/**
+ * 산출 전에 보이는 필요 회차 확인. 최신 회차(L)가 정해지면 지표마다 필요한 회차가 정해진다.
+ *
+ *   - 유동성 Gap·적정 시재: L
+ *   - 대금 회수 위험: L−1, L
+ *   - 건설경기 인식 지수: 기본 기준월 B = L − 2 에서 B−3 ~ B (정책 §3-2, §5)
+ *
+ * 건설경기는 기본 기준월 기준이다. 산출 뒤 기준월을 바꾸면 필요한 회차도 바뀌고,
+ * 그때는 카드가 다시 알린다.
+ */
+export function requirementsOf(rounds: readonly YearMonth[]): Requirement[] {
+  const latest = [...rounds].sort(compareYearMonth).at(-1);
+  if (latest === undefined) return [];
+  const have = new Set(rounds);
+  const requirement = (indicator: string, needed: YearMonth[], ifMissing: string): Requirement => ({
+    indicator,
+    needed,
+    missing: needed.filter((r) => !have.has(r)),
+    ifMissing,
+  });
+
+  const base = defaultBaseMonth(latest);
+  const perceptionRounds = Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(base, i - PLAN_ROUND_LAG));
+
+  return [
+    requirement('유동성 Gap · 적정 시재', [latest], ''),
+    requirement('대금 회수 위험', [addMonths(latest, -1), latest], '판정하지 않습니다'),
+    requirement(`건설경기 인식 지수 (기준월 ${base})`, perceptionRounds, '기본 기준월로는 산출불가입니다'),
+  ];
+}
+
+/** 이어진 셋 이상은 `처음~끝`, 아니면 가운뎃점으로 잇는다. */
+export function roundsText(rounds: readonly YearMonth[]): string {
+  const contiguous = rounds.every((r, i) => i === 0 || r === addMonths(rounds[i - 1], 1));
+  if (contiguous && rounds.length >= 3) return `${rounds[0]}~${rounds[rounds.length - 1]}`;
+  return rounds.join('·');
 }

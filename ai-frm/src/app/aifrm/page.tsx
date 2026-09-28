@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
@@ -12,7 +12,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Table } from '@astryxdesign/core/Table';
+import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
@@ -35,7 +35,14 @@ import { toPercent } from '@/domain/shared/amount';
 import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { ConstructionPerceptionCard } from './construction-perception-card';
-import { arrangeRounds, type NamedStatement, type UploadedRound } from './uploaded-rounds';
+import {
+  arrangeRounds,
+  requirementsOf,
+  roundsText,
+  type ArrangedRounds,
+  type NamedStatement,
+  type UploadedRound,
+} from './uploaded-rounds';
 import { calendarOfLabel, calendarOptions, monthAt, spanText } from './dashboard-view';
 import { GRADE_BADGE, money, percent } from './format';
 
@@ -50,19 +57,15 @@ const COLUMNS = [
   { key: '값', header: '값' },
 ];
 
-type Loaded = {
-  readonly previous: UploadedRound | null;
-  readonly latest: UploadedRound;
-  /** 올린 회차 전부, 회차 순서. */
-  readonly rounds: readonly UploadedRound[];
-};
+/** 읽어 정리한 회차 묶음. 최신·이전 회차와 올린 회차 전부(회차 순서). */
+type Loaded = Extract<ArrangedRounds, { ok: true }>;
 
 type RoundRow = { 회차: string; 쓰임: string; 파일: string } & Record<string, unknown>;
 
 const ROUND_COLUMNS = [
-  { key: '회차', header: '회차' },
-  { key: '쓰임', header: '쓰임' },
-  { key: '파일', header: '파일' },
+  { key: '회차', header: '회차', width: proportional(1) },
+  { key: '쓰임', header: '쓰임', width: proportional(2) },
+  { key: '파일', header: '파일', width: proportional(2) },
 ];
 
 const ROLE_TEXT: Record<UploadedRound['role'], string> = {
@@ -73,49 +76,62 @@ const ROLE_TEXT: Record<UploadedRound['role'], string> = {
 
 // ── 화면 ─────────────────────────────────────────────────────────────────
 
+/**
+ * 파일을 고르면 바로 읽는다. 회차를 알아야 산출 전에 빠진 회차를 알릴 수 있다.
+ * 산출하기는 읽어 둔 회차로 결과를 펼치기만 한다.
+ */
+type Prepared =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'reading'; readonly done: number; readonly total: number }
+  | { readonly kind: 'error'; readonly reason: string }
+  | { readonly kind: 'ready'; readonly rounds: Loaded };
+
 export default function AifrmDashboardPage() {
   const [files, setFiles] = useState<File[]>([]);
-  const [isReading, setIsReading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [prepared, setPrepared] = useState<Prepared>({ kind: 'empty' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   // 유동성 Gap·적정 시재의 기준월(3개월 창의 첫 달). 건설경기 인식 지수의 기준월과 따로다.
   const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
+  // 읽는 중에 파일을 다시 고르면 앞선 읽기의 결과를 버린다.
+  const readToken = useRef(0);
 
-  const reset = useCallback(() => {
-    setLoaded(null);
-    setError(null);
-    setGapMonth(null);
-  }, []);
+  const prepare = useCallback(async (list: File[]) => {
+    const token = ++readToken.current;
+    const stale = () => token !== readToken.current;
+    if (list.length === 0) {
+      setPrepared({ kind: 'empty' });
+      return;
+    }
 
-  const handleSubmit = useCallback(async () => {
-    setIsReading(true);
-    reset();
-
+    setPrepared({ kind: 'reading', done: 0, total: list.length });
     try {
       // 하나라도 못 읽으면 멈춘다. 빠진 회차로 조용히 다른 결과를 내지 않는다.
       const named: NamedStatement[] = [];
-      for (const file of files) {
+      for (const [i, file] of list.entries()) {
+        // 파일 하나를 파싱하는 동안(1초 남짓) 화면이 멈춘다. 진행 표시가 먼저 그려지게 한 번 양보한다.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         const result = readStatement(await file.arrayBuffer());
+        if (stale()) return;
         if (!result.ok) {
-          setError(`${file.name}을(를) 읽지 못했습니다 — ${result.error}`);
+          setPrepared({ kind: 'error', reason: `${file.name}을(를) 읽지 못했습니다 — ${result.error}` });
           return;
         }
         named.push({ file: file.name, statement: result.statement });
+        setPrepared({ kind: 'reading', done: i + 1, total: list.length });
       }
 
       const arranged = arrangeRounds(named);
-      if (!arranged.ok) {
-        setError(arranged.reason);
-        return;
-      }
-      setLoaded(arranged);
-      setGapMonth(arranged.latest.round);
+      setPrepared(arranged.ok ? { kind: 'ready', rounds: arranged } : { kind: 'error', reason: arranged.reason });
     } catch {
-      setError('파일을 처리하는 중 문제가 생겼습니다.');
-    } finally {
-      setIsReading(false);
+      if (!stale()) setPrepared({ kind: 'error', reason: '파일을 처리하는 중 문제가 생겼습니다.' });
     }
-  }, [files, reset]);
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    if (prepared.kind !== 'ready') return;
+    setLoaded(prepared.rounds);
+    setGapMonth(prepared.rounds.latest.round);
+  }, [prepared]);
 
   const baseMonth: Month | null = useMemo(() => {
     if (loaded === null || gapMonth === null) return null;
@@ -144,50 +160,41 @@ export default function AifrmDashboardPage() {
               </Text>
             </VStack>
 
-            <FileInput
-              label="자금수지표 회차"
-              description="최신 회차와 그 전 회차들을 한 번에 올리세요. 가장 늦은 회차가 최신 회차, 바로 전 달 회차가 이전 회차가 됩니다. 건설경기 인식 지수의 분양회수에는 기준월(최신 회차 − 2개월)과 그 전 석 달, 모두 네 회차가 필요합니다."
-              placeholder="자금수지표 파일 선택(여러 개)"
-              accept=".xlsx,.xls"
-              isMultiple
-              value={files}
-              onChange={(picked) => {
-                setFiles(picked === null ? [] : Array.isArray(picked) ? picked : [picked]);
-                reset();
-              }}
-            />
+            <VStack gap={3} align="start">
+              <FileInput
+                label="자금수지표 회차"
+                description="최신 회차와 그 전 회차들을 한 번에 올리세요. 고르면 바로 읽어 지표마다 필요한 회차가 있는지 알려 드립니다."
+                placeholder="자금수지표 파일 선택(여러 개)"
+                accept=".xlsx,.xls"
+                isMultiple
+                value={files}
+                onChange={(picked) => {
+                  const list = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+                  setFiles(list);
+                  setLoaded(null);
+                  setGapMonth(null);
+                  void prepare(list);
+                }}
+              />
 
-            <HStack>
+              {prepared.kind === 'ready' && <Requirements rounds={prepared.rounds} />}
+
               <Button
-                label={isReading ? '읽는 중…' : '산출하기'}
+                label={prepared.kind === 'reading' ? `읽는 중… ${prepared.done}/${prepared.total}` : '산출하기'}
                 variant="primary"
-                isDisabled={isReading || files.length === 0}
+                isDisabled={prepared.kind !== 'ready' || loaded === prepared.rounds}
                 onClick={handleSubmit}
               />
-            </HStack>
+            </VStack>
 
-            {error !== null && (
-              <Banner status="error" title="판정할 수 없습니다" description={error} />
+            {prepared.kind === 'error' && (
+              <Banner status="error" title="판정할 수 없습니다" description={prepared.reason} />
             )}
 
             {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
 
             {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
-                <Collapsible trigger={`올린 회차 ${loaded.rounds.length}개`} defaultIsOpen={false}>
-                  <VStack gap={2}>
-                    <Text type="supporting" size="xsm">
-                      회차는 파일 기준일의 달입니다. 올린 순서와 상관없이 회차 순서로 씁니다.
-                    </Text>
-                    <Table data={roundRows(loaded.rounds)} columns={ROUND_COLUMNS} />
-                    <Text type="supporting" size="xsm">
-                      {loaded.previous === null
-                        ? `최신 회차(${loaded.latest.round}) 바로 전 달 회차가 없어 대금 회수 위험은 판정하지 않습니다.`
-                        : '파일을 바꾸려면 위에서 다시 골라 산출하세요.'}
-                    </Text>
-                  </VStack>
-                </Collapsible>
-
                 <Divider />
 
                 <VStack gap={3}>
@@ -233,6 +240,60 @@ export default function AifrmDashboardPage() {
         </LayoutContent>
       }
     />
+  );
+}
+
+// ── 필요한 회차 ──────────────────────────────────────────────────────────
+
+type RequirementRow = { 지표: string; 회차: string; 상태: string; ok: boolean } & Record<string, unknown>;
+
+const REQUIREMENT_COLUMNS = [
+  { key: '지표', header: '지표', width: proportional(2) },
+  { key: '회차', header: '필요한 회차', width: proportional(1) },
+  {
+    key: '상태',
+    header: '올린 회차',
+    width: proportional(2),
+    renderCell: (row: RequirementRow) => (
+      <HStack gap={2} vAlign="center">
+        <StatusDot variant={row.ok ? 'success' : 'warning'} label={row.ok ? '있음' : '없음'} />
+        <Text>{row.상태}</Text>
+      </HStack>
+    ),
+  },
+];
+
+/**
+ * 산출 전에 지표마다 필요한 회차가 올라왔는지 보인다. 빠진 회차가 있어도 산출은 막지 않는다 —
+ * 그 지표만 산출불가가 되고 나머지는 나온다.
+ */
+function Requirements({ rounds }: { rounds: Loaded }) {
+  const rows: RequirementRow[] = requirementsOf(rounds.rounds.map((r) => r.round)).map((req) => ({
+    지표: req.indicator,
+    회차: roundsText(req.needed),
+    상태: req.missing.length === 0 ? '모두 있음' : `${roundsText(req.missing)} 없음 — ${req.ifMissing}`,
+    ok: req.missing.length === 0,
+  }));
+
+  return (
+    <VStack gap={2}>
+      <Text type="supporting" size="xsm">
+        올린 회차 {rounds.rounds.length}개: {roundsText(rounds.rounds.map((r) => r.round))} (최신 {rounds.latest.round}).
+        건설경기 기준월은 산출 뒤 바꿀 수 있고, 그러면 필요한 회차도 바뀝니다.
+      </Text>
+      <Table data={rows} columns={REQUIREMENT_COLUMNS} />
+      <Collapsible trigger="파일별 회차" defaultIsOpen={false}>
+        <VStack gap={2}>
+          <Text type="supporting" size="xsm">
+            회차는 파일 기준일의 달입니다. 올린 순서와 상관없이 회차 순서로 씁니다.
+          </Text>
+          <Table data={roundRows(rounds.rounds)} columns={ROUND_COLUMNS} />
+          <Text type="supporting" size="xsm">
+            파일을 바꾸려면 위에서 다시 고르세요.
+          </Text>
+        </VStack>
+      </Collapsible>
+    </VStack>
   );
 }
 

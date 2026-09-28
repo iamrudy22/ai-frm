@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { arrangeRounds } from '@/app/aifrm/uploaded-rounds';
+import { arrangeRounds, requirementsOf, roundsText } from '@/app/aifrm/uploaded-rounds';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 
 const HEADER = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
@@ -50,5 +50,41 @@ describe('올린 회차 정리', () => {
 
   it('파일이 없으면 거부한다', () => {
     expect(arrangeRounds([]).ok).toBe(false);
+  });
+});
+
+describe('산출 전 필요 회차 확인', () => {
+  const have = (...rounds: string[]) => rounds.map((r) => r as never);
+
+  it('최신 회차 8월이면 — Gap·시재는 8월, 대금 회수는 7·8월, 건설경기(기준월 6월)는 3~6월', () => {
+    expect(requirementsOf(have('2026/04', '2026/05', '2026/06', '2026/07', '2026/08'))).toEqual([
+      { indicator: '유동성 Gap · 적정 시재', needed: ['2026/08'], missing: [], ifMissing: '' },
+      { indicator: '대금 회수 위험', needed: ['2026/07', '2026/08'], missing: [], ifMissing: '판정하지 않습니다' },
+      {
+        indicator: '건설경기 인식 지수 (기준월 2026/06)',
+        needed: ['2026/03', '2026/04', '2026/05', '2026/06'],
+        missing: ['2026/03'],
+        ifMissing: '기본 기준월로는 산출불가입니다',
+      },
+    ]);
+  });
+
+  it('최신 회차 하나만 올리면 무엇이 빠졌는지 모두 알린다', () => {
+    const r = requirementsOf(have('2026/08'));
+    expect(r.map((x) => x.missing)).toEqual([[], ['2026/07'], ['2026/03', '2026/04', '2026/05', '2026/06']]);
+  });
+
+  it('연도를 넘는 회차도 달력으로 센다 — 최신 2월이면 건설경기는 전년 9~12월', () => {
+    const r = requirementsOf(have('2026/02'));
+    expect(r[2]).toMatchObject({ indicator: '건설경기 인식 지수 (기준월 2025/12)', needed: ['2025/09', '2025/10', '2025/11', '2025/12'] });
+  });
+});
+
+describe('회차 목록 표기', () => {
+  it('이어진 셋 이상은 범위로, 아니면 가운뎃점으로', () => {
+    expect(roundsText(['2026/03', '2026/04', '2026/05', '2026/06'] as never)).toBe('2026/03~2026/06');
+    expect(roundsText(['2026/07', '2026/08'] as never)).toBe('2026/07·2026/08');
+    expect(roundsText(['2026/03', '2026/05', '2026/06'] as never)).toBe('2026/03·2026/05·2026/06');
+    expect(roundsText(['2026/08'] as never)).toBe('2026/08');
   });
 });
