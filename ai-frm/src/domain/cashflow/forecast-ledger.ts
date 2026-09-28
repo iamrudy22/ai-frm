@@ -45,6 +45,8 @@ export type ForecastLedger = {
   planOf(month: YearMonth): Plan | undefined;
   /** 실적이 있는 가장 최근 달. 건설경기 인식 지수에서 분양회수의 최신월이다. */
   latestActualMonth(): YearMonth | null;
+  /** 계획이 있는 가장 이른 달. 이 달 + 2부터 오차율을 낼 수 있다. */
+  firstPlanMonth(): YearMonth | null;
   /** 가장 이른 계획 달부터 최신 실적 달까지, 실적이나 계획이 빈 달. */
   gaps(): readonly YearMonth[];
   snapshot(): LedgerSnapshot;
@@ -142,10 +144,14 @@ function build(rows: ReadonlyMap<YearMonth, LedgerRow>): ForecastLedger {
       return withActual.length === 0 ? null : withActual[withActual.length - 1].month;
     },
 
+    firstPlanMonth() {
+      return sorted().find((r) => r.plan !== undefined)?.month ?? null;
+    },
+
     gaps() {
-      const firstPlan = sorted().find((r) => r.plan !== undefined)?.month;
+      const firstPlan = this.firstPlanMonth();
       const last = this.latestActualMonth();
-      if (firstPlan === undefined || last === null) return [];
+      if (firstPlan === null || last === null) return [];
 
       const gaps: YearMonth[] = [];
       for (let m = firstPlan; compareYearMonth(m, last) <= 0; m = addMonths(m, 1)) {

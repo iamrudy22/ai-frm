@@ -67,6 +67,19 @@ describe('분양회수 계획·실적 이력', () => {
   });
 });
 
+describe('가장 이른 계획 달', () => {
+  it('계획이 있는 가장 이른 달이다 — 이 달 + 2부터 오차율을 낼 수 있다', () => {
+    const ledger = emptyLedger()
+      .record(entry('2026/08', 1, [1, 1, 1]))
+      .record(entry('2026/06', 1, [1, 1, 1]));
+    expect(ledger.firstPlanMonth()).toBe('2026/06');
+  });
+
+  it('계획이 없으면 없다', () => {
+    expect(emptyLedger().firstPlanMonth()).toBeNull();
+  });
+});
+
 describe('저장 형태와 복원', () => {
   it('스냅샷으로 저장했다가 되살리면 같은 이력이다', () => {
     const ledger = emptyLedger()

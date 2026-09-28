@@ -3,16 +3,14 @@ import { ratio, type Ratio } from '@/domain/shared/amount';
 import { yearMonth, type YearMonth } from '@/domain/shared/year-month';
 import {
   assessConstructionPerception,
-  assessLatest,
-  baseMonthOf,
+  defaultBaseMonth,
   scoreBy,
   type EcosIndicatorKey,
-  type Latest,
   type Missing,
   type PerceptionInput,
   type RawSeries,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
 
 const rule = (key: IndicatorKey) => {
   const found = SCORING_RULES.find((r) => r.key === key);
@@ -208,52 +206,26 @@ describe('결측은 0이 아니다 (정책 §6-1)', () => {
   });
 });
 
-describe('기준월 (정책 §5)', () => {
-  const latest = (over: Partial<Record<IndicatorKey, YearMonth | null>> = {}): Latest => ({
-    총수주액: T,
-    주택매매가격지수: yearMonth(2026, 8),
-    미분양주택현황: T,
-    주택건설인허가실적: T,
-    설비투자지수: T,
-    대출금리: T,
-    분양회수예측오차: T,
-    환율: yearMonth(2026, 8),
-    주가: yearMonth(2026, 8),
-    선행지수순환변동치: T,
-    ...over,
+describe('기준월 (정책 §5, 2026-09-28 개정)', () => {
+  it('보고월 − 2개월이다 — 9월에 보면 7월, 8월 회차면 6월', () => {
+    expect(defaultBaseMonth(yearMonth(2026, 9))).toBe('2026/07');
+    expect(defaultBaseMonth(yearMonth(2026, 8))).toBe('2026/06');
   });
 
-  it('지표별 최신월 중 가장 이른 달이다 — 가장 늦게 나오는 지표가 정한다', () => {
-    expect(baseMonthOf(latest())).toBe('2026/07');
-    expect(baseMonthOf(latest({ 분양회수예측오차: yearMonth(2026, 5) }))).toBe('2026/05');
+  it('해를 넘긴다 — 1월 회차면 전년 11월', () => {
+    expect(defaultBaseMonth(yearMonth(2027, 1))).toBe('2026/11');
   });
 
-  it('최신월을 알 수 없는 지표가 있으면 기준월을 정하지 않는다', () => {
-    expect(baseMonthOf(latest({ 환율: null, 주가: null }))).toEqual({ unknown: ['환율', '주가'] });
-  });
-
-  it('기준월을 정할 수 없으면 산출불가다', () => {
-    const r = assessLatest(input(), latest({ 환율: null }));
-    expect(r).toEqual({
-      kind: 'unavailable',
-      month: null,
-      missing: [{ key: '환율', reason: expect.stringContaining('최신월') }],
-    });
+  it('보고 시차는 정책 상수 한 곳에 있다', () => {
+    expect(REPORT_LAG_MONTHS).toBe(2);
   });
 
   // 거슬러 내려가 처음 산출되는 달을 보여 주면 직전 확정월을 조용히 보여 주는
-  // 것과 같다(정책 §9-1 Q2에서 쓰지 않기로 함).
-  it('기준월에 빈 값이 있으면 이전 달로 내려가지 않고 산출불가다', () => {
+  // 것과 같다(정책 §9-1 Q2에서 쓰지 않기로 함). 고른 달 하나만 산출한다.
+  it('고른 기준월에 빈 값이 있으면 이전 달로 내려가지 않고 그 달의 산출불가다', () => {
     const s = calmSeries();
     s.설비투자지수.delete(T);
-    const r = assessLatest(input(s), latest());
-    expect(r.kind).toBe('unavailable');
-    expect(r.month).toBe('2026/07');
-  });
-
-  it('빈 값이 없으면 기준월로 산출한다', () => {
-    const r = assessLatest(input(), latest());
-    expect(r.kind).toBe('ok');
-    expect(r.month).toBe('2026/07');
+    const r = assessConstructionPerception(input(s), T);
+    expect(r).toMatchObject({ kind: 'unavailable', month: '2026/07' });
   });
 });

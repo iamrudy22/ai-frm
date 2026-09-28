@@ -2,26 +2,47 @@
  * 유스케이스: 건설경기 인식 지수 산출 — ECOS 9종과 분양회수 이력으로 기준월
  * 한 달을 산출한다.
  *
- *   ECOS 9종 조회 → 이력 불러오기 → 지표별 최신월 → 기준월 → 그 달 산출
+ *   기준월 결정 → ECOS 9종 조회 → 이력 불러오기 → 그 달 산출 → 결측 사유 다듬기
+ *
+ * 기준월(정책 §5, 2026-09-28 개정): 사용자가 고른 달 > 최신 회차 기준월 − 2 >
+ * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
  *
  * 실패는 두 층이다.
- *   - ECOS 실패는 지표 단위다. 그 지표의 최신월을 알 수 없게 되어 산출불가로
- *     나온다. 조회 전체가 실패해도 9종이 모두 조회 실패일 뿐 던지지 않는다.
+ *   - ECOS 실패는 지표 단위다. 그 지표가 산출불가 사유로 나온다. 조회 전체가
+ *     실패해도 9종이 모두 조회 실패일 뿐 던지지 않는다.
  *   - 이력 저장소 실패(파일 손상 등)는 산출 자체를 할 수 없으므로 Outcome 실패다.
  */
 
 import { settleAsync, succeed, type Outcome } from '@/application/outcome';
 import type { EconomicIndicatorSource, ForecastLedgerRepository, IndicatorFetch, SourceResult } from '@/application/ports';
+import type { ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import {
-  assessLatest,
+  assessConstructionPerception,
+  defaultBaseMonth,
   type ConstructionPerception,
   type EcosIndicatorKey,
-  type Latest,
   type RawSeries,
 } from '@/domain/risk/construction-perception/construction-perception';
 import { forecastErrorAt } from '@/domain/risk/construction-perception/forecast-error';
-import { SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
-import { compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
+import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import { addMonths, compareYearMonth, yearMonthOfDate, type YearMonth } from '@/domain/shared/year-month';
+
+export type PerceptionRequest = {
+  /** 사용자가 고른 기준월. 있으면 가장 우선이다. */
+  readonly baseMonth?: YearMonth;
+  /** 보고월 = 올린 최신 회차의 기준월. */
+  readonly reportMonth?: YearMonth;
+};
+
+/** 기준월이 어디서 왔는가. 화면이 설명 문장을 고를 때 쓴다. */
+export type BaseMonthSource = '선택' | '회차' | '오늘';
+
+export type PerceptionBasis = {
+  readonly baseMonth: YearMonth;
+  /** 선택만 받았으면 없을 수 있다. */
+  readonly reportMonth: YearMonth | null;
+  readonly source: BaseMonthSource;
+};
 
 export type IndicatorStatus = {
   readonly key: IndicatorKey;
@@ -39,8 +60,11 @@ export type PerceptionDiagnostics = {
 };
 
 export type PerceptionReport = {
+  readonly basis: PerceptionBasis;
+  /** 기준월로 고를 수 있는 범위(정책 §5). from은 이력이 비었으면 없다. */
+  readonly selectable: { readonly from: YearMonth | null; readonly to: YearMonth };
   readonly result: ConstructionPerception;
-  /** 지표별 최신월·단위·조회 실패, 이력 상태. 기준월이 왜 그 달인지 화면이 설명할 때 쓴다. */
+  /** 지표별 최신월·단위·조회 실패, 이력 상태. */
   readonly diagnostics: PerceptionDiagnostics;
 };
 
@@ -51,49 +75,61 @@ const ECOS_KEYS = SCORING_RULES.map((r) => r.key).filter(
 export async function assessPerception(
   source: EconomicIndicatorSource,
   repo: ForecastLedgerRepository,
+  request: PerceptionRequest = {},
   now: () => Date = () => new Date(),
 ): Promise<Outcome<PerceptionReport>> {
   return settleAsync(async () => {
+    const fetchedAt = now();
+    const today = yearMonthOfDate(fetchedAt);
+    const basis = basisOf(request, today);
+
     const fetched = await fetchSafely(source);
     const ledger = await repo.load();
-    const fetchedAt = now();
 
     const series = {} as Record<EcosIndicatorKey, RawSeries>;
     const statuses = new Map<IndicatorKey, IndicatorStatus>();
-    const whyUnknown = new Map<IndicatorKey, string>();
-
     for (const key of ECOS_KEYS) {
       const f = fetched[key];
       if ('error' in f) {
         series[key] = new Map();
         statuses.set(key, { key, latest: null, error: f.error });
-        whyUnknown.set(key, `ECOS 조회 실패: ${f.error}`);
-        continue;
+      } else {
+        series[key] = f.values;
+        statuses.set(key, { key, latest: lastMonthOf(f.values), unit: f.unit });
       }
-      series[key] = f.values;
-      const latest = lastMonthOf(f.values);
-      statuses.set(key, { key, latest, unit: f.unit });
-      if (latest === null) whyUnknown.set(key, 'ECOS에 이 지표의 값이 하나도 없습니다.');
     }
+    statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestActualMonth() });
 
-    const ledgerLatest = ledger.latestActualMonth();
-    statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledgerLatest });
-    if (ledgerLatest === null) {
-      whyUnknown.set('분양회수예측오차', '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.');
-    }
+    const result = assessConstructionPerception(
+      { series, forecastError: (t) => forecastErrorAt(ledger, t) },
+      basis.baseMonth,
+    );
 
-    const latest = Object.fromEntries([...statuses].map(([k, s]) => [k, s.latest])) as Latest;
-    const result = assessLatest({ series, forecastError: (t) => forecastErrorAt(ledger, t) }, latest);
-
+    const firstPlan = ledger.firstPlanMonth();
     return succeed({
-      result: explainUnknown(result, whyUnknown),
+      basis,
+      selectable: {
+        from: firstPlan === null ? null : addMonths(firstPlan, REPORT_LAG_MONTHS),
+        to: addMonths(today, -1),
+      },
+      result: explain(result, statuses, ledger),
       diagnostics: {
         indicators: SCORING_RULES.map((r) => statuses.get(r.key) as IndicatorStatus),
-        ledger: { latestActualMonth: ledgerLatest, gaps: [...ledger.gaps()] },
+        ledger: { latestActualMonth: ledger.latestActualMonth(), gaps: [...ledger.gaps()] },
         fetchedAt,
       },
     });
   }, '건설경기 인식 지수를 산출하지 못했습니다.');
+}
+
+function basisOf(request: PerceptionRequest, today: YearMonth): PerceptionBasis {
+  if (request.baseMonth !== undefined) {
+    return { baseMonth: request.baseMonth, reportMonth: request.reportMonth ?? null, source: '선택' };
+  }
+  if (request.reportMonth !== undefined) {
+    return { baseMonth: defaultBaseMonth(request.reportMonth), reportMonth: request.reportMonth, source: '회차' };
+  }
+  return { baseMonth: defaultBaseMonth(today), reportMonth: today, source: '오늘' };
 }
 
 /** 조회 전체가 던져도 9종 모두 조회 실패로 바꿔 이어 간다. */
@@ -114,14 +150,44 @@ function lastMonthOf(values: RawSeries): YearMonth | null {
   return last;
 }
 
-/** 기준월을 정하지 못한 산출불가에, 최신월을 모르는 진짜 이유를 적는다. */
-function explainUnknown(
+/**
+ * 결측 사유를 조치가 보이게 다듬는다(정책 §5).
+ *
+ * 도메인은 "그 달 값이 없다"까지만 안다. 왜 없는지 — 조회 실패인지, 아직 공표
+ * 전인지, 회차를 안 올렸는지 — 는 지표별 최신월을 아는 여기서 가른다.
+ * 조치가 다르다: 다시 시도한다 / 기다린다 / 회차를 올린다.
+ */
+function explain(
   result: ConstructionPerception,
-  why: ReadonlyMap<IndicatorKey, string>,
+  statuses: ReadonlyMap<IndicatorKey, IndicatorStatus>,
+  ledger: ForecastLedger,
 ): ConstructionPerception {
-  if (result.kind !== 'unavailable' || result.month !== null) return result;
+  if (result.kind !== 'unavailable') return result;
+  const month = result.month;
+
   return {
     ...result,
-    missing: result.missing.map((m) => ({ key: m.key, reason: why.get(m.key) ?? m.reason })),
+    missing: result.missing.map(({ key, reason }) => {
+      const status = statuses.get(key);
+      if (key === '분양회수예측오차') {
+        const latest = ledger.latestActualMonth();
+        if (latest === null) {
+          return { key, reason: '분양회수 계획·실적 이력이 비어 있습니다. 최신 회차를 올리세요.' };
+        }
+        if (compareYearMonth(month, latest) > 0) {
+          return {
+            key,
+            reason: `분양회수 실적이 이력에 ${latest}까지만 있습니다. ${addMonths(month, 1)} 회차를 올리세요.`,
+          };
+        }
+        return { key, reason };
+      }
+      if (status?.error !== undefined) return { key, reason: `ECOS 조회 실패: ${status.error}` };
+      if (status?.latest === null) return { key, reason: 'ECOS에 이 지표의 값이 하나도 없습니다.' };
+      if (status !== undefined && status.latest !== null && compareYearMonth(month, status.latest) > 0) {
+        return { key, reason: `아직 공표 전입니다(ECOS 최신 ${status.latest}).` };
+      }
+      return { key, reason };
+    }),
   };
 }

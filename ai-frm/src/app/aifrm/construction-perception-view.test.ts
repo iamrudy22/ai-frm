@@ -16,6 +16,8 @@ const KEYS: IndicatorKey[] = [
 
 function report(over: Partial<PerceptionReportDto> = {}): PerceptionReportDto {
   return {
+    basis: { baseMonth: '2026/07' as never, reportMonth: '2026/09' as never, source: '오늘' },
+    selectable: { from: '2026/05' as never, to: '2026/08' as never },
     result: {
       kind: 'ok',
       month: '2026/07',
@@ -81,7 +83,7 @@ describe('지표 표', () => {
   });
 
   it('산출불가면 표가 없다', () => {
-    expect(indicatorRows(report({ result: { kind: 'unavailable', month: null, missing: [] } }))).toEqual([]);
+    expect(indicatorRows(report({ result: { kind: 'unavailable', month: '2026/07' as never, missing: [] } }))).toEqual([]);
   });
 });
 
@@ -110,10 +112,6 @@ describe('기준월 설명', () => {
       diagnostics: { ...r.diagnostics, indicators: r.diagnostics.indicators.map((i) => ({ ...i, latest: '2026/07' as never })) },
     };
     expect(baseMonthNote(same)).toBeNull();
-  });
-
-  it('기준월을 정하지 못했으면 설명하지 않는다 — 빠진 지표 표가 대신 말한다', () => {
-    expect(baseMonthNote(report({ result: { kind: 'unavailable', month: null, missing: [] } }))).toBeNull();
   });
 });
 

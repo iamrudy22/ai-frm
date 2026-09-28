@@ -70,6 +70,14 @@ export const SCORING_RULES: readonly ScoringRule[] = [
   { key: '선행지수순환변동치', transform: '전월대비', direction: '하락', full: -0.006, zero: -0.002, weight: 3 },
 ];
 
+/**
+ * 보고 시차. 기준월 = 보고월 − 이 개월 수(정책 §5, 2026-09-28 개정).
+ *
+ * 건설·주택 통계는 익월 말에 수록된다. 그래서 보고하는 달에는 두 달 전까지가
+ * 온전히 나와 있다. 9월에 보면 7월, 8월 회차를 올리면 6월이 기준월이다.
+ */
+export const REPORT_LAG_MONTHS = 2;
+
 declare const brand: unique symbol;
 
 /**

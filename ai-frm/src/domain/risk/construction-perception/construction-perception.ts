@@ -14,6 +14,7 @@
 
 import { gradeBy, type Grade } from '@/domain/risk/grade';
 import {
+  REPORT_LAG_MONTHS,
   SCORING_RULES,
   STAGE_BANDS,
   perceptionIndex,
@@ -22,7 +23,7 @@ import {
   type ScoringRule,
 } from '@/domain/risk/construction-perception/policy';
 import type { Ratio } from '@/domain/shared/amount';
-import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
+import { addMonths, type YearMonth } from '@/domain/shared/year-month';
 
 export type RawSeries = ReadonlyMap<YearMonth, number>;
 
@@ -40,9 +41,6 @@ export type PerceptionInput = {
   readonly series: Readonly<Record<EcosIndicatorKey, RawSeries>>;
   readonly forecastError: (month: YearMonth) => Ratio | Missing;
 };
-
-/** 지표별 최신월. `null`은 알 수 없다는 뜻이다(조회 실패 등). */
-export type Latest = Readonly<Record<IndicatorKey, YearMonth | null>>;
 
 export type IndicatorLine = {
   readonly key: IndicatorKey;
@@ -69,8 +67,7 @@ export type ConstructionPerception =
     }
   | {
       readonly kind: 'unavailable';
-      /** 기준월을 정하지 못했으면 null. */
-      readonly month: YearMonth | null;
+      readonly month: YearMonth;
       readonly missing: readonly MissingIndicator[];
     };
 
@@ -145,35 +142,15 @@ export function assessConstructionPerception(input: PerceptionInput, month: Year
 }
 
 /**
- * 기준월 = 지표별 최신월 중 가장 이른 달(정책 §5).
+ * 기본 기준월 = 보고월 − 보고 시차(정책 §5, 2026-09-28 개정).
  *
- * 공표 시차가 지표마다 달라서 가장 늦게 나오는 지표가 기준월을 정한다.
- * 최신월을 알 수 없는 지표가 있으면 기준월을 정하지 않는다.
- */
-export function baseMonthOf(latest: Latest): YearMonth | { readonly unknown: IndicatorKey[] } {
-  const unknown = SCORING_RULES.map((r) => r.key).filter((key) => latest[key] === null);
-  if (unknown.length > 0) return { unknown };
-
-  return SCORING_RULES.map((r) => latest[r.key] as YearMonth).reduce((a, b) =>
-    compareYearMonth(a, b) <= 0 ? a : b,
-  );
-}
-
-/**
- * 기준월을 정해 그 달 하나를 산출한다.
+ * 보고월은 최신 회차의 기준월이고, 회차가 없으면 오늘이 속한 달이다. 사용자가
+ * 기준월을 고르면 그 달을 쓴다 — 그 순서는 유스케이스가 정한다.
  *
- * 기준월에 빈 값이 있어도 이전 달로 **거슬러 내려가지 않는다.** 내려가서 처음
- * 산출되는 달을 보여 주면 직전 확정월을 조용히 보여 주는 것과 같다. 그 방식은
- * 쓰지 않기로 했다(정책 §9-1 Q2). 대신 산출불가와 빠진 지표를 알린다.
+ * 처음에는 데이터가 기준월을 정했다(지표별 최신월 중 가장 이른 달). 두 규칙을
+ * 함께 두면 어긋나므로 그 규칙은 지웠다. 기준월이 정해진 뒤에는 그 달 하나만
+ * 산출하고, 빈 값이 있어도 이전 달로 거슬러 내려가지 않는다(정책 §9-1 Q2).
  */
-export function assessLatest(input: PerceptionInput, latest: Latest): ConstructionPerception {
-  const base = baseMonthOf(latest);
-  if (typeof base !== 'string') {
-    return {
-      kind: 'unavailable',
-      month: null,
-      missing: base.unknown.map((key) => ({ key, reason: '최신월을 알 수 없어 기준월을 정할 수 없습니다.' })),
-    };
-  }
-  return assessConstructionPerception(input, base);
+export function defaultBaseMonth(reportMonth: YearMonth): YearMonth {
+  return addMonths(reportMonth, -REPORT_LAG_MONTHS);
 }
