@@ -47,7 +47,7 @@ function entry(round: YearMonth): RoundEntry {
 }
 
 /** 2~9월 회차를 모두 올린 경우 — 오차율 (330 − 300) ÷ 300 = +10%(0점). */
-// 회차 없이 보면 기준월은 오늘(9월) − 2 = 7월이고, 분양회수에 6~9월 회차가 필요하다.
+// 회차 없이 보면 기준월은 오늘(9월) − 2 = 7월이고, 분양회수에 6월(계획)·9월(실적) 회차가 필요하다.
 const ROUNDS = ['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/07', '2026/08', '2026/09'];
 function ledgerThrough(rounds: string[] = ROUNDS): ForecastLedger {
   return rounds.reduce((l, r) => l.record(entry(ym(r))), emptyLedger());
@@ -72,9 +72,9 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/07', index: 0, grade: '정상' });
   });
 
-  // 8월 기준은 5~8월 회차 네 개로 모든 지표가 나온다. 분양회수는 엑셀 "2026/08" 행이다.
-  it('8월 기준(최신 회차 8월)이면 기준월 6월이고, 5~8월 회차 네 개면 산출된다', async () => {
-    const r = await assess({ reportMonth: ym('2026/08') }, new FixedSource(), ledgerThrough(['2026/05', '2026/06', '2026/07', '2026/08']));
+  // 8월 기준 분양회수는 8월 회차의 5·6·7월 실적과 5월 회차의 계획이다(엑셀 "2026/08" 행과 같은 창).
+  it('8월 기준(최신 회차 8월)이면 기준월 6월이고, 5·8월 회차 두 개면 산출된다', async () => {
+    const r = await assess({ reportMonth: ym('2026/08') }, new FixedSource(), ledgerThrough(['2026/05', '2026/08']));
     expect(r.basis).toEqual({ baseMonth: '2026/06', reportMonth: '2026/08', source: '회차' });
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/06' });
   });
@@ -110,15 +110,13 @@ describe('산출불가 사유', () => {
     for (const m of r.result.missing) expect(m.reason).toBe('아직 공표 전입니다(ECOS 최신 2026/06).');
   });
 
-  it('기준월 회차를 올리지 않았으면 그 회차를 올리라고 알린다', async () => {
-    const ledger = ledgerThrough(ROUNDS.slice(0, 5)); // 2~6월 회차만 — 6월 실적을 적을 7월 회차 없음
+  it('실적을 읽을 회차를 올리지 않았으면 그 회차를 올리라고 알린다', async () => {
+    const ledger = ledgerThrough(ROUNDS.slice(0, 5)); // 2~6월 회차만 — 기준월 7월의 실적을 읽을 9월 회차 없음
     const r = await assess({}, new FixedSource(), ledger);
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
-      missing: [
-        { key: '분양회수예측오차', reason: '분양회수: 2026/06 실적은 직후 회차인 2026/07 회차에서 읽는데, 그 회차를 올리지 않았습니다.' },
-      ],
+      missing: [{ key: '분양회수예측오차', reason: '분양회수: 실적을 읽는 2026/09 회차를 올리지 않았습니다.' }],
     });
   });
 
@@ -156,11 +154,14 @@ describe('산출불가 사유', () => {
     });
   });
 
-  it('기준월 회차가 빠지면 이전 달로 내려가지 않고 산출불가, 진단에 빠진 회차', async () => {
-    const ledger = ledgerThrough(['2026/02', '2026/03', '2026/04', '2026/05', '2026/06', '2026/08']); // 7월 회차 누락
-    const r = await assess({}, new FixedSource(), ledger);
-    expect(r.result).toMatchObject({ kind: 'unavailable', month: '2026/07' });
-    expect(r.diagnostics.ledger.missingRounds).toEqual(['2026/07']);
+  it('계획 회차가 빠지면 이전 달로 내려가지 않고 산출불가다 — 사이 회차는 없어도 된다', async () => {
+    const r = await assess({}, new FixedSource(), ledgerThrough(['2026/05', '2026/09'])); // 6월(계획) 회차 없음
+    expect(r.result).toEqual({
+      kind: 'unavailable',
+      month: '2026/07',
+      missing: [{ key: '분양회수예측오차', reason: '분양회수: 계획을 세운 2026/06 회차를 올리지 않았습니다.' }],
+    });
+    expect((await assess({}, new FixedSource(), ledgerThrough(['2026/06', '2026/09']))).result).toMatchObject({ kind: 'ok' });
   });
 
   it('회차를 하나도 올리지 않았으면 무엇이 필요한지 알린다', async () => {
@@ -168,7 +169,7 @@ describe('산출불가 사유', () => {
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
-      missing: [{ key: '분양회수예측오차', reason: '분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/06~2026/09 회차 네 개가 필요합니다.' }],
+      missing: [{ key: '분양회수예측오차', reason: '분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/06 회차(계획)와 2026/09 회차(실적)가 필요합니다.' }],
     });
   });
 });
@@ -182,7 +183,7 @@ describe('진단과 실패', () => {
       key: '분양회수예측오차',
       latest: '2026/09',
     });
-    expect(d.ledger).toEqual({ latestRound: '2026/09', rounds: ROUNDS, missingRounds: [] });
+    expect(d.ledger).toEqual({ latestRound: '2026/09', rounds: ROUNDS });
   });
 
   it('조회 시각은 산출 시각이 아니라 ECOS 응답을 받은 시각이다 — 캐시된 값이면 그때 시각', async () => {

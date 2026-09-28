@@ -74,9 +74,9 @@ export type Requirement = {
  *
  *   - 유동성 Gap·적정 시재: L
  *   - 대금 회수 위험: L−1, L
- *   - 건설경기 인식 지수: 기본 기준월 B = L − 2 에서 B−1 ~ B+2, 곧 L−3 ~ L (정책 §3-2, §5)
+ *   - 건설경기 인식 지수: 기본 기준월 B = L − 2 에서 B−1(계획)·B+2(실적), 곧 L−3·L (정책 §3-2, §5)
  *
- * 그래서 8월 기준은 5·6·7·8월 회차 네 개로 모든 지표가 채워진다.
+ * 그래서 8월 기준은 5·7·8월 회차 세 개로 모든 지표가 채워진다.
  *
  * 건설경기는 기본 기준월 기준이다. 산출 뒤 기준월을 바꾸면 필요한 회차도 바뀌고,
  * 그때는 카드가 다시 알린다.
@@ -93,12 +93,12 @@ export function requirementsOf(rounds: readonly YearMonth[]): Requirement[] {
   });
 
   const base = baseMonthOfRound(latest);
-  const perceptionRounds = roundsNeededFor(base);
+  const { plan, actual } = roundsNeededFor(base);
 
   return [
     requirement('유동성 Gap · 적정 시재', [latest], ''),
     requirement('대금 회수 위험', [addMonths(latest, -1), latest], '판정하지 않습니다'),
-    requirement(`건설경기 인식 지수 (기준월 ${base})`, perceptionRounds, '기본 기준월로는 산출불가입니다'),
+    requirement(`건설경기 인식 지수 (기준월 ${base})`, [plan, actual], '기본 기준월로는 산출불가입니다'),
   ];
 }
 

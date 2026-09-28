@@ -41,35 +41,33 @@ describe('분양회수 계획·실적 이력 (판형 2, 회차 단위)', () => {
     expect(once.record(entry('2026/07')).rounds()).toEqual(once.rounds());
   });
 
-  it('첫 회차와 마지막 회차 사이에 빠진 회차를 알려 준다', () => {
-    const ledger = emptyLedger().record(entry('2026/04')).record(entry('2026/07'));
-    expect(ledger.missingRounds()).toEqual(['2026/05', '2026/06']);
-  });
 });
 
-describe('실적 — 각 달의 직후 회차 값이다 (정책 §3-2, 2026-09-28 재개정)', () => {
-  it('m월 실적은 m+1월 회차가 적은 값이다 — 나중 회차가 다르게 적었어도', () => {
+describe('실적 — 정한 회차에 적힌 값이다 (정책 §3-2, 2026-09-28 재개정)', () => {
+  it('같은 달 실적도 회차마다 다르게 적혀 있을 수 있다 — 고른 회차의 값을 그대로 읽는다', () => {
     const ledger = emptyLedger().record(entry('2026/07')).record(entry('2026/08'));
-    expect(ledger.actualOf(ym('2026/06'))).toBe(7006);
-    expect(ledger.actualOf(ym('2026/07'))).toBe(8007);
+    expect(ledger.actualOf(ym('2026/07'), ym('2026/06'))).toBe(7006);
+    expect(ledger.actualOf(ym('2026/08'), ym('2026/06'))).toBe(8006);
   });
 
-  it('직후 회차가 이력에 없으면 결측이고, 올릴 회차를 알린다', () => {
-    const ledger = emptyLedger().record(entry('2026/08'));
-    expect(ledger.actualOf(ym('2026/06'))).toEqual({ missing: expect.stringContaining('2026/07 회차') });
+  it('그 회차가 이력에 없으면 결측이다 — 다른 회차에서 채우지 않는다', () => {
+    const ledger = emptyLedger().record(entry('2026/07'));
+    expect(ledger.actualOf(ym('2026/08'), ym('2026/06'))).toEqual({
+      missing: '2026/06 실적은 2026/08 회차에서 읽는데, 그 회차를 올리지 않았습니다.',
+    });
   });
 
-  it('직후 회차 시트에 그 달 열이 없으면(전년 달) 그 달이 실적인 가장 이른 회차에서 채운다', () => {
-    const ledger = emptyLedger()
-      .record(entry('2026/01')) // 2026년 파일 — 전년 열 없음
-      .record(entry('2026/03', '2025/10')) // 전년 10월부터 든 파일
-      .record(entry('2026/04', '2025/10'));
-    expect(ledger.actualOf(ym('2025/12'))).toBe(3012);
+  it('그 회차 시트에 없는 전년 달이면 결측이다 — 전년 열이 든 다른 회차가 있어도', () => {
+    const ledger = emptyLedger().record(entry('2026/02')).record(entry('2026/03', '2025/10'));
+    expect(ledger.actualOf(ym('2026/02'), ym('2025/12'))).toEqual({
+      missing: '2026/02 회차 시트는 2026/01부터라 2025/12 실적 열이 없습니다.',
+    });
+    expect(ledger.actualOf(ym('2026/03'), ym('2025/12'))).toBe(3012);
   });
 
-  it('그 달이 실적인 회차가 없으면 결측이고, 전년도 파일을 올리라고 알린다', () => {
-    const ledger = emptyLedger().record(entry('2026/01'));
-    expect(ledger.actualOf(ym('2025/12'))).toEqual({ missing: expect.stringMatching(/2025\/12.*전년도 파일/) });
+  it('회차 달과 그 뒤는 실적이 아니다', () => {
+    const ledger = emptyLedger().record(entry('2026/07'));
+    expect(ledger.actualOf(ym('2026/07'), ym('2026/07'))).toEqual({ missing: '2026/07 회차에 2026/07 실적이 없습니다.' });
   });
 });
 
@@ -77,7 +75,7 @@ describe('올린 회차로 만들기 — 저장하지 않는다', () => {
   it('요청으로 받은 회차들로 이력을 만든다 — 순서는 상관없다', () => {
     const ledger = ledgerOf(JSON.parse(JSON.stringify([entry('2026/07'), entry('2026/05')])));
     expect(ledger.rounds()).toEqual(['2026/05', '2026/07']);
-    expect(ledger.actualOf(ym('2026/04'))).toBe(5004);
+    expect(ledger.actualOf(ym('2026/05'), ym('2026/04'))).toBe(5004);
   });
 
   it('회차가 없으면 빈 이력이다', () => {

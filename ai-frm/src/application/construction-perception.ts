@@ -9,7 +9,7 @@
  *
  * 기준월(정책 §5, 2026-09-28 결정): 사용자가 고른 달 > 최신 회차 − 2 >
  * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
- * 분양회수 예측오차는 기준월 b에 엑셀 분양회수data b+2 행을 쓴다.
+ * 분양회수 예측오차는 기준월 b에 b+2월 회차의 실적과 b−1월 회차의 계획을 쓴다.
  *
  * 실패는 두 층이다.
  *   - ECOS 실패는 지표 단위다. 그 지표가 산출불가 사유로 나온다. 조회 전체가
@@ -65,11 +65,10 @@ export type IndicatorStatus = {
 export type PerceptionDiagnostics = {
   /** 엑셀 열 순서(1~10번). */
   readonly indicators: readonly IndicatorStatus[];
-  /** 분양회수 계획·실적: 올린 회차와 그 사이에 빠진 회차. */
+  /** 분양회수 계획·실적: 올린 회차. */
   readonly ledger: {
     readonly latestRound: YearMonth | null;
     readonly rounds: readonly YearMonth[];
-    readonly missingRounds: readonly YearMonth[];
   };
   readonly fetchedAt: Date;
 };
@@ -111,7 +110,7 @@ export async function assessPerception(
         statuses.set(key, { key, latest: lastMonthOf(f.values), unit: f.unit });
       }
     }
-    // 분양회수의 최신월 = 올린 회차 중 마지막(기준월 t에는 t−3 ~ t월 회차가 필요하다).
+    // 분양회수의 최신월 = 올린 회차 중 마지막(기준월 b에는 b−1월·b+2월 회차가 필요하다).
     statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestRound() });
 
     const result = assessConstructionPerception(
@@ -133,7 +132,6 @@ export async function assessPerception(
         ledger: {
           latestRound: ledger.latestRound(),
           rounds: [...ledger.rounds()],
-          missingRounds: [...ledger.missingRounds()],
         },
         fetchedAt: earliestFetch(fetched) ?? now(),
       },
@@ -210,10 +208,10 @@ function explain(
       if (key === '분양회수예측오차') {
         // 도메인 사유가 이미 어느 회차를 올릴지 적는다. 하나도 안 올렸을 때만 따로 안내한다.
         if (ledger.latestRound() === null) {
-          const needed = roundsNeededFor(month);
+          const { plan, actual } = roundsNeededFor(month);
           return {
             key,
-            reason: `분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 ${month}에는 ${needed[0]}~${needed.at(-1)} 회차 네 개가 필요합니다.`,
+            reason: `분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 ${month}에는 ${plan} 회차(계획)와 ${actual} 회차(실적)가 필요합니다.`,
           };
         }
         return { key, reason };

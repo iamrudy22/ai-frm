@@ -10,7 +10,7 @@ import {
   baseMonthOfRound,
   type ConstructionPerception,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { ERROR_LABEL_LEAD, PLAN_ROUND_LAG, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
+import { PLAN_ROUND_LAG, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
 import {
   REPORT_LAG_MONTHS,
   ROUND_LAG_MONTHS,
@@ -112,26 +112,24 @@ export function monthOptions(
 }
 
 /**
- * 올린 회차 안내(정책 §3-2·§3-3). 기준월 b에는 b−1월 회차(계획)와
- * b·b+1·b+2월 회차(b−1 ~ b+1월 실적 각각의 직후 회차)가 필요하다. 무엇이 있고 무엇을 올려야
- * 하는지 알린다. 회차는 저장하지 않으므로 지금 화면에 올린 것만 센다.
+ * 올린 회차 안내(정책 §3-2·§3-3). 기준월 b에는 b−1월 회차(계획)와 b+2월 회차(실적)가
+ * 필요하다. 무엇이 있고 무엇을 올려야 하는지 알린다. 회차는 저장하지 않으므로 지금
+ * 화면에 올린 것만 센다.
  */
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
-  const needed = roundsNeededFor(baseMonth);
-  const span = `${needed[0]}~${needed[needed.length - 1]}`;
-  const neededText = `기준월 ${baseMonth}에는 ${span} 회차 네 개가 필요합니다`;
+  const { plan, actual } = roundsNeededFor(baseMonth);
+  const neededText = `기준월 ${baseMonth}에는 ${plan} 회차(계획)와 ${actual} 회차(실적)가 필요합니다`;
   if (ledger.rounds.length === 0) {
     return `분양회수에 쓸 회차를 올리지 않았습니다. ${neededText}.`;
   }
 
   const range = `${ledger.rounds[0]}~${ledger.latestRound} ${ledger.rounds.length}개`;
-  const holes = ledger.missingRounds.length > 0 ? `, 빠진 회차 ${ledger.missingRounds.join('·')}` : '';
-  const absent = needed.filter((r) => !ledger.rounds.includes(r));
+  const absent = [plan, actual].filter((r) => !ledger.rounds.includes(r));
   const need =
     absent.length === 0
-      ? `기준월 ${baseMonth}에 필요한 ${span} 회차가 모두 있습니다.`
+      ? `기준월 ${baseMonth}에 필요한 ${plan}·${actual} 회차가 모두 있습니다.`
       : `${neededText} — ${absent.join('·')} 회차를 올리세요.`;
-  return `분양회수에 쓸 회차: ${range}${holes}. ${need}`;
+  return `분양회수에 쓸 회차: ${range}. ${need}`;
 }
 
 export type BatchResult =
@@ -154,12 +152,11 @@ export function readRoundsText(results: readonly BatchResult[]): {
 }
 
 /**
- * 분양회수 예측오차가 어느 창인지. 기준월 b의 지수는 실적 b−1 ~ b+1을 b−1월 회차 계획과
- * 견준다 — 엑셀 분양회수data의 b+2 행이다.
+ * 분양회수 예측오차가 어느 창인지. 기준월 b의 지수는 b+2월 회차에 적힌 b−1 ~ b+1월 실적을
+ * b−1월 회차 계획과 견준다 — 엑셀 분양회수data b+2 행과 같은 창이다.
  */
 export function forecastWindowNote(baseMonth: YearMonth): string {
-  const planRound = roundsNeededFor(baseMonth)[0];
-  const lastActual = addMonths(planRound, PLAN_ROUND_LAG - 1);
-  const label = addMonths(baseMonth, ERROR_LABEL_LEAD);
-  return `분양회수 예측오차는 원값이 아니라 ${planRound}~${lastActual} 실적을 ${planRound} 회차 계획과 견준 3개월 누적 오차율입니다(엑셀 분양회수data ${label} 행).`;
+  const { plan, actual } = roundsNeededFor(baseMonth);
+  const lastActual = addMonths(plan, PLAN_ROUND_LAG - 1);
+  return `분양회수 예측오차는 원값이 아니라 ${actual} 회차에 적힌 ${plan}~${lastActual} 실적을 ${plan} 회차 계획과 견준 3개월 누적 오차율입니다(엑셀 분양회수data ${actual} 행과 같은 창).`;
 }

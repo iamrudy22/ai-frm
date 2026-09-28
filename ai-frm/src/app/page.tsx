@@ -59,8 +59,8 @@ export default function Home() {
               <Heading level={2}>사람이 해야 하는 것</Heading>
               <List>
                 <ListItem
-                  label="회차 네 개 올리기"
-                  description="건설경기 인식 지수의 분양회수 예측오차에는 기준월과 그 전 석 달의 회차가 필요합니다. 저장하지 않으므로 볼 때마다 올립니다"
+                  label="회차 세 개 올리기"
+                  description="N월 기준이면 N월·N−1월·N−3월 회차로 모든 지표가 채워집니다(8월 기준이면 5·7·8월). 분양회수 예측오차는 N월 회차의 실적과 N−3월 회차의 계획을 씁니다. 저장하지 않으므로 볼 때마다 올립니다"
                 />
               </List>
             </VStack>
