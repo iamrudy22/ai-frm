@@ -15,6 +15,7 @@
 import { gradeBy, type Grade } from '@/domain/risk/grade';
 import {
   REPORT_LAG_MONTHS,
+  ROUND_LAG_MONTHS,
   SCORING_RULES,
   STAGE_BANDS,
   perceptionIndex,
@@ -142,11 +143,12 @@ export function assessConstructionPerception(input: PerceptionInput, month: Year
 }
 
 /**
- * 기본 기준월 — 회차를 올렸으면 최신 회차의 달이다(정책 §5, 2026-09-28 재개정).
+ * 기본 기준월 — 회차를 올렸으면 최신 회차 − 1개월이다(정책 §5, 2026-09-28 결정).
  *
- * 7월 판단은 4~7월 회차로 한다. 대금 회수 위험·유동성 Gap·적정 시재가 7월 회차로
- * 7월을 보므로 건설경기 인식 지수도 같은 달을 본다. 분양회수 예측오차(7월)에 필요한
- * 회차도 4~7월이라 올린 파일과 맞는다. 그 달 ECOS 값이 아직 공표 전이면 그 지표만
+ * 8월 기준(4~8월… 최신 회차 8월)이면 7월, 7월 기준이면 6월이다. 대금 회수 위험이
+ * 7월 회차로 6월 실적을 보는 것과 같은 달이다. 분양회수 예측오차는 실적이 기준월에서
+ * 끝나는 창을 쓰므로(forecastErrorForBaseMonth) 필요한 회차는 최신 회차 − 3 ~ 최신
+ * 회차, 곧 7월 기준이면 4~7월 네 개다. 그 달 ECOS 값이 아직 공표 전이면 그 지표만
  * 산출불가다.
  *
  * 사용자가 기준월을 고르면 그 달을 쓴다 — 그 순서는 유스케이스가 정한다. 기준월이
@@ -154,7 +156,7 @@ export function assessConstructionPerception(input: PerceptionInput, month: Year
  * 않는다(정책 §9-1 Q2).
  */
 export function baseMonthOfRound(latestRound: YearMonth): YearMonth {
-  return latestRound;
+  return addMonths(latestRound, -ROUND_LAG_MONTHS);
 }
 
 /** 회차 없이 볼 때의 기본 기준월 = 오늘이 속한 달 − 보고 시차. */

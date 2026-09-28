@@ -6,7 +6,11 @@
  *   오차율 = (실적 − 계획) ÷ 계획
  *
  * 7월이면 (4·5·6월 실적 − 4월 회차 4·5·6월 계획) ÷ 같은 계획 = 엑셀 "2026/07" 행이다.
- * "7월 오차율"은 7월 기준월에 쓴다(자금기획팀 결정). 필요한 회차는 t−3 ~ t월 네 개다.
+ * 라벨 t는 엑셀 분양회수data의 행 라벨이다(실적이 t−1에서 끝난다). 필요한 회차는 t−3 ~ t월.
+ *
+ * 기준월 b의 지수에는 실적이 b에서 끝나는 창, 곧 b+1 행을 쓴다(forecastErrorForBaseMonth).
+ * 엑셀 재무위기인식지수_위기단계가 7월 지수에 "2026/08" 행을 쓰는 것과 같다
+ * (2026-09-28 결정, 앞서 "7월 오차율은 7월 기준월에"로 정했던 것을 바꿨다).
  *
  * 이 파일은 이력을 읽기만 한다.
  */
@@ -16,8 +20,22 @@ import type { Missing } from '@/domain/risk/construction-perception/construction
 import { ratio, type Ratio } from '@/domain/shared/amount';
 import { addMonths, type YearMonth } from '@/domain/shared/year-month';
 
-/** 기준월 t의 계획은 t−3월 회차가 세웠다. 필요한 회차는 t−3 ~ t월. */
+/** 라벨 t의 계획은 t−3월 회차가 세웠다. 필요한 회차는 t−3 ~ t월. */
 export const PLAN_ROUND_LAG = 3;
+
+/** 기준월 b의 지수에 쓰는 행 = b + 이 개월 수. 실적이 기준월에서 끝나는 창이다. */
+export const ERROR_LABEL_LEAD = 1;
+
+/** 기준월 b의 지수에 쓰는 오차율 — 실적 b−2 ~ b, 계획은 b−2월 회차(엑셀 b+1 행). */
+export function forecastErrorForBaseMonth(ledger: ForecastLedger, baseMonth: YearMonth): Ratio | Missing {
+  return forecastErrorAt(ledger, addMonths(baseMonth, ERROR_LABEL_LEAD));
+}
+
+/** 기준월 b의 지수에 필요한 회차 — 계획 회차 b−2부터 마지막 실적의 직후 회차 b+1까지. */
+export function roundsNeededFor(baseMonth: YearMonth): YearMonth[] {
+  const label = addMonths(baseMonth, ERROR_LABEL_LEAD);
+  return Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(label, i - PLAN_ROUND_LAG));
+}
 
 export function forecastErrorAt(ledger: ForecastLedger, t: YearMonth): Ratio | Missing {
   const planRound = addMonths(t, -PLAN_ROUND_LAG);

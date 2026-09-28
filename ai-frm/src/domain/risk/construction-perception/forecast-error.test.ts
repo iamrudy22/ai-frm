@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { emptyLedger, type ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import type { PlanCell, RoundEntry } from '@/domain/cashflow/round-entry';
 import { isMissing } from '@/domain/risk/construction-perception/construction-perception';
-import { forecastErrorAt } from '@/domain/risk/construction-perception/forecast-error';
+import { forecastErrorAt, forecastErrorForBaseMonth, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
 import { amount } from '@/domain/shared/amount';
 import { addMonths, parseYearMonth } from '@/domain/shared/year-month';
 
@@ -76,5 +76,21 @@ describe('분양회수 예측오차 (정책 §3-2, 2026-09-28 재개정 — 엑�
     const r = forecastErrorAt(build(), ym('2026/07'));
     expect(isMissing(r)).toBe(true);
     if (isMissing(r)) expect(r.missing).toContain(reason);
+  });
+});
+
+// 엑셀 재무위기인식지수_위기단계는 7월 지수에 분양회수data "2026/08" 행을 쓴다 — 실적이 7월에서
+// 끝나는 창이다. 기준월 b의 지수는 b+1 행(실적 b−2 ~ b)을 쓴다(정책 §3-2, 2026-09-28 결정).
+describe('기준월 지수에 쓰는 오차율 — 엑셀 위기단계와 같다', () => {
+  it('기준월 6월 지수는 "2026/07" 행(4·5·6월 실적)이다', () => {
+    expect(forecastErrorForBaseMonth(julyLedger(), ym('2026/06'))).toBe(forecastErrorAt(julyLedger(), ym('2026/07')));
+  });
+
+  it('필요한 회차는 b−2 ~ b+1 — 기준월 6월이면 4~7월 회차 네 개', () => {
+    expect(roundsNeededFor(ym('2026/06'))).toEqual(['2026/04', '2026/05', '2026/06', '2026/07']);
+  });
+
+  it('해를 넘긴다 — 기준월 1월이면 전년 11월 ~ 2월 회차', () => {
+    expect(roundsNeededFor(ym('2026/01'))).toEqual(['2025/11', '2025/12', '2026/01', '2026/02']);
   });
 });

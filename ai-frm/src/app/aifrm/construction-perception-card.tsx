@@ -10,7 +10,7 @@
  * 회차는 저장하지 않는다(2026-09-28). 올린 회차만으로 매번 계산한다.
  * 분양회수 예측오차(기준월 t)에는 t−3 ~ t월 회차 네 개가 필요하다.
  *
- * 기준월(정책 §5, 2026-09-28 재개정): 사용자가 고른 달 > 최신 회차의 달.
+ * 기준월(정책 §5, 2026-09-28 결정): 사용자가 고른 달 > 최신 회차 − 1.
  * 서버가 정한다. 훅은 보고월(최신 회차)과 사용자가 고른 달만 보낸다. 고른 달은
  * 그때의 회차 묶음에 묶여 있어서, 회차를 새로 읽으면 기본값으로 돌아간다.
  *
@@ -33,6 +33,7 @@ import type { PerceptionReportDto, PerceptionResponse } from '@/app/api/construc
 import {
   basisNote,
   type BatchResult,
+  forecastWindowNote,
   indicatorRows,
   ledgerNote,
   missingRows,
@@ -165,7 +166,7 @@ function PerceptionResult({
       <HStack gap={2} vAlign="end">
         <Selector
           label="건설경기 기준월"
-          description="기본값은 최신 회차의 달입니다"
+          description="기본값은 최신 회차 − 1개월입니다(8월 기준이면 7월)"
           options={monthOptions(report.selectable, basis.baseMonth)}
           value={basis.baseMonth}
           onChange={(value) => onChoose(parseYearMonth(value))}
@@ -193,8 +194,8 @@ function PerceptionResult({
               </Text>
               <Table data={indicatorRows(report)} columns={INDICATOR_COLUMNS} />
               <Text type="supporting" size="xsm">
-                원값의 단위는 ECOS 응답 그대로입니다. 대출금리 변화율은 bp(%p × 100)입니다. 분양회수
-                예측오차는 원값이 아니라 올린 회차로 계산한 3개월 누적 오차율입니다.
+                원값의 단위는 ECOS 응답 그대로입니다. 대출금리 변화율은 bp(%p × 100)입니다.{' '}
+                {forecastWindowNote(result.month)}
               </Text>
             </VStack>
           </Collapsible>

@@ -10,8 +10,13 @@ import {
   baseMonthOfRound,
   type ConstructionPerception,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { PLAN_ROUND_LAG } from '@/domain/risk/construction-perception/forecast-error';
-import { REPORT_LAG_MONTHS, SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
+import { ERROR_LABEL_LEAD, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
+import {
+  REPORT_LAG_MONTHS,
+  ROUND_LAG_MONTHS,
+  SCORING_RULES,
+  type IndicatorKey,
+} from '@/domain/risk/construction-perception/policy';
 import { addMonths, compareYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
 /** 화면 표기. 코드 식별자와 띄어쓰기가 다른 것만 적는다. */
@@ -76,11 +81,11 @@ export function missingRows(result: ConstructionPerception | PerceptionReportDto
 /** 기준월이 어디서 왔는지(정책 §5, 2026-09-28 재개정). */
 export function basisNote(basis: PerceptionReportDto['basis']): string {
   const { baseMonth, reportMonth, source } = basis;
-  if (source === '회차') return `기준월 ${baseMonth} = 최신 회차의 달`;
+  if (source === '회차') return `${reportMonth} 기준(최신 회차) → 기준월 ${baseMonth}`;
   if (source === '오늘') return `보고월 ${reportMonth}(오늘) → 기준월 ${baseMonth}`;
   const chosen = `직접 고른 기준월 ${baseMonth}`;
   if (reportMonth === null) return chosen;
-  return `${chosen} · 기본값은 최신 회차의 달 ${baseMonthOfRound(reportMonth)}`;
+  return `${chosen} · 기본값은 최신 회차 ${reportMonth} − ${ROUND_LAG_MONTHS} = ${baseMonthOfRound(reportMonth)}`;
 }
 
 /**
@@ -107,13 +112,13 @@ export function monthOptions(
 }
 
 /**
- * 올린 회차 안내(정책 §3-2·§3-3). 기준월 t에는 t−3월 회차(계획)와
- * t−2·t−1·t월 회차(각 달의 직후 회차 실적)가 필요하다. 무엇이 있고 무엇을 올려야
+ * 올린 회차 안내(정책 §3-2·§3-3). 기준월 b에는 b−2월 회차(계획)와
+ * b−1·b·b+1월 회차(b−2 ~ b월 실적 각각의 직후 회차)가 필요하다. 무엇이 있고 무엇을 올려야
  * 하는지 알린다. 회차는 저장하지 않으므로 지금 화면에 올린 것만 센다.
  */
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
-  const needed = Array.from({ length: PLAN_ROUND_LAG + 1 }, (_, i) => addMonths(baseMonth, i - PLAN_ROUND_LAG));
-  const span = `${needed[0]}~${baseMonth}`;
+  const needed = roundsNeededFor(baseMonth);
+  const span = `${needed[0]}~${needed[needed.length - 1]}`;
   const neededText = `기준월 ${baseMonth}에는 ${span} 회차 네 개가 필요합니다`;
   if (ledger.rounds.length === 0) {
     return `분양회수에 쓸 회차를 올리지 않았습니다. ${neededText}.`;
@@ -146,4 +151,14 @@ export function readRoundsText(results: readonly BatchResult[]): {
   const done = rounds.length > 0 ? `회차 ${rounds.length}개를 읽었습니다: ${rounds.join('·')}.` : '읽은 회차가 없습니다.';
   if (failures.length === 0) return { status: 'success', text: done };
   return { status: 'warning', text: `${done} 읽지 못한 파일: ${failures.join(' / ')}` };
+}
+
+/**
+ * 분양회수 예측오차가 어느 창인지. 기준월 b의 지수는 실적 b−2 ~ b를 b−2월 회차 계획과
+ * 견준다 — 엑셀 분양회수data의 b+1 행이다(엑셀 위기단계와 같은 매핑).
+ */
+export function forecastWindowNote(baseMonth: YearMonth): string {
+  const planRound = roundsNeededFor(baseMonth)[0];
+  const label = addMonths(baseMonth, ERROR_LABEL_LEAD);
+  return `분양회수 예측오차는 원값이 아니라 ${planRound}~${baseMonth} 실적을 ${planRound} 회차 계획과 견준 3개월 누적 오차율입니다(엑셀 분양회수data ${label} 행).`;
 }

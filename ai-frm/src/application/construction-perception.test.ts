@@ -71,20 +71,17 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/07', index: 0, grade: '정상' });
   });
 
-  it('7월 회차를 올리면 기준월도 7월이다 — 4~7월 회차로 7월을 판단한다', async () => {
-    const r = await assess({ reportMonth: ym('2026/07') });
-    expect(r.basis).toEqual({ baseMonth: '2026/07', reportMonth: '2026/07', source: '회차' });
+  it('8월 기준(최신 회차 8월)이면 기준월 7월이다', async () => {
+    const r = await assess({ reportMonth: ym('2026/08') });
+    expect(r.basis).toEqual({ baseMonth: '2026/07', reportMonth: '2026/08', source: '회차' });
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/07' });
   });
 
-  it('회차의 달이 ECOS에 아직 없으면 그 지표만 공표 전이다 — 이전 달로 내려가지 않는다', async () => {
-    const r = await assess({ reportMonth: ym('2026/08') });
-    expect(r.basis.baseMonth).toBe('2026/08');
-    if (r.result.kind !== 'unavailable') throw new Error(r.result.kind);
-    expect(r.result.month).toBe('2026/08');
-    // KB지수·환율·주가는 8월까지 있고 나머지 6종은 7월까지다.
-    expect(r.result.missing).toHaveLength(6);
-    expect(r.result.missing[0].reason).toBe('아직 공표 전입니다(ECOS 최신 2026/07).');
+  // 7월 기준은 4~7월 회차 네 개로 모든 지표가 나온다. 분양회수는 실적이 6월에서 끝나는 창이다.
+  it('7월 기준이면 기준월 6월이고, 4~7월 회차 네 개면 산출된다', async () => {
+    const r = await assess({ reportMonth: ym('2026/07') }, new FixedSource(), ledgerThrough(['2026/04', '2026/05', '2026/06', '2026/07']));
+    expect(r.basis).toEqual({ baseMonth: '2026/06', reportMonth: '2026/07', source: '회차' });
+    expect(r.result).toMatchObject({ kind: 'ok', month: '2026/06' });
   });
 
   it('사용자가 고른 달이 가장 우선이다', async () => {
@@ -93,8 +90,8 @@ describe('기준월 결정 (정책 §5, 2026-09-28 개정)', () => {
     expect(r.result).toMatchObject({ kind: 'ok', month: '2026/05' });
   });
 
-  it('고를 수 있는 범위: 올린 첫 회차 + 3부터 오늘의 전달까지', async () => {
-    expect((await assess()).selectable).toEqual({ from: '2026/05', to: '2026/08' });
+  it('고를 수 있는 범위: 올린 첫 회차 + 2부터 오늘의 전달까지', async () => {
+    expect((await assess()).selectable).toEqual({ from: '2026/04', to: '2026/08' });
     expect((await assess({}, new FixedSource(), emptyLedger())).selectable).toEqual({
       from: null,
       to: '2026/08',
@@ -170,7 +167,7 @@ describe('산출불가 사유', () => {
     expect(r.result).toEqual({
       kind: 'unavailable',
       month: '2026/07',
-      missing: [{ key: '분양회수예측오차', reason: '분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/04~2026/07 회차 네 개가 필요합니다.' }],
+      missing: [{ key: '분양회수예측오차', reason: '분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 2026/07에는 2026/05~2026/08 회차 네 개가 필요합니다.' }],
     });
   });
 });

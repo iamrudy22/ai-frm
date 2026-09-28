@@ -7,8 +7,9 @@
  * 분양회수 이력은 저장하지 않는다(2026-09-28). 요청마다 화면에서 올린 회차들로
  * 만든 이력을 받는다. 형식 검사는 요청을 받는 쪽(ledgerOf)이 끝낸다.
  *
- * 기준월(정책 §5, 2026-09-28 재개정): 사용자가 고른 달 > 최신 회차의 달 >
+ * 기준월(정책 §5, 2026-09-28 결정): 사용자가 고른 달 > 최신 회차 − 1 >
  * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
+ * 분양회수 예측오차는 실적이 기준월에서 끝나는 창을 쓴다(엑셀 위기단계와 같다).
  *
  * 실패는 두 층이다.
  *   - ECOS 실패는 지표 단위다. 그 지표가 산출불가 사유로 나온다. 조회 전체가
@@ -27,7 +28,12 @@ import {
   type EcosIndicatorKey,
   type RawSeries,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { PLAN_ROUND_LAG, forecastErrorAt } from '@/domain/risk/construction-perception/forecast-error';
+import {
+  ERROR_LABEL_LEAD,
+  PLAN_ROUND_LAG,
+  forecastErrorForBaseMonth,
+  roundsNeededFor,
+} from '@/domain/risk/construction-perception/forecast-error';
 import { SCORING_RULES, type IndicatorKey } from '@/domain/risk/construction-perception/policy';
 import { addMonths, compareYearMonth, yearMonthOfDate, type YearMonth } from '@/domain/shared/year-month';
 
@@ -109,7 +115,7 @@ export async function assessPerception(
     statuses.set('분양회수예측오차', { key: '분양회수예측오차', latest: ledger.latestRound() });
 
     const result = assessConstructionPerception(
-      { series, forecastError: (t) => forecastErrorAt(ledger, t) },
+      { series, forecastError: (b) => forecastErrorForBaseMonth(ledger, b) },
       basis.baseMonth,
     );
 
@@ -117,8 +123,8 @@ export async function assessPerception(
     return succeed({
       basis,
       selectable: {
-        // 기준월 t에는 t−3월 회차(계획)가 필요하므로 첫 회차 + 3부터 고를 수 있다.
-        from: firstRound === null ? null : addMonths(firstRound, PLAN_ROUND_LAG),
+        // 기준월 b에는 b−2월 회차(계획)가 필요하므로 첫 회차 + 2부터 고를 수 있다.
+        from: firstRound === null ? null : firstBaseMonthOf(firstRound),
         to: addMonths(today, -1),
       },
       result: explain(result, statuses, ledger),
@@ -133,6 +139,11 @@ export async function assessPerception(
       },
     });
   }, '건설경기 인식 지수를 산출하지 못했습니다.');
+}
+
+/** 첫 회차가 계획 회차(b−2)가 되는 기준월 b. */
+function firstBaseMonthOf(firstRound: YearMonth): YearMonth {
+  return addMonths(firstRound, PLAN_ROUND_LAG - ERROR_LABEL_LEAD);
 }
 
 function basisOf(request: PerceptionRequest, today: YearMonth): PerceptionBasis {
@@ -199,10 +210,10 @@ function explain(
       if (key === '분양회수예측오차') {
         // 도메인 사유가 이미 어느 회차를 올릴지 적는다. 하나도 안 올렸을 때만 따로 안내한다.
         if (ledger.latestRound() === null) {
-          const planRound = addMonths(month, -PLAN_ROUND_LAG);
+          const needed = roundsNeededFor(month);
           return {
             key,
-            reason: `분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 ${month}에는 ${planRound}~${month} 회차 네 개가 필요합니다.`,
+            reason: `분양회수: 자금수지표 회차를 올리지 않았습니다. 기준월 ${month}에는 ${needed[0]}~${needed.at(-1)} 회차 네 개가 필요합니다.`,
           };
         }
         return { key, reason };
