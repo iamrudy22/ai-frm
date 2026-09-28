@@ -13,6 +13,9 @@ export const money = (n: number): string =>
 
 export const percent = (n: number): string => `${n.toFixed(1)}%`;
 
+/** 금리 차이(%p). 금리가 셋째 자리까지 오므로 셋째 자리까지 보인다. 음수는 수학 기호 −. */
+export const percentPoints = (n: number): string => `${n < 0 ? '−' : ''}${Math.abs(n).toFixed(3)}%p`;
+
 /** 4단계 등급의 배지 색. 대금 회수 위험·유동성 Gap·건설경기 인식 지수가 함께 쓴다. */
 export const GRADE_BADGE: Record<Grade, 'success' | 'warning' | 'orange' | 'error'> = {
   정상: 'success',

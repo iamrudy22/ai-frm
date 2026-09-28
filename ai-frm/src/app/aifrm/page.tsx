@@ -37,6 +37,7 @@ import { toPercent } from '@/domain/shared/amount';
 import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { ConstructionPerceptionCard, usePerception } from './construction-perception-card';
+import { FundingRiskCard, useFundingRisk, type FundingRiskState } from './funding-risk-card';
 import {
   arrangeRounds,
   requirementsOf,
@@ -48,6 +49,7 @@ import {
 import { calendarOfLabel, calendarOptions, monthAt, spanText } from './dashboard-view';
 import {
   adequateCashTile,
+  fundingRiskTile,
   gapTile,
   perceptionTile,
   recoveryBasis,
@@ -80,7 +82,7 @@ const ROUND_COLUMNS = [
 ];
 
 const ROLE_TEXT: Record<UploadedRound['role'], string> = {
-  '최신 회차': '최신 회차 — 유동성 Gap·적정 시재 기준, 대금 회수 위험·분양회수 실적',
+  '최신 회차': '최신 회차 — 유동성 Gap·적정 시재 기준, 대금 회수 위험·분양회수 실적, 조달위험 판단월',
   '이전 회차': '이전 회차 — 대금 회수 위험 계획',
   분양회수: '건설경기 인식 지수(분양회수)만',
 };
@@ -158,6 +160,8 @@ export default function AifrmDashboardPage() {
 
   // 위쪽 요약과 아래 카드가 같은 결과를 쓴다. 산출 전에는 부르지 않는다.
   const perception = usePerception(loaded?.latest.statement ?? null, loaded?.rounds ?? null);
+  // 판단월 = 최신 회차의 달(대금 회수 위험과 같다). 금리는 그 전달 마지막 평가일 값이다.
+  const fundingRisk = useFundingRisk(loaded?.latest.round ?? null);
 
   return (
     <Layout
@@ -169,8 +173,8 @@ export default function AifrmDashboardPage() {
             <VStack gap={1}>
               <Heading level={1}>재무위험 선행지표</Heading>
               <Text type="supporting">
-                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재와 건설경기 인식 지수를
-                함께 판정합니다. 올린 파일은 저장하지 않습니다.
+                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재와 건설경기·조달위험 인식
+                지수를 함께 판정합니다. 올린 파일은 저장하지 않습니다.
               </Text>
             </VStack>
 
@@ -209,7 +213,7 @@ export default function AifrmDashboardPage() {
 
             {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
-                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception.response)} />
+                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception.response, fundingRisk.response)} />
 
                 <Divider />
 
@@ -253,6 +257,8 @@ export default function AifrmDashboardPage() {
               <>
                 <Divider />
                 <ConstructionPerceptionCard perception={perception} />
+                <Divider />
+                <FundingRiskCard fundingRisk={fundingRisk} />
               </>
             )}
           </VStack>
@@ -269,6 +275,7 @@ function summaryTiles(
   dashboard: Dashboard,
   gapMonth: YearMonth | null,
   perception: Parameters<typeof perceptionTile>[0],
+  fundingRisk: FundingRiskState['response'],
 ): SummaryTile[] {
   const statement = loaded.latest.statement;
   const recovery = dashboard.paymentRecovery;
@@ -282,13 +289,17 @@ function summaryTiles(
     gapTile(dashboard.liquidityGap, gapMonth === null ? '—' : spanText(gapMonth, LIQUIDITY_WINDOW_MONTHS)),
     adequateCashTile(adequate, adequate.ok ? windowText(statement, adequate.value) : '—'),
     perceptionTile(perception),
+    fundingRiskTile(fundingRisk),
   ];
 }
 
-/** 네 지표를 먼저 한 줄로. 상세는 아래 섹션에 있다. */
+/**
+ * 다섯 지표를 먼저 한 줄로. 상세는 아래 섹션에 있다.
+ * 칸의 최소 폭은 다섯 칸이 본문 폭(960)에 한 줄로 들어가게 잡았다. 좁은 화면에서는 줄을 바꾼다.
+ */
 function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
   return (
-    <Grid gap={4} columns={{ minWidth: 200, repeat: 'fit' }}>
+    <Grid gap={4} columns={{ minWidth: 160, repeat: 'fit' }}>
       {tiles.map((tile) => (
         <Card key={tile.title}>
           <VStack gap={2}>

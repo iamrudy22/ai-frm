@@ -75,6 +75,7 @@ export type Requirement = {
  *   - 유동성 Gap·적정 시재: L
  *   - 대금 회수 위험: L−1, L
  *   - 건설경기 인식 지수: 기본 기준월 B = L − 2 에서 B−1(계획)·B+2(실적), 곧 L−3·L (정책 §3-2, §5)
+ *   - 조달위험 인식 지수: L. 판단월만 정한다 — 금리는 채권정보센터에서 L−1월 말 값을 불러온다
  *
  * 그래서 8월 기준은 5·7·8월 회차 세 개로 모든 지표가 채워진다.
  *
@@ -99,6 +100,7 @@ export function requirementsOf(rounds: readonly YearMonth[]): Requirement[] {
     requirement('유동성 Gap · 적정 시재', [latest], ''),
     requirement('대금 회수 위험', [addMonths(latest, -1), latest], '판정하지 않습니다'),
     requirement(`건설경기 인식 지수 (기준월 ${base})`, [plan, actual], '기본 기준월로는 산출불가입니다'),
+    requirement(`조달위험 인식 지수 (${addMonths(latest, -1)} 말 금리)`, [latest], ''),
   ];
 }
 

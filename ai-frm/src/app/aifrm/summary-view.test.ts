@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { adequateCashTile, gapTile, perceptionTile, recoveryBasis, recoveryTile } from '@/app/aifrm/summary-view';
+import { adequateCashTile, fundingRiskTile, gapTile, perceptionTile, recoveryBasis, recoveryTile } from '@/app/aifrm/summary-view';
 
 const ym = (s: string) => s as never;
 
@@ -108,5 +108,43 @@ describe('요약 — 건설경기 인식 지수', () => {
 
   it('요청이 실패했으면 산출 불가', () => {
     expect(perceptionTile({ ok: false, reason: 'x' }).status).toEqual({ kind: 'dot', variant: 'error', label: '산출 불가' });
+  });
+});
+
+describe('요약 — 조달위험 인식 지수', () => {
+  const ok = {
+    kind: 'ok',
+    judgedMonth: '2026/08',
+    observedMonth: '2026/07',
+    evaluationDate: '2026/07/31',
+    monthEnd: '2026/07/31',
+    spread: 0.281,
+    grade: '주의',
+  } as never;
+
+  it('판정했으면 등급, 금리 차이, 판단월과 쓴 평가일', () => {
+    expect(fundingRiskTile({ ok: true, value: { source: '회차', result: ok, fetchedAt: '2026-09-28T00:00:00.000Z' } })).toEqual({
+      title: '조달위험 인식 지수',
+      status: { kind: 'grade', grade: '주의' },
+      value: '0.281%p',
+      note: '공사채 AAA − 국고채 · 2026/08 판단 · 2026/07/31 금리',
+    });
+  });
+
+  it('불러오는 중', () => {
+    expect(fundingRiskTile(null)).toMatchObject({ status: { kind: 'dot', variant: 'neutral' }, value: '…' });
+  });
+
+  it('산출불가면 판단월과 사유 안내', () => {
+    const unavailable = { kind: 'unavailable', judgedMonth: '2026/08', observedMonth: '2026/07', reason: 'x' } as never;
+    expect(fundingRiskTile({ ok: true, value: { source: '회차', result: unavailable, fetchedAt: null } })).toMatchObject({
+      status: { kind: 'dot', variant: 'warning', label: '산출불가' },
+      value: '—',
+      note: '2026/08 판단 · 아래 사유를 확인하세요',
+    });
+  });
+
+  it('요청이 실패했으면 산출 불가', () => {
+    expect(fundingRiskTile({ ok: false, reason: 'x' }).status).toEqual({ kind: 'dot', variant: 'error', label: '산출 불가' });
   });
 });

@@ -1,7 +1,7 @@
 /**
- * 결과 요약 — 네 지표를 한 줄로 먼저 보인다. 상세는 그 아래 섹션에 그대로 있다.
+ * 결과 요약 — 다섯 지표를 한 줄로 먼저 보인다. 상세는 그 아래 섹션에 그대로 있다.
  *
- * 등급이 있는 지표(대금 회수 위험·유동성 Gap·건설경기 인식 지수)는 등급 배지로,
+ * 등급이 있는 지표(대금 회수 위험·유동성 Gap·건설경기·조달위험 인식 지수)는 등급 배지로,
  * 등급이 없는 적정 시재는 점과 T/F로 보인다 — 같은 모양이면 등급이 있는 지표로
  * 읽히기 때문이다(page.tsx 적정 시재 주석과 같은 이유).
  *
@@ -9,12 +9,13 @@
  */
 
 import type { PerceptionResponse } from '@/app/api/construction-perception/dto';
+import type { FundingRiskResponse } from '@/app/api/funding-risk/dto';
 import type { Dashboard } from '@/application/dashboard';
 import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
 import type { Grade } from '@/domain/risk/grade';
 import { toPercent } from '@/domain/shared/amount';
 import type { YearMonth } from '@/domain/shared/year-month';
-import { money, percent } from './format';
+import { money, percent, percentPoints } from './format';
 
 export type SummaryStatus =
   | { readonly kind: 'grade'; readonly grade: Grade }
@@ -107,5 +108,22 @@ export function perceptionTile(perception: PerceptionResponse | null): SummaryTi
     status: { kind: 'grade', grade: result.grade },
     value: result.index.toFixed(2),
     note: `종합위기인식지수 · 기준월 ${result.month}`,
+  };
+}
+
+/** response가 null이면 아직 불러오는 중이다. */
+export function fundingRiskTile(response: FundingRiskResponse | null): SummaryTile {
+  const title = '조달위험 인식 지수';
+  if (response === null) return { title, status: dot('neutral', '불러오는 중'), value: '…', note: '채권정보센터 조회 중' };
+  if (!response.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
+  const result = response.value.result;
+  if (result.kind === 'unavailable') {
+    return { title, status: dot('warning', '산출불가'), value: NONE, note: `${result.judgedMonth} 판단 · ${SEE_BELOW}` };
+  }
+  return {
+    title,
+    status: { kind: 'grade', grade: result.grade },
+    value: percentPoints(result.spread),
+    note: `공사채 AAA − 국고채 · ${result.judgedMonth} 판단 · ${result.evaluationDate} 금리`,
   };
 }
