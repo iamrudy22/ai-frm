@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { amount, ratio, divide, sumOf, minus, toPercent } from '@/domain/shared/amount';
+import { amount, ratio, divide, sumOf, minus, scale, toPercent } from '@/domain/shared/amount';
 
 describe('금액과 비율', () => {
   it('금액을 나누면 비율이 된다', () => {
@@ -25,5 +25,14 @@ describe('금액과 비율', () => {
 
   it('0으로 나누지 않는다', () => {
     expect(() => divide(amount(100), amount(0))).toThrow();
+  });
+
+  it('금액에 가중치를 곱하면 금액이다 — 음수 금액도 그대로 가중한다', () => {
+    expect(scale(amount(3000), 0.4)).toBeCloseTo(1200, 10);
+    expect(scale(amount(-1000), 0.4)).toBeCloseTo(-400, 10);
+  });
+
+  it('유한하지 않은 가중치는 거부한다', () => {
+    expect(() => scale(amount(100), Number.NaN)).toThrow(/가중치/);
   });
 });

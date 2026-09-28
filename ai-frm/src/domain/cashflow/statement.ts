@@ -15,9 +15,9 @@
 
 import { amount, minus, type Amount } from '@/domain/shared/amount';
 
-export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' | '지출';
+export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' | '기타수입' | '지출';
 
-const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '분양회수', '지출'];
+const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '분양회수', '기타수입', '지출'];
 
 const ROLL_FORWARD_ITEMS: readonly ItemName[] = ['기초시재', '수입계', '지출'];
 
@@ -53,6 +53,11 @@ export type StatementInput = {
   readonly monthLabels: readonly string[];
   /** 기준월의 기본값. 사용자가 화면에서 다른 달로 바꿀 수 있다. */
   readonly baseMonthIndex: number;
+  /**
+   * 계획연도의 마지막 달. 판독 계층이 헤더에서 정해 준다. 그 뒤 열(다음 해)은
+   * 계획이 일부만 채워져 있어서, 이 경계를 넘는 판정에는 표시를 붙인다.
+   */
+  readonly planYearEndIndex: number;
   /** 항목별 월 계열. 읽은 계열의 길이는 monthLabels와 같아야 한다. */
   readonly amounts: Readonly<Record<ItemName, ItemSeries>>;
 };
@@ -61,13 +66,14 @@ export type Statement = {
   readonly asOf: Date;
   readonly months: readonly Month[];
   readonly defaultBaseMonth: Month;
+  readonly planYearEnd: Month;
   /** 읽지 못한 항목이면 사유를 담아 던진다. 0으로 대신하지 않는다. */
   amountOf(item: ItemName, month: Month): Amount;
   unreadableItems(): readonly { readonly item: ItemName; readonly reason: string }[];
 };
 
 export function createStatement(input: StatementInput): Statement {
-  const { asOf, monthLabels, baseMonthIndex, amounts } = input;
+  const { asOf, monthLabels, baseMonthIndex, planYearEndIndex, amounts } = input;
 
   if (monthLabels.length === 0) {
     throw new Error('월 목록이 비어 있습니다.');
@@ -93,12 +99,17 @@ export function createStatement(input: StatementInput): Statement {
     throw new Error(`기준월 인덱스가 범위를 벗어났습니다: ${baseMonthIndex}`);
   }
 
+  if (!Number.isInteger(planYearEndIndex) || planYearEndIndex < 0 || planYearEndIndex >= monthLabels.length) {
+    throw new Error(`계획연도 끝 인덱스가 범위를 벗어났습니다: ${planYearEndIndex}`);
+  }
+
   const months: readonly Month[] = monthLabels.map((label, index) => ({ index, label }));
 
   return {
     asOf,
     months,
     defaultBaseMonth: months[baseMonthIndex],
+    planYearEnd: months[planYearEndIndex],
     amountOf(item, month) {
       const series = amounts[item];
       if (isUnreadable(series)) {

@@ -22,11 +22,13 @@ function input(over: Partial<StatementInput> = {}): StatementInput {
     asOf: new Date(2026, 7, 10), // 2026-08-10
     monthLabels: LABELS,
     baseMonthIndex: 7, // 8월
+    planYearEndIndex: 11, // 12월
     amounts: {
       기초시재: filled(1690),
       수입계: filled(900),
       수입: filled(700),
       분양회수: filled(500),
+      기타수입: filled(100),
       지출: filled(1700),
     },
     ...over,
@@ -49,6 +51,7 @@ describe('회차 생성', () => {
             수입계: filled(1),
             수입: [amount(1)],
             분양회수: filled(1),
+            기타수입: filled(100),
             지출: filled(1),
           },
         }),
@@ -63,6 +66,16 @@ describe('회차 생성', () => {
   it('월 목록이 비어 있으면 거부한다', () => {
     expect(() => createStatement(input({ monthLabels: [], baseMonthIndex: 0 }))).toThrow();
   });
+
+  // 적정 시재가 다음 해 열이 들어간 창에 "다음 해 계획 미확정"을 붙이는 기준이다.
+  // 라벨을 해석하지 않고 판독 계층이 넘겨준 인덱스를 그대로 쓴다.
+  it('계획연도의 마지막 달을 안다 — 12월 다음 열(26.1월)이 아니다', () => {
+    expect(createStatement(input()).planYearEnd.label).toBe('12월');
+  });
+
+  it('계획연도 끝이 범위를 벗어나면 거부한다', () => {
+    expect(() => createStatement(input({ planYearEndIndex: 15 }))).toThrow(/계획연도/);
+  });
 });
 
 // 한 항목이 깨졌다고 회차 전체를 버리면, 그 항목을 쓰지 않는 지표까지 멈춘다.
@@ -76,6 +89,7 @@ describe('읽지 못한 항목', () => {
           수입계: filled(900),
           수입: filled(700),
           분양회수: unreadable('"분양회수"의 10월 칸이 비어 있습니다.'),
+          기타수입: filled(100),
           지출: filled(1700),
         },
       }),
@@ -106,7 +120,7 @@ describe('읽지 못한 항목', () => {
     expect(() =>
       createStatement(
         input({
-          amounts: { 기초시재: none, 수입계: none, 수입: none, 분양회수: none, 지출: none },
+          amounts: { 기초시재: none, 수입계: none, 수입: none, 분양회수: none, 기타수입: none, 지출: none },
         }),
       ),
     ).toThrow(/어떤 항목도/);
@@ -182,8 +196,10 @@ describe('시재 롤포워드 진단', () => {
           지출: [amount(50), amount(50), amount(50)],
           수입: [amount(80), amount(80), amount(80)],
           분양회수: [amount(60), amount(60), amount(60)],
+          기타수입: [amount(10), amount(10), amount(10)],
         },
         monthLabels: ['1월', '2월', '3월'],
+        planYearEndIndex: 2,
         baseMonthIndex: 0,
       }),
     );
@@ -200,8 +216,10 @@ describe('시재 롤포워드 진단', () => {
           지출: [amount(50), amount(50), amount(50)],
           수입: [amount(80), amount(80), amount(80)],
           분양회수: [amount(60), amount(60), amount(60)],
+          기타수입: [amount(10), amount(10), amount(10)],
         },
         monthLabels: ['1월', '2월', '3월'],
+        planYearEndIndex: 2,
         baseMonthIndex: 0,
       }),
     );
@@ -221,6 +239,7 @@ describe('시재 롤포워드 진단', () => {
           수입계: unreadable('"수입계(자금조달포함)" 항목을 A열에서 찾을 수 없습니다.'),
           수입: filled(700),
           분양회수: filled(500),
+          기타수입: filled(100),
           지출: filled(1700),
         },
       }),
@@ -239,9 +258,11 @@ describe('시재 롤포워드 진단', () => {
           수입계: [amount(100), amount(100)],
           수입: [amount(80), amount(80)],
           분양회수: unreadable('빈 칸'),
+          기타수입: [amount(10), amount(10)],
           지출: [amount(50), amount(50)],
         },
         monthLabels: ['1월', '2월'],
+        planYearEndIndex: 1,
         baseMonthIndex: 0,
       }),
     );

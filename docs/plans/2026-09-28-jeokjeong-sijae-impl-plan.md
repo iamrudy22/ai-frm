@@ -257,3 +257,15 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
 - 기준월 선택자 라벨을 "기준월"로 바꿨다.
 - **브라우저 확인**: 합성 xlsx(실수치 아님)를 `public/`에 잠시 두고, 파일 입력에 넣어 세 경우를 확인한 뒤 지웠다. ① 정상: 대금 회수 0.8 주의, 유동성 Gap 정상. ② 최신 회차의 분양회수 칸 비움: 경고 배너, 대금 회수만 "판정하지 않았습니다", Gap은 정상. ③ 회차 순서 뒤바꿈: 순서 경고, 대금 회수만 판정 안 함. 콘솔 오류 없음.
 - 테스트 104 → 117개. `tsc`·`eslint`·`next build` 통과.
+
+### A1~A4 결과 (2026-09-28)
+
+- **A1** `scale(amount, weight)`. 가중치는 `Ratio`가 아니라 `number`로 둔다. 비율은 금액 ÷ 금액으로만 만들어지는 판정값이고, 가중치는 정책 계수라서 둘을 섞지 않는다.
+- **A2** `ItemName`에 `기타수입`을 추가했다. 판독은 점 없는 `N월`의 마지막 열을 `planYearEndIndex`로 넘기고, `Statement.planYearEnd`로 노출한다. 필수 입력으로 두고 범위를 검사한다. 테스트 헬퍼 전부에 기타수입 계열과 `planYearEndIndex`를 넣었다. 판독 테스트에는 이웃 행 ` - 기타`·`기타지출`을 깔았다.
+- **A3** `risk/adequate-cash/policy.ts`는 `LCR_WEIGHTS`와 `verdictLabel`만 둔다. 등급 관련 정책은 없다. 경계 테스트 **규칙 5**를 추가했다. 등급 없는 지표가 `risk/grade`를 import하면 실패하고, 폴더가 실제로 있는지도 단언한다. 실제 위반을 심어 실패를 확인하고 되돌렸다.
+- **A4** 계획의 `assessAdequateCash(month, input)` 대신 두 층으로 나눴다.
+  - 순수 판정 `assessAdequateCash(input)`: 구성요소·적정시재·`surplus`·`isAdequate`
+  - 회차 문맥 `adequateCashAt(statement, base)`: `month`·`windowEnd`·`isPlan`·`beyondPlanYear`
+
+  이렇게 하면 PRD §4-3 케이스를 회차 없이 검증할 수 있다. `adequateCashSeries`는 `{ rows, cutoff }`를 돌려준다.
+- 테스트 117 → 150개. `tsc`·`eslint` 통과.

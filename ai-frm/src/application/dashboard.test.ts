@@ -23,11 +23,13 @@ function statement(
     asOf,
     monthLabels: LABELS,
     baseMonthIndex,
+    planYearEndIndex: LABELS.length - 1,
     amounts: {
       기초시재: series([3000, 2700, 2400, 2100, 1800, 1500]),
       수입계: flat(300),
       수입: flat(300),
       분양회수: flat(0),
+      기타수입: flat(0),
       지출: flat(600),
       ...over,
     },

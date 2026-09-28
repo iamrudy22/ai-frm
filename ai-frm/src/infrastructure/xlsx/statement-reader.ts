@@ -34,6 +34,9 @@ const SHEET_PATTERN = /자금수지표\(본운영반영\)/;
  */
 const MONTH_LABEL = /^\d+(\.\d+)?월$/;
 
+/** 계획연도의 달. 다음 해는 `26.1월`처럼 점을 넣어 적으므로 점 없는 표기만 해당한다. */
+const PLAN_YEAR_MONTH_LABEL = /^\d+월$/;
+
 const AS_OF_DATE = /(\d{4})-(\d{2})-(\d{2})/;
 
 /**
@@ -41,12 +44,14 @@ const AS_OF_DATE = /(\d{4})-(\d{2})-(\d{2})/;
  *
  * `분양회수`는 완전 일치라야 한다. 같은 시트에 `공공분양자금`·`분양`·
  * `- 미분양자산펀드`가 따로 있어서 부분 일치로 찾으면 엉뚱한 행을 집는다.
+ * `기타수입`도 마찬가지다. 아래에 ` - 기타`, 멀리 `기타지출`이 있다.
  */
 const SHEET_LABEL: Record<ItemName, string> = {
   기초시재: '기초시재',
   수입계: '수입계(자금조달포함)',
   수입: '수입',
   분양회수: '분양회수',
+  기타수입: '기타수입',
   지출: '지출',
 };
 
@@ -99,6 +104,12 @@ export function readStatement(data: ArrayBuffer): ReadResult {
     );
   }
 
+  // 기준월 열이 점 없는 'N월'로 찾혔으므로 계획연도 열은 적어도 하나 있다.
+  const planYearEndIndex = monthColumns.reduce(
+    (last, m, i) => (PLAN_YEAR_MONTH_LABEL.test(m.label) ? i : last),
+    baseMonthIndex,
+  );
+
   // 항목 하나가 깨졌다고 회차 전체를 거부하면 그 항목을 쓰지 않는 지표까지 멈춘다.
   // 그 항목만 사유와 함께 '읽지 못함'으로 두고, 찾는 쪽에서 실패하게 한다.
   // 시트·헤더·기준일처럼 회차의 뼈대가 없을 때만 위에서 전체를 거부한다.
@@ -115,6 +126,7 @@ export function readStatement(data: ArrayBuffer): ReadResult {
         asOf,
         monthLabels: monthColumns.map((m) => m.label),
         baseMonthIndex,
+        planYearEndIndex,
         amounts: amounts as Record<ItemName, ItemSeries>,
       }),
     };

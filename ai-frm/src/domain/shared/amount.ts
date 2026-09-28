@@ -38,6 +38,19 @@ export function minus(a: Amount, b: Amount): Amount {
   return amount(a - b);
 }
 
+/**
+ * 금액 × 가중치 = 금액. 적정 시재 LCR 모델처럼 항목에 비중을 줄 때 쓴다.
+ *
+ * 가중치는 비율(Ratio)이 아니다. 비율은 금액 ÷ 금액으로만 만들어지는 판정값이고,
+ * 가중치는 정책이 정한 계수다. 둘을 섞으면 회수율을 가중치로 쓰는 실수가 열린다.
+ */
+export function scale(a: Amount, weight: number): Amount {
+  if (!Number.isFinite(weight)) {
+    throw new Error(`가중치는 유한한 수여야 합니다: ${weight}`);
+  }
+  return amount(a * weight);
+}
+
 /** 금액 ÷ 금액 = 비율. 이 방향으로만 비율이 만들어진다. */
 export function divide(numerator: Amount, denominator: Amount): Ratio {
   if (denominator === 0) {

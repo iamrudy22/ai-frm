@@ -39,12 +39,14 @@ describe('두 회차에서 입력 조립', () => {
       asOf,
       monthLabels: labels,
       baseMonthIndex,
+      planYearEndIndex: labels.length - 1,
       amounts: {
         기초시재: zeros,
         수입계: zeros,
         // 분양회수가 아닌 행을 집으면 바로 드러나도록 다른 값을 넣어 둔다.
         수입: labels.map(() => amount(11111)),
         분양회수: 분양회수.map(amount),
+        기타수입: zeros,
         지출: zeros,
       },
     };

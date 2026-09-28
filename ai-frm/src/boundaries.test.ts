@@ -6,6 +6,8 @@
  *   2. risk/<지표>/policy.ts는 risk/grade와 domain/shared만 import한다.
  *   3. domain/ 아래 어떤 파일도 바깥 계층(application·infrastructure·app)과 xlsx를 모른다.
  *   4. application/은 화면(app)·판독(infrastructure)·xlsx를 모른다. 회차를 받아 셈만 한다.
+ *   5. 등급이 없는 지표(적정 시재)는 risk/grade를 import하지 않는다. 적정 시재는
+ *      T/F와 '안정적'/'적정시재 부족' 표기만 있다(적정 시재 PRD §9-6).
  *
  * 검사 범위: 정적 `import … from '…'`, `export … from '…'`, 부수효과 `import '…'`,
  * 동적 `import('…')`. 이 코드베이스에 그 밖의 모듈 적재 방식은 없다.
@@ -22,6 +24,8 @@ const OUTER_LAYERS = ['application/', 'infrastructure/', 'app/'];
 const APPLICATION_MAY_NOT = ['infrastructure/', 'app/'];
 const FORBIDDEN_PACKAGES = ['xlsx'];
 const POLICY_MAY_IMPORT = [/^domain\/risk\/grade$/, /^domain\/shared\//];
+const GRADE_TOOL = 'domain/risk/grade';
+const UNGRADED_INDICATORS = ['adequate-cash'];
 
 const IMPORT_PATTERNS = [
   /\bfrom\s*['"]([^'"]+)['"]/g,
@@ -86,6 +90,11 @@ function violations(files: readonly SourceFile[]): string[] {
       const other = indicatorOf(target);
       if (own !== null && other !== null && other !== own) {
         found.push(`${path} → ${specifier}: 지표 '${own}'가 지표 '${other}'에 기댄다`);
+        continue;
+      }
+
+      if (own !== null && UNGRADED_INDICATORS.includes(own) && target === GRADE_TOOL) {
+        found.push(`${path} → ${specifier}: 지표 '${own}'에는 등급이 없다`);
         continue;
       }
 
@@ -199,6 +208,15 @@ describe('경계 검사기', () => {
     ]);
     expect(v).toEqual([]);
   });
+
+  it('등급이 없는 지표가 등급 도구를 쓰면 잡는다 — 정책 파일이든 산식 파일이든', () => {
+    const v = violations([
+      file('domain/risk/adequate-cash/policy.ts', `import type { Grade } from '@/domain/risk/grade';`),
+      file('domain/risk/adequate-cash/adequate-cash.ts', `import { gradeBy } from '../grade';`),
+    ]);
+    expect(v).toHaveLength(2);
+    expect(v.every((m) => /등급이 없다/.test(m))).toBe(true);
+  });
 });
 
 // ── 실제 소스에 적용 ──────────────────────────────────────────────────────
@@ -214,6 +232,13 @@ describe('실제 소스의 경계', () => {
       expect(sources.some((f) => f.path === `domain/risk/${indicator}/policy.ts`)).toBe(true);
     }
     expect(sources.some((f) => f.path === 'domain/risk/policy.ts')).toBe(false);
+  });
+
+  // 폴더 이름이 바뀌면 규칙 5가 아무것도 검사하지 않고 통과한다. 그걸 막는다.
+  it('등급이 없는 지표 폴더가 실제로 있다', () => {
+    for (const indicator of UNGRADED_INDICATORS) {
+      expect(indicators).toContain(indicator);
+    }
   });
 
   it('유스케이스 파일도 검사한다', () => {

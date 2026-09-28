@@ -48,8 +48,12 @@ function workbook(options: SheetOptions = {}): ArrayBuffer {
       row('공공분양자금', same(77)),
       row('분양회수', same(200)),
       row('분양', same(88)),
+      // 기타수입의 이웃들. 실물은 기타수입(28행) 아래에 ' - 기타'(39행), 멀리 '기타지출'(90행)이 있다.
+      row(' - 기타', same(11)),
+      row('기타수입', same(50)),
       // 지출을 라벨로만 찾는지 보려고 실물(41행)과 다른 자리에 둔다.
       row('지출', same(600)),
+      row('기타지출', same(22)),
     ],
   } = options;
 
@@ -100,6 +104,13 @@ describe('월 열 판독', () => {
     expect(readOk().defaultBaseMonth.label).toBe('8월');
     expect(readOk({ asOf: '2026-12-01(단위: 억원)' }).defaultBaseMonth.label).toBe('12월');
   });
+
+  // 헤더는 12월 다음을 '26.1월'처럼 점을 넣어 적는다. 점 없는 'N월'의 마지막 열이 계획연도 끝이다.
+  it('계획연도 끝은 점 없는 월 표기의 마지막 열이다 — 26.1월이 아니라 12월', () => {
+    const s = readOk();
+    expect(s.planYearEnd.label).toBe('12월');
+    expect(s.months[s.planYearEnd.index + 1].label).toBe('26.1월');
+  });
 });
 
 describe('항목 찾기', () => {
@@ -114,6 +125,11 @@ describe('항목 찾기', () => {
     expect(s.amountOf('분양회수', s.months[0])).toBe(200);
   });
 
+  it('기타수입을 기타지출이나 " - 기타"와 헷갈리지 않는다', () => {
+    const s = readOk();
+    expect(s.amountOf('기타수입', s.months[0])).toBe(50);
+  });
+
   it('지출이 몇 번째 행이든 라벨로 찾는다', () => {
     const s = readOk();
     expect(s.amountOf('지출', s.months[0])).toBe(600);
@@ -125,6 +141,7 @@ describe('항목 찾기', () => {
       row('수입계(자금조달포함)', same(1)),
       row('수입', same(1)),
       row('분양회수', same(1)),
+      row('기타수입', same(1)),
     ];
     const s = readOk({ rows });
     expect(s.unreadableItems().map((u) => u.item)).toEqual(['지출']);
