@@ -2,7 +2,7 @@
 import { handlePerception } from '@/app/api/_lib/handlers';
 import { indicatorSource, ledgerRepository } from '@/app/api/_lib/composition';
 
-// 월 1회 갱신 자료지만 처음에는 캐시하지 않는다(구현 계획 §10). 빌드 때 굳지 않게 명시한다.
+// 요청마다 산출한다. ECOS 응답은 조립 지점의 10분 캐시가 재사용한다. 빌드 때 굳지 않게 명시한다.
 export const dynamic = 'force-dynamic';
 
 export function GET(request: Request): Promise<Response> {

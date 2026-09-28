@@ -8,6 +8,7 @@
 
 import { resolve } from 'node:path';
 import type { EconomicIndicatorSource, ForecastLedgerRepository } from '@/application/ports';
+import { CachedIndicatorSource } from '@/infrastructure/ecos/cached-indicator-source';
 import { EcosIndicatorSource } from '@/infrastructure/ecos/ecos-indicator-source';
 import { FileLedgerRepository } from '@/infrastructure/ledger/file-ledger-repository';
 
@@ -18,6 +19,11 @@ export function ledgerRepository(): ForecastLedgerRepository {
   return new FileLedgerRepository(LEDGER_PATH);
 }
 
+/** 기준월을 바꿀 때마다 ECOS를 다시 부르지 않도록 서버 프로세스에 하나만 둔다. */
+const ECOS_CACHE_MS = 10 * 60 * 1000;
+let cachedSource: EconomicIndicatorSource | null = null;
+
 export function indicatorSource(): EconomicIndicatorSource {
-  return new EcosIndicatorSource(process.env.ECOS_API_KEY);
+  cachedSource ??= new CachedIndicatorSource(new EcosIndicatorSource(process.env.ECOS_API_KEY), ECOS_CACHE_MS);
+  return cachedSource;
 }
