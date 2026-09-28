@@ -3,6 +3,7 @@ import {
   createStatement,
   windowFrom,
   checkConsecutive,
+  calendarOf,
   unreadable,
   type StatementInput,
 } from '@/domain/cashflow/statement';
@@ -267,5 +268,30 @@ describe('시재 롤포워드 진단', () => {
       }),
     );
     expect(checkRollForward(s)).toEqual([]);
+  });
+});
+
+describe('회차의 달력 월', () => {
+  const s = createStatement(input());
+
+  it('기준월은 기준일이 속한 달이다', () => {
+    expect(calendarOf(s, s.defaultBaseMonth)).toBe('2026/08');
+  });
+
+  it('다른 달은 기준월에서 떨어진 열 수만큼 더한다', () => {
+    expect(calendarOf(s, s.months[0])).toBe('2026/01');
+    expect(calendarOf(s, s.months[6])).toBe('2026/07');
+    expect(calendarOf(s, s.months[11])).toBe('2026/12');
+  });
+
+  // 실물 2026년 시트는 12월 다음 열을 '26.1월'로 적는다(작년 양식을 그대로 쓴 표기).
+  // 라벨을 믿으면 2026/01이 되지만, 달력으로는 2027/01이다.
+  it('라벨을 해석하지 않는다 — 12월 다음 열은 다음 해 1월이다', () => {
+    expect(s.months[12].label).toBe('26.1월');
+    expect(calendarOf(s, s.months[12])).toBe('2027/01');
+  });
+
+  it('이 회차에 없는 월은 거부한다', () => {
+    expect(() => calendarOf(s, { index: 99, label: '가짜' })).toThrow();
   });
 });

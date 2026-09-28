@@ -14,6 +14,7 @@
  */
 
 import { amount, minus, type Amount } from '@/domain/shared/amount';
+import { addMonths, yearMonthOfDate, type YearMonth } from '@/domain/shared/year-month';
 
 export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' | '기타수입' | '지출';
 
@@ -146,7 +147,22 @@ export function windowFrom(statement: Statement, base: Month, count: number): re
   return statement.months.slice(start, end);
 }
 
-export type ConsecutiveCheck = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+/**
+ * 회차 안의 달이 달력으로 몇 년 몇 월인가.
+ *
+ * 기준월은 기준일이 속한 달이다. 판독 계층이 기준일의 달 라벨로 기준월 열을
+ * 찾으므로 이 둘은 늘 같다. 나머지 달은 기준월에서 떨어진 열 수만큼 더한다.
+ * 라벨은 보지 않는다 — 실물 2026년 시트는 12월 다음 열을 작년 양식대로
+ * '26.1월'로 적어 두어서, 라벨을 믿으면 2027년 1월이 2026년 1월이 된다.
+ */
+export function calendarOf(statement: Statement, month: Month): YearMonth {
+  if (statement.months[month.index]?.label !== month.label) {
+    throw new Error(`이 회차에 없는 월입니다: ${month.label}`);
+  }
+  return addMonths(yearMonthOfDate(statement.asOf), month.index - statement.defaultBaseMonth.index);
+}
+
+export type ConsecutiveCheck ={ readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 /**
  * 두 회차가 이어지는지 본다.

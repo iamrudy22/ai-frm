@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { assessLiquidityGap, liquidityGapInputFrom } from '@/domain/risk/liquidity-gap/liquidity-gap';
-import { checkRollForward, type Statement } from '@/domain/cashflow/statement';
+import { calendarOf, checkRollForward, type Statement } from '@/domain/cashflow/statement';
 import { adequateCashAt } from '@/domain/risk/adequate-cash/adequate-cash';
 import { toPercent } from '@/domain/shared/amount';
 
@@ -45,6 +45,13 @@ describe.skipIf(!present)('실물 회차 판독', () => {
   it('기준일에서 기준월을 8월로 잡는다', () => {
     expect(statement.asOf.getFullYear()).toBe(2026);
     expect(statement.defaultBaseMonth.label).toBe('8월');
+  });
+
+  it('기준월의 달력 월은 2026/08이고, 12월 다음 열은 라벨과 달리 2027/01이다', () => {
+    expect(calendarOf(statement, statement.defaultBaseMonth)).toBe('2026/08');
+    const december = statement.months.find((m) => m.label === '12월');
+    if (december === undefined) throw new Error('12월 열이 없습니다.');
+    expect(calendarOf(statement, statement.months[december.index + 1])).toBe('2027/01');
   });
 
   it('회의록의 169%가 재현된다 — 이 구현 전체의 회귀 기준점', () => {
