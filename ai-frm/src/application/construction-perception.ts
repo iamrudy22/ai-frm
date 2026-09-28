@@ -7,9 +7,9 @@
  * 분양회수 이력은 저장하지 않는다(2026-09-28). 요청마다 화면에서 올린 회차들로
  * 만든 이력을 받는다. 형식 검사는 요청을 받는 쪽(ledgerOf)이 끝낸다.
  *
- * 기준월(정책 §5, 2026-09-28 결정): 사용자가 고른 달 > 최신 회차 − 1 >
+ * 기준월(정책 §5, 2026-09-28 결정): 사용자가 고른 달 > 최신 회차 − 2 >
  * 오늘이 속한 달 − 2. 정해진 달 하나만 산출하고 거슬러 내려가지 않는다.
- * 분양회수 예측오차는 실적이 기준월에서 끝나는 창을 쓴다(엑셀 위기단계와 같다).
+ * 분양회수 예측오차는 기준월 b에 엑셀 분양회수data b+2 행을 쓴다.
  *
  * 실패는 두 층이다.
  *   - ECOS 실패는 지표 단위다. 그 지표가 산출불가 사유로 나온다. 조회 전체가
@@ -123,7 +123,7 @@ export async function assessPerception(
     return succeed({
       basis,
       selectable: {
-        // 기준월 b에는 b−2월 회차(계획)가 필요하므로 첫 회차 + 2부터 고를 수 있다.
+        // 기준월 b에는 b−1월 회차(계획)가 필요하므로 첫 회차 + 1부터 고를 수 있다.
         from: firstRound === null ? null : firstBaseMonthOf(firstRound),
         to: addMonths(today, -1),
       },
@@ -141,7 +141,7 @@ export async function assessPerception(
   }, '건설경기 인식 지수를 산출하지 못했습니다.');
 }
 
-/** 첫 회차가 계획 회차(b−2)가 되는 기준월 b. */
+/** 첫 회차가 계획 회차(b−1)가 되는 기준월 b. */
 function firstBaseMonthOf(firstRound: YearMonth): YearMonth {
   return addMonths(firstRound, PLAN_ROUND_LAG - ERROR_LABEL_LEAD);
 }

@@ -208,14 +208,14 @@ describe('결측은 0이 아니다 (정책 §6-1)', () => {
 });
 
 describe('기준월 (정책 §5, 2026-09-28 재개정)', () => {
-  // 8월 기준(최신 회차 8월)이면 7월, 7월 기준이면 6월. ECOS 건설·주택 통계가 익월 말에 수록된다.
-  it('회차를 올렸으면 최신 회차 − 1개월이다 — 8월 기준이면 7월, 7월 기준이면 6월', () => {
-    expect(baseMonthOfRound(yearMonth(2026, 8))).toBe('2026/07');
-    expect(baseMonthOfRound(yearMonth(2026, 7))).toBe('2026/06');
+  // 8월 기준(최신 회차 8월)이면 6월, 7월 기준이면 5월.
+  it('회차를 올렸으면 최신 회차 − 2개월이다 — 8월 기준이면 6월, 7월 기준이면 5월', () => {
+    expect(baseMonthOfRound(yearMonth(2026, 8))).toBe('2026/06');
+    expect(baseMonthOfRound(yearMonth(2026, 7))).toBe('2026/05');
   });
 
-  it('해를 넘긴다 — 1월 기준이면 전년 12월', () => {
-    expect(baseMonthOfRound(yearMonth(2027, 1))).toBe('2026/12');
+  it('해를 넘긴다 — 1월 기준이면 전년 11월', () => {
+    expect(baseMonthOfRound(yearMonth(2027, 1))).toBe('2026/11');
   });
 
   it('회차 없이 보면 오늘 − 2개월이다 — 9월에 보면 7월', () => {

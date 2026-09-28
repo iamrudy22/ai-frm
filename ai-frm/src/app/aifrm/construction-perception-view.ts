@@ -10,7 +10,7 @@ import {
   baseMonthOfRound,
   type ConstructionPerception,
 } from '@/domain/risk/construction-perception/construction-perception';
-import { ERROR_LABEL_LEAD, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
+import { ERROR_LABEL_LEAD, PLAN_ROUND_LAG, roundsNeededFor } from '@/domain/risk/construction-perception/forecast-error';
 import {
   REPORT_LAG_MONTHS,
   ROUND_LAG_MONTHS,
@@ -112,8 +112,8 @@ export function monthOptions(
 }
 
 /**
- * 올린 회차 안내(정책 §3-2·§3-3). 기준월 b에는 b−2월 회차(계획)와
- * b−1·b·b+1월 회차(b−2 ~ b월 실적 각각의 직후 회차)가 필요하다. 무엇이 있고 무엇을 올려야
+ * 올린 회차 안내(정책 §3-2·§3-3). 기준월 b에는 b−1월 회차(계획)와
+ * b·b+1·b+2월 회차(b−1 ~ b+1월 실적 각각의 직후 회차)가 필요하다. 무엇이 있고 무엇을 올려야
  * 하는지 알린다. 회차는 저장하지 않으므로 지금 화면에 올린 것만 센다.
  */
 export function ledgerNote(ledger: PerceptionReportDto['diagnostics']['ledger'], baseMonth: YearMonth): string {
@@ -154,11 +154,12 @@ export function readRoundsText(results: readonly BatchResult[]): {
 }
 
 /**
- * 분양회수 예측오차가 어느 창인지. 기준월 b의 지수는 실적 b−2 ~ b를 b−2월 회차 계획과
- * 견준다 — 엑셀 분양회수data의 b+1 행이다(엑셀 위기단계와 같은 매핑).
+ * 분양회수 예측오차가 어느 창인지. 기준월 b의 지수는 실적 b−1 ~ b+1을 b−1월 회차 계획과
+ * 견준다 — 엑셀 분양회수data의 b+2 행이다.
  */
 export function forecastWindowNote(baseMonth: YearMonth): string {
   const planRound = roundsNeededFor(baseMonth)[0];
+  const lastActual = addMonths(planRound, PLAN_ROUND_LAG - 1);
   const label = addMonths(baseMonth, ERROR_LABEL_LEAD);
-  return `분양회수 예측오차는 원값이 아니라 ${planRound}~${baseMonth} 실적을 ${planRound} 회차 계획과 견준 3개월 누적 오차율입니다(엑셀 분양회수data ${label} 행).`;
+  return `분양회수 예측오차는 원값이 아니라 ${planRound}~${lastActual} 실적을 ${planRound} 회차 계획과 견준 3개월 누적 오차율입니다(엑셀 분양회수data ${label} 행).`;
 }

@@ -65,23 +65,23 @@ describe.skipIf(files.length < 8 || !existsSync(EXCEL))('분양회수 예측오�
     expect(isMissing(r) ? r : Math.round(r * 10000) / 100).toBe(11.35);
   });
 
-  // 엑셀 위기단계와 같은 매핑: 7월 기준(기준월 6월)은 "2026/07" 행, 8월 기준(기준월 7월)은 "2026/08" 행.
+  // 7월 기준(기준월 5월)은 "2026/07" 행, 8월 기준(기준월 6월)은 "2026/08" 행.
   it.each([
-    ['2026/06', '2026/07'],
-    ['2026/07', '2026/08'],
+    ['2026/05', '2026/07'],
+    ['2026/06', '2026/08'],
   ])('기준월 %s 지수는 엑셀 분양회수data %s 행을 쓴다', (base, label) => {
     const r = forecastErrorForBaseMonth(ledger, parseYearMonth(base));
     if (isMissing(r)) throw new Error(r.missing);
     expect(Math.abs(r - excelRow(label))).toBeLessThan(0.00003);
   });
 
-  it('4~7월 회차 네 개만으로 기준월 6월 오차율이 나온다 — 11.35%', () => {
-    const four = ['2026/04', '2026/05', '2026/06', '2026/07'].reduce(
+  it('8월 기준: 5~8월 회차 네 개만으로 기준월 6월 오차율이 나온다 — 24.11%', () => {
+    const four = ['2026/05', '2026/06', '2026/07', '2026/08'].reduce(
       (l, r) => l.record(ledger.entryOf(parseYearMonth(r)) as NonNullable<ReturnType<ForecastLedger['entryOf']>>),
       emptyLedger(),
     );
     const r = forecastErrorForBaseMonth(four, parseYearMonth('2026/06'));
-    expect(isMissing(r) ? r : Math.round(r * 10000) / 100).toBe(11.35);
+    expect(isMissing(r) ? r : Math.round(r * 10000) / 100).toBe(24.11);
   });
 
   // 1~3월은 계획을 세운 전년 10~12월 회차가 필요하다(전년도 파일).

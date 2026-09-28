@@ -82,10 +82,10 @@ export const REPORT_LAG_MONTHS = 2;
 /**
  * 회차 시차. N월 기준(최신 회차 N)이면 기준월 = N − 이 개월 수(정책 §5, 2026-09-28 결정).
  *
- * 8월 기준이면 7월, 7월 기준이면 6월이다. 대금 회수 위험이 7월 회차로 6월 실적을 보는
- * 것과 같은 달이고, ECOS 건설·주택 통계(익월 말 수록)도 그 달까지는 나와 있다.
+ * 8월 기준이면 6월, 7월 기준이면 5월이다. 건설·주택 통계가 익월 말에 수록되므로
+ * N월 회차를 올릴 즈음에는 두 달 전까지가 온전히 나와 있다.
  */
-export const ROUND_LAG_MONTHS = 1;
+export const ROUND_LAG_MONTHS = 2;
 
 declare const brand: unique symbol;
 
