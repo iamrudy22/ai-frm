@@ -81,8 +81,25 @@ describe('시트 찾기', () => {
     expect(readOk({ sheetName: '12_27년자금수지표(본운영반영)' }).months).toHaveLength(15);
   });
 
-  it('본운영반영이 아닌 시트는 쓰지 않는다', () => {
-    expect(readErr({ sheetName: '12_26년자금수지표(기본)' })).toMatch(/본운영반영/);
+  it('본운영반영도 잠정운영기준도 아닌 시트는 쓰지 않는다', () => {
+    expect(readErr({ sheetName: '12_26년자금수지표(기본)' })).toMatch(/본운영반영.*잠정운영기준/);
+  });
+
+  // 본운영계획이 확정되기 전(1·2월 회차)에는 잠정운영기준 시트 하나뿐이다.
+  it('본운영반영 시트가 없으면 잠정운영기준 시트를 읽는다 — 1·2월 회차', () => {
+    expect(readOk({ sheetName: '12_26년자금수지표(잠정운영기준)' }).months).toHaveLength(15);
+  });
+
+  it('둘 다 있으면 본운영반영을 읽는다', () => {
+    const book = XLSX.utils.book_new();
+    const sheet = (bunyang: number) =>
+      XLSX.utils.aoa_to_sheet([[], ['2026-08-10(단위: 억원)'], [...HEADER], [], row('분양회수', same(bunyang)), row('지출', same(600))]);
+    XLSX.utils.book_append_sheet(book, sheet(111), '12_26년자금수지표(잠정운영기준)');
+    XLSX.utils.book_append_sheet(book, sheet(222), '12_26년자금수지표(본운영반영)');
+    const result = readStatement(XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
+    if (!result.ok) throw new Error(result.error);
+    const s = result.statement;
+    expect(s.amountOf('분양회수', s.defaultBaseMonth)).toBe(222);
   });
 });
 

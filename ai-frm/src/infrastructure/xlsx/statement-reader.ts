@@ -21,8 +21,15 @@ import {
   type Statement,
 } from '@/domain/cashflow/statement';
 
-/** 연도가 매년 바뀐다. `(기본)` 시트가 따로 있으므로 `(본운영반영)`으로 가른다. */
-const SHEET_PATTERN = /자금수지표\(본운영반영\)/;
+/**
+ * 읽을 시트. 앞의 것부터 찾는다. 연도가 매년 바뀌므로 괄호 안으로 가른다.
+ *
+ * 본운영계획이 확정되는 3월 회차부터 `(본운영반영)` 시트가 있다(`(기본)`은 따로
+ * 있다). 1·2월 회차에는 `(잠정운영기준)` 시트 하나뿐이라 그것을 읽는다
+ * (2026년 1~8월 회차로 확인).
+ */
+const SHEET_PATTERNS = [/자금수지표\(본운영반영\)/, /자금수지표\(잠정운영기준\)/];
+const SHEET_NAMES_TEXT = '"자금수지표(본운영반영)" 또는 "자금수지표(잠정운영기준)"';
 
 /**
  * 월 열만 고른다.
@@ -74,7 +81,7 @@ export function readStatement(data: ArrayBuffer): ReadResult {
     return fail('엑셀 파일을 열 수 없습니다.');
   }
   if (grid === null) {
-    return fail(`"자금수지표(본운영반영)" 시트를 찾을 수 없습니다.`);
+    return fail(`${SHEET_NAMES_TEXT} 시트를 찾을 수 없습니다.`);
   }
 
   const headerRowIndex = grid.findIndex(
@@ -140,7 +147,7 @@ function toGrid(data: ArrayBuffer): Grid | null {
   // 먼저 훑고 필요한 하나만 파싱하면 1초대로 떨어진다. 브라우저에서는 사용자가
   // 그대로 기다리는 시간이다.
   const names = XLSX.read(data, { type: 'array', bookSheets: true }).SheetNames;
-  const name = names.find((n) => SHEET_PATTERN.test(n));
+  const name = SHEET_PATTERNS.map((pattern) => names.find((n) => pattern.test(n))).find((n) => n !== undefined);
   if (name === undefined) return null;
 
   const sheet = XLSX.read(data, { type: 'array', sheets: [name] }).Sheets[name];
