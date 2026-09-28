@@ -119,14 +119,16 @@ describe('항목 찾기', () => {
     expect(s.amountOf('지출', s.months[0])).toBe(600);
   });
 
-  it('항목이 없으면 어느 항목인지 알려 준다', () => {
+  it('항목이 없으면 그 항목만 못 읽은 것으로 두고 어느 항목인지 알려 준다', () => {
     const rows = [
       row('기초시재', same(1)),
       row('수입계(자금조달포함)', same(1)),
       row('수입', same(1)),
       row('분양회수', same(1)),
     ];
-    expect(readErr({ rows })).toMatch(/지출/);
+    const s = readOk({ rows });
+    expect(s.unreadableItems().map((u) => u.item)).toEqual(['지출']);
+    expect(() => s.amountOf('지출', s.months[0])).toThrow(/지출.*찾을 수 없습니다/);
   });
 });
 
@@ -141,7 +143,7 @@ describe('판독 실패', () => {
     expect(readErr({ header })).toMatch(/8/);
   });
 
-  it('빈 칸이 있으면 거부한다 — 0으로 세면 순지출이 작아 보인다', () => {
+  it('빈 칸이 있으면 그 항목은 읽지 않는다 — 0으로 세면 순지출이 작아 보인다', () => {
     const values: (number | null)[] = same(300);
     values[3] = null;
     const rows = [
@@ -151,10 +153,13 @@ describe('판독 실패', () => {
       row('분양회수', same(200)),
       row('지출', same(600)),
     ];
-    expect(readErr({ rows })).toMatch(/수입/);
+    const s = readOk({ rows });
+    expect(() => s.amountOf('수입', s.months[0])).toThrow(/수입.*비어 있습니다/);
+    // 빈 칸이 아닌 달도 0이나 부분값으로 살려 쓰지 않는다. 계열 전체를 버린다.
+    expect(() => s.amountOf('수입', s.months[7])).toThrow(/수입/);
   });
 
-  it('숫자가 아니면 거부한다', () => {
+  it('숫자가 아니면 그 항목은 읽지 않는다', () => {
     const values: (number | string)[] = same(300);
     values[2] = '미정';
     const rows = [
@@ -164,7 +169,12 @@ describe('판독 실패', () => {
       row('분양회수', same(200)),
       row('지출', same(600)),
     ];
-    expect(readErr({ rows })).toMatch(/수입/);
+    const s = readOk({ rows });
+    expect(() => s.amountOf('수입', s.months[0])).toThrow(/수입.*숫자가 아닙니다/);
+  });
+
+  it('어떤 항목도 읽지 못하면 회차를 거부한다', () => {
+    expect(readErr({ rows: [row('엉뚱한 표', same(1))] })).toMatch(/어떤 항목도/);
   });
 });
 
@@ -187,5 +197,27 @@ describe('판독에서 판정까지', () => {
     expect(gap.kind).toBe('gap');
     if (gap.kind !== 'gap') return;
     expect(toPercent(gap.gapRatio)).toBeCloseTo(169, 6);
+  });
+
+  // 한 항목이 깨져도 그 항목을 쓰지 않는 지표는 산출된다. 지표 분리의 판독 쪽 절반이다.
+  it('분양회수 칸이 비어도 유동성 Gap은 169%로 나온다', () => {
+    const income = same(0).map((_, i) => ([11, 12, 13].includes(MONTH_COLUMNS[i]) ? 700 / 3 : 999));
+    const expense = same(0).map((_, i) => ([11, 12, 13].includes(MONTH_COLUMNS[i]) ? 1700 / 3 : 999));
+    const recovery: (number | null)[] = same(200);
+    recovery[8] = null;
+    const s = readOk({
+      rows: [
+        row('기초시재', same(1690)),
+        row('수입계(자금조달포함)', same(900)),
+        row('수입', income),
+        row('분양회수', recovery),
+        row('지출', expense),
+      ],
+    });
+    const gap = assessLiquidityGap(liquidityGapInputFrom(s, s.defaultBaseMonth));
+    expect(gap.kind).toBe('gap');
+    if (gap.kind !== 'gap') return;
+    expect(toPercent(gap.gapRatio)).toBeCloseTo(169, 6);
+    expect(() => s.amountOf('분양회수', s.defaultBaseMonth)).toThrow(/분양회수/);
   });
 });

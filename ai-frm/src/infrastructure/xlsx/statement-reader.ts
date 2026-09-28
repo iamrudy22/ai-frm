@@ -13,7 +13,13 @@
 
 import * as XLSX from 'xlsx';
 import { amount, type Amount } from '@/domain/shared/amount';
-import { createStatement, type ItemName, type Statement } from '@/domain/cashflow/statement';
+import {
+  createStatement,
+  unreadable,
+  type ItemName,
+  type ItemSeries,
+  type Statement,
+} from '@/domain/cashflow/statement';
 
 /** 연도가 매년 바뀐다. `(기본)` 시트가 따로 있으므로 `(본운영반영)`으로 가른다. */
 const SHEET_PATTERN = /자금수지표\(본운영반영\)/;
@@ -93,11 +99,13 @@ export function readStatement(data: ArrayBuffer): ReadResult {
     );
   }
 
-  const amounts: Partial<Record<ItemName, readonly Amount[]>> = {};
+  // 항목 하나가 깨졌다고 회차 전체를 거부하면 그 항목을 쓰지 않는 지표까지 멈춘다.
+  // 그 항목만 사유와 함께 '읽지 못함'으로 두고, 찾는 쪽에서 실패하게 한다.
+  // 시트·헤더·기준일처럼 회차의 뼈대가 없을 때만 위에서 전체를 거부한다.
+  const amounts: Partial<Record<ItemName, ItemSeries>> = {};
   for (const item of ITEMS) {
     const series = readSeries(grid, headerRowIndex, monthColumns, item);
-    if (typeof series === 'string') return fail(series);
-    amounts[item] = series;
+    amounts[item] = typeof series === 'string' ? unreadable(series) : series;
   }
 
   try {
@@ -107,7 +115,7 @@ export function readStatement(data: ArrayBuffer): ReadResult {
         asOf,
         monthLabels: monthColumns.map((m) => m.label),
         baseMonthIndex,
-        amounts: amounts as Record<ItemName, readonly Amount[]>,
+        amounts: amounts as Record<ItemName, ItemSeries>,
       }),
     };
   } catch (e) {

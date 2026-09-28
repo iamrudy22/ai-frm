@@ -238,3 +238,11 @@ export function assessDashboard(previous: Statement | null, latest: Statement, b
 - 실제 위반을 심어(`liquidity-gap.ts`에 `../payment-recovery/…` import) 경계 테스트가 실패하는 것을 확인하고 되돌렸다.
 - `grade.ts` 머리 주석을 "등급을 쓰는 지표만, 적정 시재는 등급 없음"으로 고쳤다.
 - `tsc`·`eslint`·`next build` 통과. `/aifrm`이 콘솔 오류 없이 렌더된다.
+
+### P3 결과 (2026-09-28)
+
+- `Statement`의 항목 계열을 `readonly Amount[] | Unreadable`로 넓혔다. `amountOf`는 읽지 못한 항목에서 사유를 담아 던지고, `unreadableItems()`가 목록을 준다. 모든 항목을 못 읽으면 회차를 거부한다.
+- **빈 칸 원칙을 강화했다.** 한 칸이라도 비면 그 항목의 계열 전체를 버린다. 빈 칸이 아닌 달도 부분값으로 살려 쓰지 않는다(테스트로 고정).
+- `checkRollForward`는 기초시재·수입계·지출 중 하나라도 못 읽으면 "확인할 수 없습니다"를 돌려준다. 빈 목록은 "확인했고 맞다"로 읽히기 때문이다.
+- 판독 테스트 3개의 기대를 "거부"에서 "그 항목만 못 읽음"으로 바꿨다. 새로 추가한 테스트 두 가지: "어떤 항목도 못 읽으면 거부", "분양회수 칸이 비어도 유동성 Gap 169%".
+- 테스트 95 → 104개. `tsc`·`eslint`·`next build` 통과.

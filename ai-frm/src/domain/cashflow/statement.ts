@@ -19,6 +19,27 @@ export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' 
 
 const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '분양회수', '지출'];
 
+const ROLL_FORWARD_ITEMS: readonly ItemName[] = ['기초시재', '수입계', '지출'];
+
+/**
+ * 판독 계층이 읽지 못한 항목. 행이 없거나 빈 칸·숫자 아닌 칸이 있을 때다.
+ *
+ * 0으로 채워 넣지 않고 사유를 품는다. 빈 칸을 0으로 세면 순지출이 작아 보이고,
+ * 회차 전체를 버리면 그 항목을 쓰지 않는 지표까지 멈춘다. 그 사이에서 실패를
+ * 그 항목을 찾는 쪽으로만 보낸다.
+ */
+export type Unreadable = { readonly unreadable: string };
+
+export type ItemSeries = readonly Amount[] | Unreadable;
+
+export function unreadable(reason: string): Unreadable {
+  return { unreadable: reason };
+}
+
+function isUnreadable(series: ItemSeries): series is Unreadable {
+  return !Array.isArray(series);
+}
+
 /** 시트 안에서 한 달이 차지하는 자리. `index`가 정체성이고 `label`은 표시용이다. */
 export type Month = {
   readonly index: number;
@@ -32,15 +53,17 @@ export type StatementInput = {
   readonly monthLabels: readonly string[];
   /** 기준월의 기본값. 사용자가 화면에서 다른 달로 바꿀 수 있다. */
   readonly baseMonthIndex: number;
-  /** 항목별 월 계열. 각 배열 길이는 monthLabels와 같아야 한다. */
-  readonly amounts: Readonly<Record<ItemName, readonly Amount[]>>;
+  /** 항목별 월 계열. 읽은 계열의 길이는 monthLabels와 같아야 한다. */
+  readonly amounts: Readonly<Record<ItemName, ItemSeries>>;
 };
 
 export type Statement = {
   readonly asOf: Date;
   readonly months: readonly Month[];
   readonly defaultBaseMonth: Month;
+  /** 읽지 못한 항목이면 사유를 담아 던진다. 0으로 대신하지 않는다. */
   amountOf(item: ItemName, month: Month): Amount;
+  unreadableItems(): readonly { readonly item: ItemName; readonly reason: string }[];
 };
 
 export function createStatement(input: StatementInput): Statement {
@@ -50,8 +73,15 @@ export function createStatement(input: StatementInput): Statement {
     throw new Error('월 목록이 비어 있습니다.');
   }
 
+  const missing = ITEM_NAMES.filter((item) => isUnreadable(amounts[item]));
+
+  if (missing.length === ITEM_NAMES.length) {
+    throw new Error('어떤 항목도 읽지 못했습니다. 자금수지표 표가 맞는지 확인하세요.');
+  }
+
   for (const item of ITEM_NAMES) {
     const series = amounts[item];
+    if (isUnreadable(series)) continue;
     if (series.length !== monthLabels.length) {
       throw new Error(
         `"${item}" 계열의 길이(${series.length})가 월 수(${monthLabels.length})와 다릅니다.`,
@@ -71,11 +101,17 @@ export function createStatement(input: StatementInput): Statement {
     defaultBaseMonth: months[baseMonthIndex],
     amountOf(item, month) {
       const series = amounts[item];
+      if (isUnreadable(series)) {
+        throw new Error(`${item}을(를) 읽지 못했습니다 — ${series.unreadable}`);
+      }
       const value = series[month.index];
       if (value === undefined) {
         throw new Error(`이 회차에 없는 월입니다: ${month.label}`);
       }
       return value;
+    },
+    unreadableItems() {
+      return missing.map((item) => ({ item, reason: (amounts[item] as Unreadable).unreadable }));
     },
   };
 }
@@ -141,8 +177,21 @@ function format(d: Date): string {
  *
  * 실물 회차에서 전 구간 성립하는 것을 확인했다. 어긋난다면 대개 판독 계층이
  * 행을 잘못 잡았다는 뜻이므로, 판정을 막지는 않고 신호만 돌려준다.
+ *
+ * 필요한 항목을 읽지 못했으면 "확인할 수 없다"는 신호를 낸다. 빈 목록을 돌려주면
+ * 확인해서 맞았다는 뜻으로 읽히기 때문이다.
  */
 export function checkRollForward(statement: Statement, tolerance = 0.01): readonly string[] {
+  const blocking = statement
+    .unreadableItems()
+    .filter(({ item }) => ROLL_FORWARD_ITEMS.includes(item));
+
+  if (blocking.length > 0) {
+    return [
+      `시재 롤포워드를 확인할 수 없습니다 — ${blocking.map(({ item }) => item).join('·')}을(를) 읽지 못했습니다.`,
+    ];
+  }
+
   const issues: string[] = [];
 
   for (let i = 0; i < statement.months.length - 1; i++) {
