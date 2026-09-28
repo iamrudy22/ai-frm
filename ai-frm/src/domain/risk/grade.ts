@@ -17,8 +17,17 @@ export type Grade = '정상' | '주의' | '경고' | '위기';
 /** `atLeast` 이상이면 이 등급. 경계값은 포함한다(회의록의 "0.5 이상"). */
 export type Band = { readonly atLeast: number; readonly grade: Grade };
 
-/** 검증을 통과한 구간표. defineBands로만 만들 수 있다. */
-export type GradeBands = readonly Band[] & { readonly __checked: unique symbol };
+/**
+ * 검증을 통과한 구간표. defineBands로만 만들 수 있다.
+ *
+ * `T`는 이 구간표가 판정하는 값의 종류다. 기본은 비율이다. 건설경기 인식 지수의
+ * 0~100 지수처럼 비율이 아닌 판정값은 제 타입으로 구간표를 만든다. 종류가 다른
+ * 값을 넣으면 컴파일에서 막힌다 — 금액을 회수율로 착각한 사고(D2)와 같은 혼동이다.
+ */
+export type GradeBands<T extends number = Ratio> = readonly Band[] & {
+  readonly __checked: unique symbol;
+  readonly __value?: T;
+};
 
 /**
  * 구간표를 검증해서 고정한다.
@@ -27,7 +36,7 @@ export type GradeBands = readonly Band[] & { readonly __checked: unique symbol }
  * 전 구간을 덮도록 강제하므로 판정 불능이 생기지 않고,
  * 따라서 '위기' 같은 기본값을 코드에 박을 필요도 없다 — 정책은 구간표가 소유한다.
  */
-export function defineBands(bands: readonly Band[]): GradeBands {
+export function defineBands<T extends number = Ratio>(bands: readonly Band[]): GradeBands<T> {
   if (bands.length === 0) {
     throw new Error('구간표가 비어 있습니다.');
   }
@@ -46,10 +55,10 @@ export function defineBands(bands: readonly Band[]): GradeBands {
     );
   }
 
-  return bands as GradeBands;
+  return bands as GradeBands<T>;
 }
 
-export function gradeBy(bands: GradeBands, value: Ratio): Grade {
+export function gradeBy<T extends number>(bands: GradeBands<T>, value: NoInfer<T>): Grade {
   for (const band of bands) {
     if (value >= band.atLeast) return band.grade;
   }

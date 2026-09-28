@@ -50,3 +50,29 @@ describe('구간표 불변식', () => {
     expect(() => defineBands([])).toThrow();
   });
 });
+
+describe('구간표는 값의 종류를 가린다', () => {
+  // 비율이 아닌 판정값(예: 건설경기 인식 지수의 0~100 지수)도 같은 도구로 판정한다.
+  // 다만 비율 구간표에 다른 종류의 값을 넣으면 컴파일에서 막혀야 한다(D2).
+  type Score100 = number & { readonly __kind: 'score100' };
+  const score100 = (n: number) => n as Score100;
+
+  const SCORE_BANDS = defineBands<Score100>([
+    { atLeast: 60, grade: '위기' },
+    { atLeast: 20, grade: '주의' },
+    { atLeast: Number.NEGATIVE_INFINITY, grade: '정상' },
+  ]);
+
+  it('비율이 아닌 값도 그 종류의 구간표로 판정한다 — 경계는 위 구간에 넣는다', () => {
+    expect(gradeBy(SCORE_BANDS, score100(20))).toBe('주의');
+    expect(gradeBy(SCORE_BANDS, score100(19.99))).toBe('정상');
+    expect(gradeBy(SCORE_BANDS, score100(100.47))).toBe('위기');
+  });
+
+  it('종류가 다른 값은 넣을 수 없다', () => {
+    // @ts-expect-error 비율 구간표에 지수를 넣을 수 없다
+    gradeBy(BANDS, score100(1));
+    // @ts-expect-error 지수 구간표에 비율을 넣을 수 없다
+    gradeBy(SCORE_BANDS, ratio(1));
+  });
+});
