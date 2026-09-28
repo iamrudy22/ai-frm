@@ -42,3 +42,6 @@ next-env.d.ts
 
 # 사내 자금 데이터 — 커밋 금지 (docs/plans/2026-09-18-yudongseong-gap-fix-plan.md §6-1)
 /fixtures/
+
+# 분양회수 계획·실적 이력 — 사내 자금 데이터, 커밋 금지 (docs/plans/2026-09-28-geonseol-gyeonggi-impl-plan.md §7)
+/data/
