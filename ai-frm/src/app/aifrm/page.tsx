@@ -79,6 +79,14 @@ export default function AifrmDashboardPage() {
   const [upload, dispatchUpload] = useReducer(uploadSessionReducer, INITIAL_UPLOAD_SESSION);
   const { files, prepared, committed } = upload;
   const loaded = committed?.rounds ?? null;
+  const resultsFocusPending = useRef(false);
+  useEffect(() => {
+    if (!resultsFocusPending.current || loaded === null) return;
+    resultsFocusPending.current = false;
+    const heading = document.getElementById('dashboard-results-heading');
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: 'start' });
+  }, [loaded]);
   const hasUnappliedFiles = committed !== null && (prepared.kind !== 'ready' || prepared.rounds !== committed.rounds);
   const committedSource = loaded === null ? ''
     : `${roundsText(loaded.rounds.map((round) => round.round))} 회차의 ${loaded.rounds.map((round) => round.file).join(' · ')} 파일`;
@@ -130,6 +138,7 @@ export default function AifrmDashboardPage() {
 
   const handleSubmit = useCallback(() => {
     if (prepared.kind !== 'ready' || loaded === prepared.rounds) return;
+    resultsFocusPending.current = true;
     dispatchUpload({ type: 'apply' });
     setGapMonth(prepared.rounds.latest.round);
   }, [prepared, loaded]);
@@ -193,7 +202,7 @@ export default function AifrmDashboardPage() {
       content={
         <LayoutContent>
           <VStack gap={6}>
-            <Heading level={1}>자금수지표 등록</Heading>
+            <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
 
             <UploadPanel
               files={files}
@@ -224,6 +233,9 @@ export default function AifrmDashboardPage() {
             )}
 
             <VStack gap={1} align="start">
+              {loaded !== null && dashboard !== null && (
+                <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
+              )}
               <Button
                 id="report-entry"
                 label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}

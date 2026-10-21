@@ -1,4 +1,5 @@
 import { Button } from '@astryxdesign/core/Button';
+import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
 import { FileInput } from '@astryxdesign/core/FileInput';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -55,61 +56,67 @@ export function UploadPanel({ files, prepared, isApplied, onFilesChange, onSubmi
         : missingBasic ? '기본 산출용 파일 부족 · 일부 지표는 산출되지 않을 수 있습니다'
           : `기본 회차 충족 · 최근 6개월 회수율 자료 최대 ${recoveryCount}개월분`;
 
+  const content = (
+    <VStack gap={4}>
+      <FileInput label="자금수지표 파일" isLabelHidden width="100%" mode="dropzone"
+        description=".xlsx · .xls / 여러 회차를 한 번에 선택"
+        accept=".xlsx,.xls" isMultiple value={files.length > 0 ? files : null}
+        onChange={onFilesChange} isLoading={prepared.kind === 'reading'}
+        status={prepared.kind === 'error' ? { type: 'error' } : undefined}
+        placeholder="엑셀 파일을 놓거나 클릭하여 선택" />
+
+      <Text size="sm" color={base === null ? 'secondary' : 'primary'}
+        role="status" aria-label="자금수지표 기준월 확인">
+        {base === null ? '기준월은 업로드한 파일에서 자동으로 확인합니다.'
+          : `자금수지표 기준월: ${monthLabel(base)} · 최신 파일 기준`}
+      </Text>
+
+      <Grid columns={{ minWidth: 300, max: 2, repeat: 'fit' }} gap={5}>
+        {FILE_GROUPS.map((group) => (
+          <List key={group.label} hasDividers density="compact" header={<Text type="label">{group.label}</Text>}>
+            {group.offsets.map((offset) => {
+              const month = base === null ? null : addMonths(base, offset);
+              const source = month === null ? undefined : sources.get(month);
+              return (
+                <ListItem key={offset}
+                  label={`${offset === 0 ? '기준월' : `${Math.abs(offset)}개월 전`} 자금수지표`}
+                  description={<VStack gap={0.5}>
+                    <Text size="sm" color="secondary">{filePurpose(offset)}</Text>
+                    {month !== null && <Text size="xsm" color="secondary" className="break-all">
+                      {monthLabel(month)}{source === undefined ? '' : ` · ${source.file}`}
+                    </Text>}
+                  </VStack>}
+                  endContent={month === null ? undefined : <Token size="sm" color={source === undefined ? 'gray' : 'green'}
+                    label={source === undefined ? '파일 필요' : '파일 확인'} />} />
+              );
+            })}
+          </List>
+        ))}
+      </Grid>
+
+      {additionalRounds.length > 0 && <List hasDividers density="compact" header={<Text type="label">추가로 등록한 회차</Text>}>
+        {additionalRounds.map((source) => <ListItem key={source.round}
+          label={`${monthLabel(source.round)} 자금수지표`}
+          description={<Text size="sm" color="secondary" className="break-all">{source.file}</Text>}
+          endContent={<Token size="sm" color="green" label="파일 확인" />} />)}
+      </List>}
+
+      <Divider />
+      <HStack gap={3} wrap="wrap" vAlign="center" hAlign="between">
+        <Text size="sm" role="status" aria-label="자료 준비 요약">{summary}</Text>
+        <Button label="산출하기" variant="primary" isDisabled={prepared.kind !== 'ready' || isApplied} onClick={onSubmit} />
+      </HStack>
+      {rounds !== null && <Text size="sm" color="secondary">
+        회차 준비 기준입니다. 실제 산출 여부는 항목 판독·외부 자료 확인에 따라 달라집니다.
+      </Text>}
+    </VStack>
+  );
+
   return (
     <Section padding={6}>
-      <VStack gap={4}>
-        <FileInput label="자금수지표 파일" isLabelHidden width="100%" mode="dropzone"
-          description=".xlsx · .xls / 여러 회차를 한 번에 선택"
-          accept=".xlsx,.xls" isMultiple value={files.length > 0 ? files : null}
-          onChange={onFilesChange} isLoading={prepared.kind === 'reading'}
-          status={prepared.kind === 'error' ? { type: 'error' } : undefined}
-          placeholder="엑셀 파일을 놓거나 클릭하여 선택" />
-
-        <Text size="sm" color={base === null ? 'secondary' : 'primary'}
-          role="status" aria-label="자금수지표 기준월 확인">
-          {base === null ? '기준월은 업로드한 파일에서 자동으로 확인합니다.'
-            : `자금수지표 기준월: ${monthLabel(base)} · 최신 파일 기준`}
-        </Text>
-
-        <Grid columns={{ minWidth: 300, max: 2, repeat: 'fit' }} gap={5}>
-          {FILE_GROUPS.map((group) => (
-            <List key={group.label} hasDividers density="compact" header={<Text type="label">{group.label}</Text>}>
-              {group.offsets.map((offset) => {
-                const month = base === null ? null : addMonths(base, offset);
-                const source = month === null ? undefined : sources.get(month);
-                return (
-                  <ListItem key={offset}
-                    label={`${offset === 0 ? '기준월' : `${Math.abs(offset)}개월 전`} 자금수지표`}
-                    description={<VStack gap={0.5}>
-                      <Text size="sm" color="secondary">{filePurpose(offset)}</Text>
-                      {month !== null && <Text size="xsm" color="secondary" className="break-all">
-                        {monthLabel(month)}{source === undefined ? '' : ` · ${source.file}`}
-                      </Text>}
-                    </VStack>}
-                    endContent={month === null ? undefined : <Token size="sm" color={source === undefined ? 'gray' : 'green'}
-                      label={source === undefined ? '파일 필요' : '파일 확인'} />} />
-                );
-              })}
-            </List>
-          ))}
-        </Grid>
-
-        {additionalRounds.length > 0 && <List hasDividers density="compact" header={<Text type="label">추가로 등록한 회차</Text>}>
-          {additionalRounds.map((source) => <ListItem key={source.round}
-            label={`${monthLabel(source.round)} 자금수지표`}
-            description={<Text size="sm" color="secondary" className="break-all">{source.file}</Text>}
-            endContent={<Token size="sm" color="green" label="파일 확인" />} />)}
-        </List>}
-
-        <Divider />
-        <HStack gap={3} wrap="wrap" vAlign="center" hAlign="between">
-          <Text size="sm" role="status" aria-label="자료 준비 요약">{summary}</Text>
-          <Button label="산출하기" variant="primary" isDisabled={prepared.kind !== 'ready' || isApplied} onClick={onSubmit} />
-        </HStack>
-        {rounds !== null && <Text size="sm" color="secondary">
-          회차 준비 기준입니다. 실제 산출 여부는 항목 판독·외부 자료 확인에 따라 달라집니다.
-        </Text>}
-      </VStack>
+      {prepared.kind === 'ready' && isApplied
+        ? <Collapsible trigger="등록한 파일 확인·변경" defaultIsOpen={false}>{content}</Collapsible>
+        : content}
     </Section>
   );
 }

@@ -126,4 +126,28 @@ describe('기준월을 자동 인식하는 파일 등록', () => {
     expect(html).toContain('synthetic-2026-8.xlsx');
     expect(html).toMatch(/aria-label="Clear 자금수지표 파일"/);
   });
+
+  it('산출에 적용한 파일은 닫힌 등록 영역에서 다시 펼쳐 파일과 용도를 확인할 수 있다', () => {
+    const html = markup(ready(['2026/05', '2026/07', '2026/08']), true);
+    const trigger = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [])
+      .find((button) => button.includes('등록한 파일 확인·변경')) ?? '';
+    expect(trigger).toContain('aria-expanded="false"');
+    const contentId = trigger.match(/aria-controls="([^"]+)"/)?.[1];
+    expect(contentId).toBeDefined();
+    expect(html).toContain(`id="${contentId}"`);
+    expect(row(html, '기준월 자금수지표')).toContain('synthetic-2026-8.xlsx');
+    expect(row(html, '1개월 전 자금수지표')).toContain('직전월 대금 회수율 계산에 쓰는 계획값');
+  });
+
+  it.each([
+    { kind: 'empty' } as const,
+    { kind: 'reading', done: 0, total: 1 } as const,
+    { kind: 'error', reason: '합성 판독 실패' } as const,
+    ready(['2026/08']),
+  ])('새 파일의 $kind 상태는 등록 영역을 접지 않아 파일 선택과 산출 준비가 드러난다', (prepared) => {
+    const html = markup(prepared);
+    expect(html).not.toContain('aria-expanded="false"');
+    expect(html).toContain('data-mode="dropzone"');
+    expect(row(html, '기준월 자금수지표')).not.toBe('');
+  });
 });
