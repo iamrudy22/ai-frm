@@ -216,8 +216,8 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 **Files:** Create `ai-frm/src/app/aifrm/report-chart-view.ts`, `ai-frm/src/app/aifrm/report-chart-view.test.ts`.
 **Interfaces:** §2.3의 summarizeHistory, splitChartSegments와 타입을 제공한다.
 
-- [ ] **1. 확보 상태 테스트:** 빈 배열, 값 0 한 달, 과거 한 달 성공+최신 달 missing, not-applicable 한 달만 있는 경우, missing과 비적용이 섞인 경우를 검증한다. available/missing/notApplicable 세 목록은 중복 없이 전체 월수를 구성해야 한다.
-- [ ] **2. 선 구간 테스트:** 아래 사례의 정확한 인덱스를 검증한다. 실제 월도 연속하는 합성 입력을 사용한다.
+- [x] **1. 확보 상태 테스트:** 빈 배열, 값 0 한 달, 과거 한 달 성공+최신 달 missing, not-applicable 한 달만 있는 경우, missing과 비적용이 섞인 경우를 검증한다. available/missing/notApplicable 세 목록은 중복 없이 전체 월수를 구성해야 한다.
+- [x] **2. 선 구간 테스트:** 아래 사례의 정확한 인덱스를 검증한다. 실제 월도 연속하는 합성 입력을 사용한다.
 
 | 입력(실적/계획/빈값) | 기대 선 구간 |
 |---|---|
@@ -228,10 +228,10 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 | 실적 1, 빈값, 계획 2, 계획 3 | 점선 [2,3] |
 | 실적 1, 계획 2, 빈값, 계획 3 | 점선 [0,1] |
 
-- [ ] **3. 방어 테스트:** 빈값 대신 not-applicable/NaN/Infinity인 경우도 단절, 6월 다음에 8월만 주면 단절, 중복 선분 없음, 0·음수 보존을 검증한다.
-- [ ] **4. 실패 확인:** `npx vitest run src/app/aifrm/report-chart-view.test.ts`.
-- [ ] **5. 순수 함수 구현 후 통과 확인:** 위 명령과 Task 2 테스트가 통과해야 한다.
-- [ ] **6. 해당 변경 검토·커밋한다.**
+- [x] **3. 방어 테스트:** 빈값 대신 not-applicable/NaN/Infinity인 경우도 단절, 6월 다음에 8월만 주면 단절, 중복 선분 없음, 0·음수 보존을 검증한다.
+- [x] **4. 실패 확인:** `npx vitest run src/app/aifrm/report-chart-view.test.ts`.
+- [x] **5. 순수 함수 구현 후 통과 확인:** 위 명령과 Task 2 테스트가 통과해야 한다.
+- [x] **6. 해당 변경 검토·커밋한다.**
 
 ### Task 4: 보고서 상태 보존·차트 통합
 
@@ -251,9 +251,10 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 
 ### Task 5: HTML 상세·인쇄 요약·출력 검증
 
-**Files:** Modify `ai-frm/src/app/aifrm/report-preview.tsx`, `ai-frm/src/app/globals.css`, `ai-frm/README.md`.
+**Files:** Modify `ai-frm/src/app/aifrm/report-preview.tsx`, `ai-frm/src/app/globals.css`, `ai-frm/README.md`; Create `ai-frm/src/app/aifrm/report-preview.test.tsx`.
 **Interfaces:** Sheet에 className?: string, ReferencePage에 last: boolean을 추가한다. hasReference=report.referenceTrends!==null과 includeReferenceInPrint를 사용한다.
 
+- [ ] **0. UI TDD:** 기존 `react-dom/server`의 `renderToStaticMarkup`으로 빈 양식의 기본 3쪽·참고자료 없음, 자료가 있는 보고서의 참고 차트·실제 출처·전체 오류와 인쇄 요약·기본 해제 체크를 검증하는 실패 테스트를 먼저 작성한다. `npx vitest run src/app/aifrm/report-preview.test.tsx`의 RED를 확인한 뒤 구현하고 GREEN을 확인한다. 인쇄 선택의 실제 동작과 페이지 수는 아래 UI·PDF QA에서 검증한다. 새 테스트 라이브러리는 설치하지 않는다.
 - [ ] **1. 화면 연결:** 실제 Astryx CheckboxInput props를 확인하고 기본 해제 체크를 추가한다. §1.1의 상태 우선순위와 실제 유효월 안내를 표시한다.
 - [ ] **2. 참고자료와 상세:** hasReference이면 HTML 4쪽에 차트 3개, 앞/뒤 생략 범위와 실적/계획/계획연도 이후 설명을 표시한다. 전체 출처·오류는 화면 상세 영역에 보존하고 §1.3의 인쇄용 요약을 별도로 만든다.
 - [ ] **3. 마지막 쪽:** 3쪽은 last={!hasReference || !includeReferenceInPrint}, 4쪽은 last. 인쇄 포함 상태를 root class/data 속성으로 전달한다.
@@ -319,3 +320,11 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 - 독립 검토: 명세 준수·품질 Approved, 추가 문제 없음. 호출부의 최신 파일 선택과 화면 기준월 독립성은 Task 4에서 연결·검증한다.
 - 컨텍스트: `buildStatementReferenceTrends`는 최신 UploadedRound 하나를 받으며 Amount/YearMonth·원본 라벨·정규화된 월 순번을 보존한다. unknown 예외는 숨기지 않는다.
 - 다음: Task 3, 상태별 확보 요약과 결측/계획 선 구간.
+
+### Task 3 완료
+
+- 구현 커밋: `99febf3` — 세 상태의 확보 요약·실제 인접 달의 선 구간 계산.
+- TDD: RED 22 failed / 5 passed → 관련 GREEN 42 passed. 전체 verify 503 passed / 30 skipped, 관련 ESLint·diff 검사 통과.
+- 독립 검토: 명세 준수·품질 Approved, 발견 사항 없음. 실제 보고서/SVG 연결은 Task 4에서 검증한다.
+- 컨텍스트: `ChartDatum`은 available/missing/not-applicable을 구분한다. `summarizeHistory`, `splitChartSegments`가 순수 표시 함수이며 교차 선분은 점선에만 속한다.
+- 다음: Task 4, 점별 상태·참고자료를 최종 보고서와 SVG에 연결. Task 5에는 기존 React DOM 서버 렌더 기반 UI TDD도 추가했다.
