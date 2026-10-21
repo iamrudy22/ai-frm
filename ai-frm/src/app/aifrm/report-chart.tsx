@@ -45,7 +45,7 @@ type ChartFrameProps = {
 };
 
 function valueText(value: number, unit: string): string {
-  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: unit === '억원' ? 0 : 2 }).format(value);
+  return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: unit === '억원' ? 0 : unit === '%p' ? 3 : 2 }).format(value);
 }
 
 /** 위험 이력과 참고 금액은 어댑터에서 투영하고 축·선·접근성은 같은 SVG로 표시한다. */
@@ -74,6 +74,25 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
   const y = (value: number) => PLOT.bottom - ((value - min) / range) * (PLOT.bottom - PLOT.top);
   const ticks = Array.from({ length: 5 }, (_, index) => min + range * index / 4);
   const labelEvery = points.length > 10 ? 2 : 1;
+  const anchor = (index: number) => points.length === 1 ? 'middle'
+    : index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
+  const valueLabelX = (index: number) => x(index) + (points.length === 1 ? 0
+    : index === 0 ? 4 : index === points.length - 1 ? -4 : 0);
+  // 두 계열의 값 라벨만 조정한다. 축·월·단위 영역은 피하고 같은 월의 값은 16 이상 띄운다.
+  const valueLabelYs = points.map((_, index) => {
+    const clamp = (position: number) => Math.max(PLOT.top + 10, Math.min(PLOT.bottom - 8, position));
+    const positions = series.map((item, seriesIndex) => {
+      const point = item.points[index];
+      return point?.kind === 'available' && Number.isFinite(point.value)
+        ? clamp(y(point.value) + (seriesIndex === 1 ? 16 : -8)) : null;
+    });
+    const [primary, secondary] = positions;
+    if (primary !== null && secondary != null && Math.abs(primary - secondary) < 16) {
+      const center = Math.max(PLOT.top + 18, Math.min(PLOT.bottom - 16, (primary + secondary) / 2));
+      return primary <= secondary ? [center - 8, center + 8] : [center + 8, center - 8];
+    }
+    return positions;
+  });
 
   return (
     <VStack as="figure" gap={1} className="report-chart border! border-solid border-report-ink/30!" padding={2}>
@@ -97,11 +116,12 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
           </g>
         ))}
         <text x={PLOT.left} y={14} fill={INK} className="text-xs">단위: {unit}</text>
-        {points.map((point, index) => (index % labelEvery === 0 || index === points.length - 1) && (
+        {points.map((point, index) => (index === points.length - 1
+          || (index % labelEvery === 0 && index <= points.length - 1 - labelEvery)) && (
           <text key={point.month} x={x(index)} y={PLOT.bottom + 18} textAnchor="middle"
             fill={INK} className="text-xs">{point.month}</text>
         ))}
-        {series.map((item) => (
+        {series.map((item, seriesIndex) => (
           <g key={item.name} data-series={item.name}>
             {splitChartSegments(item.points).map((segment, index) => (
               <polyline key={index} points={segment.indices.map((i) => `${x(i)},${y(item.points[i].value!)}`).join(' ')}
@@ -117,7 +137,7 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
                     <title>{`${point.month} ${item.name}: ${valueText(point.value, unit)} ${unit}${reference ? point.planned ? ' (계획)' : ' (실적)' : ''}`}</title>
                   </circle>
                   {((!reference && series.length === 1) || last || points.length < 7) && (
-                    <text x={x(index)} y={y(point.value) + (item === series[1] ? 16 : -8)} textAnchor="middle"
+                    <text x={valueLabelX(index)} y={valueLabelYs[index][seriesIndex]!} textAnchor={anchor(index)}
                       fill={INK} className="text-xs" fontWeight={last ? 700 : 400}>{valueText(point.value, unit)}</text>
                   )}
                 </g>

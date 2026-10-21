@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { assessDashboard } from '@/application/dashboard';
 import { createStatement, unreadable, type ItemName } from '@/domain/cashflow/statement';
 import { amount } from '@/domain/shared/amount';
-import { parseYearMonth as ym } from '@/domain/shared/year-month';
+import { addMonths, parseYearMonth as ym } from '@/domain/shared/year-month';
+import { ReportChart } from './report-chart';
 import { summarizeHistory } from './report-chart-view';
 import { buildFinancialReport, type FinancialReport, type ReportPoint } from './report-model';
 import { FinancialReportPreview } from './report-preview';
@@ -40,6 +41,19 @@ function markup(value = report()): string {
 
 function page(html: string, number: number): string {
   return html.match(new RegExp(`<section[^>]*aria-label="보고서 ${number}쪽"[^>]*>[\\s\\S]*?(?=<section[^>]*aria-label="보고서 [1-4]쪽"|</article>)`))?.[0] ?? '';
+}
+
+function svgTexts(html: string) {
+  return [...html.matchAll(/<text\b([^>]*)>([^<]*)<\/text>/g)].map((match) => {
+    const attribute = (name: string) => match[1].match(new RegExp(`(?:^| )${name}="([^"]*)"`))?.[1];
+    return { text: match[2], x: Number(attribute('x')), y: Number(attribute('y')),
+      anchor: attribute('text-anchor'), value: attribute('font-weight') !== undefined };
+  });
+}
+
+function metricWithPoints(id: FinancialReport['metrics'][number]['id'], points: ReportPoint[]) {
+  const metric = report().metrics.find((item) => item.id === id)!;
+  return { ...metric, points, historyCoverage: summarizeHistory(points) };
 }
 
 describe('HTML 보고서와 PDF 참고자료 선택', () => {
@@ -129,5 +143,93 @@ describe('HTML 보고서와 PDF 참고자료 선택', () => {
     expect(html).toContain('결측 1개월');
     expect(html).toContain(fullReason);
     expect(html).not.toContain('자료 없음');
+  });
+
+  it.each(['liquidity', 'cash'] as const)('최신 %s가 정상이어도 18개월의 서로 다른 긴 사유를 인쇄 요약 두 줄로 제한하고 HTML 전문을 보존한다', (id) => {
+    const reasons = Array.from({ length: 17 }, (_, index) => `${index + 1}번째 합성 사유 ${'서로 다른 월별 판독 오류 '.repeat(40)}`.slice(0, 500));
+    const points: ReportPoint[] = reasons.map((reason, index) => ({ month: addMonths(ym('2025/01'), index),
+      kind: index === 0 ? 'not-applicable' : 'missing', value: null, reason }));
+    points.push({ month: ym('2026/06'), kind: 'available', value: 1, secondary: 2 });
+    const value = report();
+    const target = { ...metricWithPoints(id, points), status: '정상', grade: '정상' as const };
+    const html = markup({ ...value, metrics: value.metrics.map((metric) => metric.id === id ? target : metric) });
+    const section = html.match(new RegExp(`<section[^>]*aria-label="${target.title}"[^>]*>[\\s\\S]*?</section>`))?.[0] ?? '';
+    const summaries = [...section.matchAll(/<[^>]+class="[^"]*report-print-summary[^"]*"[^>]*>([^<]*)<\/[^>]+>/g)].map((match) => match[1]);
+    expect(summaries).toHaveLength(2);
+    expect(summaries[1]).toContain('추가 사유 16종');
+    expect(summaries[1]).toContain('상세는 HTML 참고');
+    expect(summaries[1].match(/상세는 HTML 참고/g)).toHaveLength(1);
+    expect([...summaries[1]].length).toBeLessThanOrEqual(100);
+    for (const reason of reasons) expect(section).toContain(reason);
+    expect(section).toContain('비율 비적용 1개월');
+    expect(section).toContain('결측 16개월');
+    expect(section).toContain('2026/06의 1개월 값 확보');
+  });
+
+  it('월초 잔고의 과거·기준월·미래 상태를 HTML 상세에서 구별한다', () => {
+    const html = page(markup(), 4);
+    expect(html).toMatch(/2026\/07 · 기초시재 · 월 순번 7 \(7월\) · 월초 잔고/);
+    expect(html).toMatch(/2026\/08 · 기초시재 · 월 순번 8 \(8월\) · 기준월 월초 잔고/);
+    expect(html).toMatch(/2026\/09 · 기초시재 · 월 순번 9 \(9월\) · 계획 이월 잔고/);
+    expect(html).not.toMatch(/2026\/07 · 기초시재[^<]*기준월/);
+  });
+});
+
+describe('인쇄 차트 라벨의 값·정밀도·배치', () => {
+  it.each([14, 18])('%i개월 축의 끝 월을 보존하면서 인접 라벨 사이에 여백을 둔다', (count) => {
+    const points: ReportPoint[] = Array.from({ length: count }, (_, index) => ({
+      month: addMonths(ym('2025/01'), index), kind: 'available', value: 0.239,
+    }));
+    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('funding', points)} />);
+    const months = svgTexts(html).filter((text) => /^\d{4}\/\d{2}$/.test(text.text));
+    expect(months[0].text).toBe('2025/01');
+    expect(months.at(-1)?.text).toBe(count === 14 ? '2026/02' : '2026/06');
+    // 12px SVG 글꼴에서 숫자·슬래시 7자의 폭을 보수적으로 49로 잡는다.
+    const bounds = months.map((text) => ({ left: text.x - (text.anchor === 'end' ? 49 : text.anchor === 'middle' ? 24.5 : 0),
+      right: text.x + (text.anchor === 'start' ? 49 : text.anchor === 'middle' ? 24.5 : 0) }));
+    for (let index = 1; index < bounds.length; index++) expect(bounds[index].left - bounds[index - 1].right).toBeGreaterThanOrEqual(8);
+    expect(bounds[0].left).toBeGreaterThanOrEqual(0);
+    expect(bounds.at(-1)!.right).toBeLessThanOrEqual(660);
+  });
+
+  it.each([2, 14, 18])('%i개월의 긴 양 끝 값과 바닥 근처 두 계열 값을 축·서로 사이에 겹치지 않게 둔다', (count) => {
+    const points: ReportPoint[] = Array.from({ length: count }, (_, index) => ({
+      month: addMonths(ym('2025/01'), index), kind: 'available',
+      value: index === 0 ? 12345678 : 1, secondary: index === 0 ? 12345677 : 0,
+    }));
+    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('cash', points)} />);
+    const labels = svgTexts(html).filter((text) => text.value);
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    for (const label of labels) {
+      const width = label.text.length * 7;
+      const left = label.x - (label.anchor === 'end' ? width : label.anchor === 'middle' ? width / 2 : 0);
+      const right = label.x + (label.anchor === 'start' ? width : label.anchor === 'middle' ? width / 2 : 0);
+      expect(left).toBeGreaterThanOrEqual(76);
+      expect(right).toBeLessThanOrEqual(628);
+      expect(label.y).toBeGreaterThanOrEqual(32);
+      expect(label.y).toBeLessThanOrEqual(112);
+    }
+    for (const label of labels) {
+      for (const other of labels.filter((candidate) => candidate !== label && candidate.x === label.x)) {
+        expect(Math.abs(label.y - other.y)).toBeGreaterThanOrEqual(16);
+      }
+    }
+    expect(html).toContain('현재시재');
+    expect(html).toContain('적정시재');
+    expect(html.match(/<polyline/g)).toHaveLength(2);
+    expect(html).toContain('2025/01 현재시재: 12,345,678 억원');
+    expect(html).toContain('적정시재: 0 억원');
+  });
+
+  it.each([
+    { id: 'funding' as const, value: 0.239, want: '0.239', unit: '%p' },
+    { id: 'recovery' as const, value: 0.239, want: '0.24', unit: '배' },
+    { id: 'construction' as const, value: 20.239, want: '20.24', unit: '지수' },
+    { id: 'cash' as const, value: 1234.239, want: '1,234', unit: '억원' },
+  ])('표시 단위 $unit과 정밀도를 유지한다 ($want)', ({ id, value, want, unit }) => {
+    const points: ReportPoint[] = [{ month: ym('2026/08'), kind: 'available', value, secondary: value + 1 }];
+    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints(id, points)} />);
+    expect(svgTexts(html).filter((text) => text.value).map((text) => text.text)).toContain(want);
+    expect(html).toContain(`: ${want} ${unit}`);
   });
 });

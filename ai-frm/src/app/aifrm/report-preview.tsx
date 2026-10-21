@@ -112,6 +112,9 @@ function coverageText(metric: ReportMetric): string {
 function MetricSection({ metric }: { metric: ReportMetric }) {
   const coverage = coverageText(metric);
   const reasons = [...new Set(metric.points.flatMap((point) => point.kind === 'available' ? [] : [point.reason]))];
+  const printReason = reasons.length > 1
+    ? `${abbreviate(reasons[0], 60)} · 추가 사유 ${reasons.length - 1}종 (상세는 HTML 참고)`
+    : reasons.length === 1 ? shortReason(reasons[0]) : '';
   const hasFailure = metric.status === '산출 불가' || metric.status === '산출 중';
   return (
     <VStack as="section" gap={2} className="break-inside-avoid wrap-anywhere" aria-label={metric.title}>
@@ -145,9 +148,11 @@ function MetricSection({ metric }: { metric: ReportMetric }) {
           </VStack>
         </details>
       )}
-      {!hasFailure && reasons.map((reason) => (
-        <Text key={reason} size="xsm" color="inherit" className="report-print-summary">{shortReason(reason)}</Text>
-      ))}
+      {!hasFailure && reasons.length > 0 && (
+        <Text size="xsm" color="inherit" className="report-print-summary">
+          {printReason}
+        </Text>
+      )}
       <Text size="xsm" color="inherit">자료: {metric.source}</Text>
     </VStack>
   );
@@ -199,9 +204,9 @@ function ReferencePage({ last }: { last: boolean }) {
   );
 }
 
-function natureText(point: ReferencePoint): string {
+function natureText(point: ReferencePoint, sourceRound: StatementReferenceTrends['sourceRound']): string {
   return point.nature === 'actual' ? '실적' : point.nature === 'planned-opening-balance' ? '계획 이월 잔고'
-    : point.nature === 'opening-balance' ? '기준월 잔고' : '계획';
+    : point.nature === 'opening-balance' ? `${point.month === sourceRound ? '기준월 ' : ''}월초 잔고` : '계획';
 }
 
 function StatementReferencePage({ trend }: { trend: StatementReferenceTrends }) {
@@ -238,7 +243,7 @@ function StatementReferencePage({ trend }: { trend: StatementReferenceTrends }) 
                 <Text size="xsm" color="inherit">월 순번은 소계 제거 후 1부터 세며, 엑셀 열 번호·셀 좌표가 아닙니다.</Text>
                 {chart.series.flatMap((series) => series.points.map((point) => (
                   <Text key={`${series.item}-${point.month}`} size="xsm" color="inherit">
-                    {point.month} · {series.item} · 월 순번 {point.source.statementMonthIndex + 1} ({point.source.monthLabel}) · {natureText(point)}
+                    {point.month} · {series.item} · 월 순번 {point.source.statementMonthIndex + 1} ({point.source.monthLabel}) · {natureText(point, trend.sourceRound)}
                     {point.beyondPlanYear ? ' · 다음 해 미확정 계획' : ''} · {point.kind === 'missing' ? `결측: ${point.reason}` : `${Number(point.value).toLocaleString('ko-KR')} ${trend.unit}`}
                   </Text>
                 )))}
