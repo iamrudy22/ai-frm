@@ -68,8 +68,11 @@ export type Perception = {
   readonly isLoading: boolean;
   /** 분양회수를 떼지 못한 회차. */
   readonly unreadable: { readonly text: string } | null;
+  /** 직접 선택한 기준월. undefined이면 서버의 기존 기본값 정책을 쓴다. */
+  readonly selectedMonth: YearMonth | undefined;
   readonly choose: (month: YearMonth) => void;
   readonly reset: () => void;
+  readonly retry: () => void;
 };
 
 type Choice = { readonly for: readonly NamedStatement[]; readonly month: YearMonth };
@@ -78,6 +81,7 @@ type Loaded = {
   /** 어느 회차 묶음·선택에 대한 결과인가. 다르면 아직 불러오는 중이다. */
   readonly for: readonly NamedStatement[];
   readonly chosen: YearMonth | undefined;
+  readonly attempt: number;
   readonly response: PerceptionResponse;
 };
 
@@ -85,6 +89,7 @@ type Loaded = {
 export function usePerception(latest: Statement | null, named: readonly NamedStatement[] | null): Perception {
   const [choice, setChoice] = useState<Choice | null>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const chosen = named !== null && choice?.for === named ? choice.month : undefined;
   const reportMonth = latest === null ? undefined : calendarOf(latest, latest.defaultBaseMonth);
@@ -108,27 +113,31 @@ export function usePerception(latest: Statement | null, named: readonly NamedSta
     let cancelled = false;
     (async () => {
       const response = await fetchPerception(rounds, reportMonth, chosen);
-      if (!cancelled) setLoaded({ for: named, chosen, response });
+      if (!cancelled) setLoaded({ for: named, chosen, attempt, response });
     })();
     return () => {
       cancelled = true;
     };
-  }, [named, rounds, chosen, reportMonth]);
+  }, [named, rounds, chosen, reportMonth, attempt]);
 
   const current = named !== null && loaded?.for === named ? loaded : null;
   return {
     response: current?.response ?? null,
-    isLoading: current === null || current.chosen !== chosen,
+    isLoading: current === null || current.chosen !== chosen || current.attempt !== attempt,
     unreadable,
+    selectedMonth: chosen,
     choose: (month) => {
       if (named !== null) setChoice({ for: named, month });
     },
     reset: () => setChoice(null),
+    retry: () => {
+      if (named !== null) setAttempt((previous) => previous + 1);
+    },
   };
 }
 
 export function ConstructionPerceptionCard({ perception }: { perception: Perception }) {
-  const { response, isLoading, unreadable, choose, reset } = perception;
+  const { response, isLoading, unreadable, selectedMonth, choose, reset, retry } = perception;
   return (
     <VStack gap={3}>
       <Heading level={2}>건설경기 인식 지수</Heading>
@@ -138,9 +147,32 @@ export function ConstructionPerceptionCard({ perception }: { perception: Percept
       {response === null ? (
         <Text type="supporting">한국은행 ECOS에서 지표를 불러오는 중…</Text>
       ) : response.ok ? (
-        <PerceptionResult report={response.value} isLoading={isLoading} onChoose={choose} onReset={reset} />
+        <PerceptionResult
+          report={response.value}
+          isLoading={isLoading}
+          selectedMonth={selectedMonth}
+          onChoose={choose}
+          onReset={reset}
+          onRetry={retry}
+        />
       ) : (
-        <Banner status="error" title="산출할 수 없습니다" description={response.reason} />
+        <VStack gap={2} align="start">
+          <Banner
+            status="error"
+            title={isLoading ? '이전 요청에 실패했습니다' : '산출할 수 없습니다'}
+            description={response.reason}
+          />
+          <Text type="supporting" role="status">
+            {selectedMonth === undefined ? '기본 기준월로 요청했습니다.' : `요청 기준월 ${selectedMonth}`}
+            {isLoading ? ' · 다시 불러오는 중…' : ''}
+          </Text>
+          <HStack gap={2} wrap="wrap">
+            <Button label="다시 불러오기" variant="secondary" onClick={retry} isLoading={isLoading} />
+            {selectedMonth !== undefined && (
+              <Button label="기본값으로" variant="secondary" onClick={reset} isDisabled={isLoading} />
+            )}
+          </HStack>
+        </VStack>
       )}
     </VStack>
   );
@@ -149,13 +181,17 @@ export function ConstructionPerceptionCard({ perception }: { perception: Percept
 function PerceptionResult({
   report,
   isLoading,
+  selectedMonth,
   onChoose,
   onReset,
+  onRetry,
 }: {
   report: PerceptionReportDto;
   isLoading: boolean;
+  selectedMonth: YearMonth | undefined;
   onChoose: (month: YearMonth) => void;
   onReset: () => void;
+  onRetry: () => void;
 }) {
   const { basis, result, diagnostics } = report;
   const fetchedAt = new Date(diagnostics.fetchedAt).toLocaleString('ko-KR');
@@ -163,20 +199,23 @@ function PerceptionResult({
 
   return (
     <VStack gap={3} align="start">
-      <HStack gap={2} vAlign="end">
+      <HStack gap={2} vAlign="end" wrap="wrap">
         <Selector
           label="건설경기 기준월"
           description="기본값은 최신 회차 − 2개월입니다(8월 기준이면 6월)"
           options={monthOptions(report.selectable, basis.baseMonth)}
-          value={basis.baseMonth}
+          value={selectedMonth ?? basis.baseMonth}
           onChange={(value) => onChoose(parseYearMonth(value))}
           isDisabled={isLoading}
         />
-        {basis.source === '선택' && <Button label="기본값으로" variant="secondary" onClick={onReset} />}
+        {selectedMonth !== undefined && (
+          <Button label="기본값으로" variant="secondary" onClick={onReset} isDisabled={isLoading} />
+        )}
+        <Button label="다시 불러오기" variant="secondary" onClick={onRetry} isLoading={isLoading} />
       </HStack>
-      <Text type="supporting">
+      <Text type="supporting" role="status">
         {basisNote(basis)} · ECOS 조회 {fetchedAt}
-        {isLoading ? ' · 다시 불러오는 중…' : ''}
+        {isLoading ? ` · 다시 불러오는 중… 아래는 이전 결과(기준월 ${basis.baseMonth})입니다.` : ''}
       </Text>
 
       {result.kind === 'ok' ? (

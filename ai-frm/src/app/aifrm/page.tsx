@@ -36,7 +36,7 @@ import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
-import { ConstructionPerceptionCard, usePerception } from './construction-perception-card';
+import { ConstructionPerceptionCard, usePerception, type Perception } from './construction-perception-card';
 import { FundingRiskCard, useFundingRisk, type FundingRiskState } from './funding-risk-card';
 import {
   arrangeRounds,
@@ -273,7 +273,7 @@ export default function AifrmDashboardPage() {
 
             {loaded !== null && dashboard !== null && (
               <VStack gap={6}>
-                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception.response, fundingRisk.response)} />
+                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception, fundingRisk.response)} />
 
                 <Divider />
 
@@ -334,7 +334,7 @@ function summaryTiles(
   loaded: Loaded,
   dashboard: Dashboard,
   gapMonth: YearMonth | null,
-  perception: Parameters<typeof perceptionTile>[0],
+  perception: Perception,
   fundingRisk: FundingRiskState['response'],
 ): SummaryTile[] {
   const statement = loaded.latest.statement;
@@ -348,7 +348,7 @@ function summaryTiles(
     recoveryTile(recovery, { judged: loaded.latest.round, target, previousRound: addMonths(loaded.latest.round, -1) }),
     gapTile(dashboard.liquidityGap, gapMonth === null ? '—' : spanText(gapMonth, LIQUIDITY_WINDOW_MONTHS)),
     adequateCashTile(adequate, adequate.ok ? windowText(statement, adequate.value) : '—'),
-    perceptionTile(perception),
+    perceptionTile(perception.response, perception.isLoading, perception.selectedMonth),
     fundingRiskTile(fundingRisk),
   ];
 }

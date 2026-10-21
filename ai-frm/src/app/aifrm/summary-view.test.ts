@@ -89,6 +89,31 @@ describe('요약 — 건설경기 인식 지수', () => {
     expect(perceptionTile(null)).toMatchObject({ status: { kind: 'dot', variant: 'neutral', label: '불러오는 중' }, value: '…' });
   });
 
+  it('기준월 재조회 중에는 이전 지수와 등급을 현재 결과처럼 보이지 않는다', () => {
+    expect(perceptionTile(ok({ kind: 'ok', month: '2026/06', index: 11.4321, grade: '정상' }), true, ym('2026/07'))).toEqual({
+      title: '건설경기 인식 지수',
+      status: { kind: 'dot', variant: 'neutral', label: '불러오는 중' },
+      value: '…',
+      note: 'ECOS 조회 중 · 요청 기준월 2026/07 · 이전 결과 기준월 2026/06',
+    });
+  });
+
+  it('실패 후 같은 요청을 다시 조회하는 동안 이전 실패를 현재 결과처럼 보이지 않는다', () => {
+    expect(perceptionTile({ ok: false, reason: '연결 실패' }, true, ym('2026/07'))).toMatchObject({
+      status: { kind: 'dot', variant: 'neutral', label: '불러오는 중' },
+      value: '…',
+      note: 'ECOS 조회 중 · 요청 기준월 2026/07',
+    });
+  });
+
+  it('기본 기준월을 다시 조회하면 이전 결과의 기준월만 안내한다', () => {
+    expect(perceptionTile(ok({ kind: 'unavailable', month: '2026/06', missing: [{}] }), true)).toMatchObject({
+      status: { kind: 'dot', variant: 'neutral', label: '불러오는 중' },
+      value: '…',
+      note: 'ECOS 조회 중 · 이전 결과 기준월 2026/06',
+    });
+  });
+
   it('산출했으면 종합위기단계와 지수, 기준월', () => {
     expect(perceptionTile(ok({ kind: 'ok', month: '2026/06', index: 11.4321, grade: '정상' }))).toEqual({
       title: '건설경기 인식 지수',

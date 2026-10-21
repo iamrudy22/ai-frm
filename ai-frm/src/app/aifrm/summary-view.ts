@@ -89,10 +89,18 @@ export function adequateCashTile(adequateCash: Dashboard['adequateCash'], span: 
   };
 }
 
-/** perception이 null이면 아직 불러오는 중이다. */
-export function perceptionTile(perception: PerceptionResponse | null): SummaryTile {
+/** 재조회 중인 이전 결과는 현재 지수·등급으로 표시하지 않는다. */
+export function perceptionTile(
+  perception: PerceptionResponse | null,
+  isLoading = false,
+  requestedMonth?: YearMonth,
+): SummaryTile {
   const title = '건설경기 인식 지수';
-  if (perception === null) return { title, status: dot('neutral', '불러오는 중'), value: '…', note: 'ECOS 조회 중' };
+  if (perception === null || isLoading) {
+    const requested = requestedMonth === undefined ? '' : ` · 요청 기준월 ${requestedMonth}`;
+    const previous = perception?.ok ? ` · 이전 결과 기준월 ${perception.value.result.month}` : '';
+    return { title, status: dot('neutral', '불러오는 중'), value: '…', note: `ECOS 조회 중${requested}${previous}` };
+  }
   if (!perception.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
   const result = perception.value.result;
   if (result.kind === 'unavailable') {
