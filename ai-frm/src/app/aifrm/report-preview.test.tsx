@@ -222,6 +222,38 @@ describe('인쇄 차트 라벨의 값·정밀도·배치', () => {
   });
 
   it.each([
+    { primary: 97, secondary: 117 },
+    { primary: 117, secondary: 97 },
+    { primary: 116, secondary: 117 },
+    { primary: 117, secondary: 116 },
+    { primary: 117, secondary: 117 },
+    { primary: 0, secondary: 0 },
+    { primary: 0, secondary: 1 },
+    { primary: 1, secondary: 0 },
+  ])('근접한 두 계열 ($primary, $secondary) 라벨은 실제 점의 수직순서·색상·축 안쪽을 유지한다', ({ primary, secondary }) => {
+    const points: ReportPoint[] = [
+      { month: ym('2026/07'), kind: 'available', value: 120, secondary: 120 },
+      { month: ym('2026/08'), kind: 'available', value: primary, secondary },
+    ];
+    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('cash', points)} />);
+    const series = [...html.matchAll(/<g data-series="([^"]+)">([\s\S]*?)(?=<g data-series=|<\/svg>)/g)].map((match) => {
+      const lastCircle = [...match[2].matchAll(/<circle\b[^>]*cy="([^"]+)"[^>]*fill="([^"]+)"/g)].at(-1)!;
+      const label = svgTexts(match[2]).filter((text) => text.value).at(-1)!;
+      const labelColor = [...match[2].matchAll(/<text\b[^>]*fill="([^"]+)"[^>]*font-weight="\d+"/g)].at(-1)?.[1];
+      expect.soft(labelColor).toBe(lastCircle[2]);
+      expect(label.y).toBeGreaterThanOrEqual(32);
+      expect(label.y).toBeLessThanOrEqual(112);
+      return { name: match[1], circleY: Number(lastCircle[1]), label };
+    });
+    expect(series.map((item) => item.name)).toEqual(['현재시재', '적정시재']);
+    expect(series.map((item) => item.label.text)).toEqual([String(primary), String(secondary)]);
+    const [current, adequate] = series;
+    const labelsTopToBottom = current.circleY <= adequate.circleY
+      ? [current.label, adequate.label] : [adequate.label, current.label];
+    expect(labelsTopToBottom[1].y - labelsTopToBottom[0].y).toBeGreaterThanOrEqual(16);
+  });
+
+  it.each([
     { id: 'funding' as const, value: 0.239, want: '0.239', unit: '%p' },
     { id: 'recovery' as const, value: 0.239, want: '0.24', unit: '배' },
     { id: 'construction' as const, value: 20.239, want: '20.24', unit: '지수' },

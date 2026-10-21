@@ -78,18 +78,22 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
     : index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
   const valueLabelX = (index: number) => x(index) + (points.length === 1 ? 0
     : index === 0 ? 4 : index === points.length - 1 ? -4 : 0);
-  // 두 계열의 값 라벨만 조정한다. 축·월·단위 영역은 피하고 같은 월의 값은 16 이상 띄운다.
+  // 두 계열의 값 라벨만 조정한다. 실제 점의 위아래 순서를 유지하며 축을 피해 16 이상 띄운다.
   const valueLabelYs = points.map((_, index) => {
     const clamp = (position: number) => Math.max(PLOT.top + 10, Math.min(PLOT.bottom - 8, position));
-    const positions = series.map((item, seriesIndex) => {
+    const pointYs = series.map((item) => {
       const point = item.points[index];
       return point?.kind === 'available' && Number.isFinite(point.value)
-        ? clamp(y(point.value) + (seriesIndex === 1 ? 16 : -8)) : null;
+        ? y(point.value) : null;
     });
+    const positions = pointYs.map((pointY, seriesIndex) => pointY === null ? null
+      : clamp(pointY + (seriesIndex === 1 ? 16 : -8)));
     const [primary, secondary] = positions;
-    if (primary !== null && secondary != null && Math.abs(primary - secondary) < 16) {
+    if (primary !== null && secondary != null) {
+      const primaryAbove = pointYs[0]! <= pointYs[1]!;
+      if (primaryAbove ? primary + 16 <= secondary : secondary + 16 <= primary) return positions;
       const center = Math.max(PLOT.top + 18, Math.min(PLOT.bottom - 16, (primary + secondary) / 2));
-      return primary <= secondary ? [center - 8, center + 8] : [center + 8, center - 8];
+      return primaryAbove ? [center - 8, center + 8] : [center + 8, center - 8];
     }
     return positions;
   });
@@ -138,7 +142,7 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
                   </circle>
                   {((!reference && series.length === 1) || last || points.length < 7) && (
                     <text x={valueLabelX(index)} y={valueLabelYs[index][seriesIndex]!} textAnchor={anchor(index)}
-                      fill={INK} className="text-xs" fontWeight={last ? 700 : 400}>{valueText(point.value, unit)}</text>
+                      fill={series.length > 1 ? item.color : INK} className="text-xs" fontWeight={last ? 700 : 400}>{valueText(point.value, unit)}</text>
                   )}
                 </g>
               );
