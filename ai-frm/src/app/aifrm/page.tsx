@@ -58,6 +58,9 @@ import {
   type SummaryTile,
 } from './summary-view';
 import { GRADE_BADGE, money, percent } from './format';
+import { DocumentThemeProvider } from '@/app/ThemeProvider';
+import { buildFinancialReport } from './report-model';
+import { FinancialReportPreview } from './report-preview';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -103,6 +106,7 @@ export default function AifrmDashboardPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [prepared, setPrepared] = useState<Prepared>({ kind: 'empty' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [reportOpenedAt, setReportOpenedAt] = useState<Date | null>(null);
   // 유동성 Gap·적정 시재의 기준월(3개월 창의 첫 달). 건설경기 인식 지수의 기준월과 따로다.
   const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
   // 읽는 중에 파일을 다시 고르면 앞선 읽기의 결과를 버린다.
@@ -163,6 +167,46 @@ export default function AifrmDashboardPage() {
   // 판단월 = 최신 회차의 달(대금 회수 위험과 같다). 금리는 그 전달 마지막 평가일 값이다.
   const fundingRisk = useFundingRisk(loaded?.latest.round ?? null);
 
+  const report = useMemo(() => {
+    if (reportOpenedAt === null) return null;
+    if (loaded === null || dashboard === null || gapMonth === null) return buildFinancialReport();
+    return buildFinancialReport({
+      rounds: loaded.rounds,
+      dashboard,
+      gapMonth,
+      perception: perception.response,
+      perceptionLoading: perception.isLoading,
+      funding: fundingRisk.response,
+      generatedAt: reportOpenedAt,
+    });
+  }, [reportOpenedAt, loaded, dashboard, gapMonth, perception.response, perception.isLoading, fundingRisk.response]);
+
+  if (report !== null) {
+    return (
+      <DocumentThemeProvider>
+        <Layout
+          contentWidth={960}
+          height="auto"
+          padding={6}
+          content={
+            <LayoutContent>
+              <VStack gap={4}>
+                <HStack className="report-controls bg-report-paper" padding={3}>
+                  <Button
+                    label="대시보드로 돌아가기"
+                    variant="secondary"
+                    onClick={() => setReportOpenedAt(null)}
+                  />
+                </HStack>
+                <FinancialReportPreview report={report} />
+              </VStack>
+            </LayoutContent>
+          }
+        />
+      </DocumentThemeProvider>
+    );
+  }
+
   return (
     <Layout
       contentWidth={960}
@@ -175,6 +219,22 @@ export default function AifrmDashboardPage() {
               <Text type="supporting">
                 자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재와 건설경기·조달위험 인식
                 지수를 함께 판정합니다. 올린 파일은 저장하지 않습니다.
+              </Text>
+            </VStack>
+
+            <VStack gap={1} align="start">
+              <Button
+                label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}
+                variant="secondary"
+                onClick={() => {
+                  setReportOpenedAt(new Date());
+                  window.scrollTo({ top: 0 });
+                }}
+              />
+              <Text type="supporting">
+                {loaded === null
+                  ? '3페이지 보고서 형식을 먼저 볼 수 있습니다. 파일을 올려 산출하면 실제 결과가 반영됩니다.'
+                  : '현재 산출 결과로 보고서를 확인한 뒤 PDF로 저장할 수 있습니다.'}
               </Text>
             </VStack>
 

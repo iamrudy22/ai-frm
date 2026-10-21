@@ -18,4 +18,75 @@
   --color-foreground: var(--color-text-primary);
   --font-sans: var(--font-family-body);
   --font-mono: var(--font-family-code);
+  --color-report-paper: var(--astryx-theme-my-theme-report-paper);
+  --color-report-ink: var(--astryx-theme-my-theme-report-ink);
+  --color-report-blue: var(--astryx-theme-my-theme-report-blue);
+  --color-report-summary: var(--astryx-theme-my-theme-report-summary);
+  --color-report-normal: var(--astryx-theme-my-theme-report-normal);
+  --color-report-caution: var(--astryx-theme-my-theme-report-caution);
+  --color-report-warning: var(--astryx-theme-my-theme-report-warning);
+  --color-report-crisis: var(--astryx-theme-my-theme-report-crisis);
+  --color-report-line: var(--astryx-theme-my-theme-report-line);
+  --color-report-cash: var(--astryx-theme-my-theme-report-cash);
+}
+
+/* 실제 용지와 인쇄에만 필요한 규칙. 화면 구성과 간격은 Astryx가 맡는다. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+  }
+
+  html:has(.report-root),
+  body:has(.report-root) {
+    height: auto;
+    background: var(--astryx-theme-my-theme-report-paper);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body:has(.report-root) .astryx-layout,
+  body:has(.report-root) .astryx-layout-content {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .report-controls {
+    display: none !important;
+  }
+
+  .report-root,
+  .report-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .report-root {
+    display: block;
+  }
+
+  .report-sheet {
+    padding: 0 !important;
+    gap: var(--spacing-3) !important;
+    break-after: page;
+  }
+
+  .report-chart {
+    break-inside: avoid;
+  }
+
+  .report-sheet-last {
+    break-after: auto;
+  }
+
+  .report-root .astryx-table-scroll-wrapper {
+    overflow: visible;
+  }
 }

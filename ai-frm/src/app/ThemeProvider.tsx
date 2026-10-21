@@ -29,6 +29,19 @@ function makeTheme() {
       '--focus-outline-color': 'var(--color-accent)',
       '--shadow-low': '0 1px 2px light-dark(#0000001A, #00000066)',
     },
+    // 보고서는 화면 모드와 관계없이 같은 문서 색을 사용한다.
+    localTokens: {
+      '--astryx-theme-my-theme-report-paper': '#FFFFFF',
+      '--astryx-theme-my-theme-report-ink': '#171717',
+      '--astryx-theme-my-theme-report-blue': '#0088BF',
+      '--astryx-theme-my-theme-report-summary': '#FFFDD4',
+      '--astryx-theme-my-theme-report-normal': '#97CF4C',
+      '--astryx-theme-my-theme-report-caution': '#FFF100',
+      '--astryx-theme-my-theme-report-warning': '#FFB200',
+      '--astryx-theme-my-theme-report-crisis': '#FF3B16',
+      '--astryx-theme-my-theme-report-line': '#528FC6',
+      '--astryx-theme-my-theme-report-cash': '#E47735',
+    },
     components: {
       button: {
         base: {
@@ -58,7 +71,14 @@ function makeTheme() {
   });
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({ children, mode = 'system' }: {
+  children: React.ReactNode;
+  mode?: 'light' | 'dark' | 'system';
+}) {
   const theme = useMemo(() => makeTheme(), []);
-  return <Theme theme={theme} mode="system">{children}</Theme>;
+  return <Theme theme={theme} mode={mode}>{children}</Theme>;
+}
+
+export function DocumentThemeProvider({ children }: { children: React.ReactNode }) {
+  return <ThemeProvider mode="light">{children}</ThemeProvider>;
 }
