@@ -41,6 +41,14 @@ function makeTheme() {
       '--astryx-theme-my-theme-report-crisis': '#FF3B16',
       '--astryx-theme-my-theme-report-line': '#528FC6',
       '--astryx-theme-my-theme-report-cash': '#E47735',
+      '--astryx-theme-my-theme-report-font-family': 'Dotum, "돋움", "AppleGothic", "Noto Sans KR", sans-serif',
+      '--astryx-theme-my-theme-report-body-size': '13pt',
+      '--astryx-theme-my-theme-report-note-size': '9pt',
+      '--astryx-theme-my-theme-report-summary-size': '14pt',
+      '--astryx-theme-my-theme-report-date-size': '12pt',
+      '--astryx-theme-my-theme-report-body-leading': '1.5',
+      '--astryx-theme-my-theme-report-normal-weight': 'var(--font-weight-normal)',
+      '--astryx-theme-my-theme-report-bold-weight': 'var(--font-weight-bold)',
     },
     components: {
       button: {

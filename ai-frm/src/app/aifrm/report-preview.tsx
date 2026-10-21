@@ -49,14 +49,14 @@ function MetricSection({ metric }: { metric: ReportMetric }) {
   return (
     <VStack as="section" gap={2} className="break-inside-avoid wrap-anywhere" aria-label={metric.title}>
       <HStack gap={2} vAlign="center" wrap="wrap">
-        <Heading level={3} color="inherit" className="text-base">○ {metric.title}</Heading>
-        <Text type="label" color="inherit" hasTabularNumbers>{metric.value}</Text>
-        <Text type="label" color="inherit" className={statusClass(metric)}>[{metric.status}]</Text>
+        <Heading level={3} color="inherit" className="text-base report-metric-label">○ {metric.title}</Heading>
+        <Text type="label" color="inherit" hasTabularNumbers className="report-metric-label">{metric.value}</Text>
+        <Text type="label" color="inherit" className={`report-metric-label ${statusClass(metric)}`}>[{metric.status}]</Text>
       </HStack>
-      <Text size="sm" color="inherit" className={hasFailure ? 'report-screen-details' : undefined}>- {metric.narrative}</Text>
-      {hasFailure && <Text size="sm" color="inherit" className="report-print-summary">- {shortReason(metric.narrative)}</Text>}
-      {metric.id === 'construction' && <Text size="xsm" color="inherit">기준: {metric.basis}</Text>}
-      <Text size="xsm" color="inherit">* {metric.formula}</Text>
+      <Text size="sm" color="inherit" className={hasFailure ? 'report-narrative report-screen-details' : 'report-narrative'}>- {metric.narrative}</Text>
+      {hasFailure && <Text size="sm" color="inherit" className="report-narrative report-print-summary">- {shortReason(metric.narrative)}</Text>}
+      {metric.id === 'construction' && <Text size="xsm" color="inherit" className="report-note">기준: {metric.basis}</Text>}
+      <Text size="xsm" color="inherit" className="report-note">* {metric.formula}</Text>
       <VStack gap={1} className="report-metric-chart">
         <ReportChart metric={hasFailure ? { ...metric, narrative: shortReason(metric.narrative) } : metric} />
       </VStack>
@@ -139,7 +139,7 @@ export function FinancialReportPreview({ report, onBack }: { report: FinancialRe
           <VStack paddingBlock={3} className="border-y-4! border-solid border-report-blue!">
             <Heading level={1} color="inherit" justify="center" className="text-2xl">{report.title}</Heading>
           </VStack>
-          <Text size="sm" color="inherit" justify="end">({report.generatedOn}, 자금기획팀)</Text>
+          <Text size="sm" color="inherit" justify="end" className="report-date">({report.generatedOn}, 자금기획팀)</Text>
         </VStack>
 
         <VStack gap={3}>
@@ -147,8 +147,8 @@ export function FinancialReportPreview({ report, onBack }: { report: FinancialRe
           <HStack gap={3} padding={3} wrap="wrap" className="bg-report-summary border! border-solid border-report-ink/30!">
             {report.metrics.map((item) => (
               <HStack gap={1} key={item.id} vAlign="center" wrap="wrap">
-                <Text type="label" color="inherit" size="sm">◇ {item.title}</Text>
-                <Text type="label" color="inherit" size="sm" className={statusClass(item)}>({item.status})</Text>
+                <Text type="label" color="inherit" size="sm" className="report-summary-label">◇ {item.title}</Text>
+                <Text type="label" color="inherit" size="sm" className={`report-summary-label ${statusClass(item)}`}>({item.status})</Text>
               </HStack>
             ))}
           </HStack>

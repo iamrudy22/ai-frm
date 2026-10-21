@@ -30,6 +30,35 @@
   --color-report-cash: var(--astryx-theme-my-theme-report-cash);
 }
 
+/* 골든셋의 본문 인상에 맞춘 문서 전용 서체. 차트와 앱 UI의 서체는 유지한다. */
+.report-sheet :is(.astryx-text, .astryx-heading):not(.report-chart *) {
+  font-family: var(--astryx-theme-my-theme-report-font-family) !important;
+}
+
+.report-sheet :is(.report-narrative, .report-metric-label) {
+  font-size: var(--astryx-theme-my-theme-report-body-size) !important;
+  font-weight: var(--astryx-theme-my-theme-report-normal-weight) !important;
+  line-height: var(--astryx-theme-my-theme-report-body-leading) !important;
+}
+
+.report-sheet .report-note {
+  font-size: var(--astryx-theme-my-theme-report-note-size) !important;
+  font-weight: var(--astryx-theme-my-theme-report-normal-weight) !important;
+  line-height: var(--astryx-theme-my-theme-report-body-leading) !important;
+}
+
+.report-sheet .report-summary-label {
+  font-size: var(--astryx-theme-my-theme-report-summary-size) !important;
+  font-weight: var(--astryx-theme-my-theme-report-bold-weight) !important;
+  line-height: var(--astryx-theme-my-theme-report-body-leading) !important;
+}
+
+.report-sheet .report-date {
+  font-size: var(--astryx-theme-my-theme-report-date-size) !important;
+  font-weight: var(--astryx-theme-my-theme-report-normal-weight) !important;
+  line-height: var(--astryx-theme-my-theme-report-body-leading) !important;
+}
+
 /* 실제 용지와 인쇄에만 필요한 규칙. 화면 구성과 간격은 Astryx가 맡는다. */
 @media print {
   @page {
@@ -90,7 +119,8 @@
     gap: var(--spacing-1) !important;
   }
 
-  .report-sheet .astryx-text {
+  .report-sheet .report-chart .astryx-text,
+  .report-sheet .report-page-number {
     font-size: var(--font-size-xs) !important;
     line-height: var(--text-heading-1-leading) !important;
   }
