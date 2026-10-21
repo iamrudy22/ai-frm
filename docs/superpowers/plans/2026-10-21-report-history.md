@@ -251,19 +251,20 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 
 ### Task 5: HTML 상세·인쇄 요약·출력 검증
 
-**Files:** Modify `ai-frm/src/app/aifrm/report-preview.tsx`, `ai-frm/src/app/globals.css`, `ai-frm/README.md`; Create `ai-frm/src/app/aifrm/report-preview.test.tsx`.
+**Files:** Modify `ai-frm/src/app/aifrm/report-preview.tsx`, `ai-frm/src/app/globals.css`, `ai-frm/README.md`, `ai-frm/vitest.config.mts`, `ai-frm/src/app/aifrm/report-chart.tsx` (SVG title의 단일 문자열 수정); Create `ai-frm/src/app/aifrm/report-preview.test.tsx`.
 **Interfaces:** Sheet에 className?: string, ReferencePage에 last: boolean을 추가한다. hasReference=report.referenceTrends!==null과 includeReferenceInPrint를 사용한다.
 
-- [ ] **0. UI TDD:** 기존 `react-dom/server`의 `renderToStaticMarkup`으로 빈 양식의 기본 3쪽·참고자료 없음, 자료가 있는 보고서의 참고 차트·실제 출처·전체 오류와 인쇄 요약·기본 해제 체크를 검증하는 실패 테스트를 먼저 작성한다. `npx vitest run src/app/aifrm/report-preview.test.tsx`의 RED를 확인한 뒤 구현하고 GREEN을 확인한다. 인쇄 선택의 실제 동작과 페이지 수는 아래 UI·PDF QA에서 검증한다. 새 테스트 라이브러리는 설치하지 않는다.
-- [ ] **1. 화면 연결:** 실제 Astryx CheckboxInput props를 확인하고 기본 해제 체크를 추가한다. §1.1의 상태 우선순위와 실제 유효월 안내를 표시한다.
-- [ ] **2. 참고자료와 상세:** hasReference이면 HTML 4쪽에 차트 3개, 앞/뒤 생략 범위와 실적/계획/계획연도 이후 설명을 표시한다. 전체 출처·오류는 화면 상세 영역에 보존하고 §1.3의 인쇄용 요약을 별도로 만든다.
-- [ ] **3. 마지막 쪽:** 3쪽은 last={!hasReference || !includeReferenceInPrint}, 4쪽은 last. 인쇄 포함 상태를 root class/data 속성으로 전달한다.
-- [ ] **4. 인쇄 CSS:** 미선택 4쪽과 화면 상세 영역만 print에서 display:none으로 숨긴다. 숫자·단위·기준월·자료 상태는 숨기지 않는다. 기존 A4·차트 break-inside·테마 토큰을 유지한다.
+- [x] **0. UI TDD:** 기존 `react-dom/server`의 `renderToStaticMarkup`으로 빈 양식의 기본 3쪽·참고자료 없음, 자료가 있는 보고서의 참고 차트·실제 출처·전체 오류와 인쇄 요약·기본 해제 체크를 검증하는 실패 테스트를 먼저 작성한다. `npx vitest run src/app/aifrm/report-preview.test.tsx`의 RED를 확인한 뒤 구현하고 GREEN을 확인한다. 인쇄 선택의 실제 동작과 페이지 수는 아래 UI·PDF QA에서 검증한다. 새 테스트 라이브러리는 설치하지 않는다.
+- [x] **0a. 실행기 설정:** 기존 Vitest include가 `.test.ts`만 포함하므로 `.test.tsx`도 발견하도록 패턴만 확장한다. UI 테스트가 명시 실행과 전체 verify에 실제로 포함되는지 확인한다.
+- [x] **1. 화면 연결:** 실제 Astryx CheckboxInput props를 확인하고 기본 해제 체크를 추가한다. §1.1의 상태 우선순위와 실제 유효월 안내를 표시한다.
+- [x] **2. 참고자료와 상세:** hasReference이면 HTML 4쪽에 차트 3개, 앞/뒤 생략 범위와 실적/계획/계획연도 이후 설명을 표시한다. 전체 출처·오류는 화면 상세 영역에 보존하고 §1.3의 인쇄용 요약을 별도로 만든다.
+- [x] **3. 마지막 쪽:** 3쪽은 last={!hasReference || !includeReferenceInPrint}, 4쪽은 last. 인쇄 포함 상태를 root class/data 속성으로 전달한다.
+- [x] **4. 인쇄 CSS:** 미선택 4쪽과 화면 상세 영역만 print에서 display:none으로 숨긴다. 숫자·단위·기준월·자료 상태는 숨기지 않는다. 기존 A4·차트 break-inside·테마 토큰을 유지한다.
 - [ ] **5. 합성 HTML 확인:** 파일 1개, 불연속 회차, 한 항목/전체 참고항목 판독 실패, 외부 로딩/실패, 0·음수, 기준월이 앞인 22열을 모바일·데스크톱에서 확인한다.
 - [ ] **6. 상태 전환 확인:** 기준월 변경 시 참고 불변, 건설 재조회 중 이전값 비노출, 같은 회차 수정본 반영, 복귀 시 업로드 유지, 다시 열 때 인쇄 체크 해제를 검증한다.
 - [ ] **7. 출력 스트레스 검증:** 18개월·200자 파일명·500자 오류 사유·3개 참고 차트를 함께 가진 합성 보고서를 실제 저장한다. 기준 환경에서 기본 정확히 3쪽, 포함 정확히 4쪽, 체크 해제 후 3쪽이어야 한다. 원래 1~3쪽과 모든 수치·차트·범례를 확인하며 끝의 빈 용지나 잘림이 있으면 레이아웃을 고친다. 출력 조작이 불가능하면 미검증으로 기록한다.
-- [ ] **8. 전체 검사:** `npm run verify`, `npx eslint src`, `npm run build`. 기존 환경의 Turbopack 포트 오류가 재현되면 `npm run build -- --webpack` 결과와 기본 빌드 제한을 기록한다. 실물 fixture 스킵은 수치 정답 검증 통과로 보고하지 않는다.
-- [ ] **9. README 갱신·검토·커밋:** 추가 엑셀이 필수가 아님, 상태별 의미·기준월 포함 창·월 순번과 셀 좌표의 차이·PDF 선택을 설명한다.
+- [x] **8. 전체 검사:** `npm run verify`, `npx eslint src`, `npm run build`. 기존 환경의 Turbopack 포트 오류가 재현되면 `npm run build -- --webpack` 결과와 기본 빌드 제한을 기록한다. 실물 fixture 스킵은 수치 정답 검증 통과로 보고하지 않는다.
+- [x] **9. README 갱신·검토·커밋:** 추가 엑셀이 필수가 아님, 상태별 의미·기준월 포함 창·월 순번과 셀 좌표의 차이·PDF 선택을 설명한다.
 
 ## 4. 진행 순서·완료 기준
 
@@ -290,7 +291,7 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 
 ### ADR: 자료 의미는 도메인, 읽기·표시는 app
 
-**Status:** Proposed. **Date:** 2026-10-21.
+**Status:** Accepted and implemented. **Date:** 2026-10-21.
 
 현재 계획은 읽기 전용 보고서이므로 app에서 Statement를 조회해 표시 모델을 만드는 경계는 타당하다. 다만 항목별 실적/계획의 경계는 업무 의미이므로 기존 cashflow 도메인의 소형 함수로 공유한다. Amount/YearMonth는 투영 직전까지 유지한다.
 
@@ -336,3 +337,23 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 - 독립 검토: 명세 준수·품질 Approved, Critical/Important/Minor 없음.
 - 컨텍스트: 기존 위험지표의 값/등급·선택월·외부 늦은 응답 보호를 유지하며 `referenceTrends`와 `StatementReferenceChart`가 연결 준비됐다. HTML/PDF 참고자료 배치는 다음 단계다.
 - 다음: Task 5의 SSR RED/GREEN, 화면·인쇄 포함 선택·실제 PDF 3/4쪽 및 긴 자료 QA.
+
+
+### Task 5 구현·독립 코드 검토 완료, 실제 저장 QA 진행 중
+
+- 구현 커밋: `6546fd7` — HTML 월별 참고자료 4쪽, PDF 포함 선택, 전체 화면 상세와 인쇄 요약, 토큰 기반 A4 밀도.
+- TDD: SSR RED 6 failed / 1 passed → GREEN 7 passed. SVG 제목 배열 경고 회귀 RED 1건 → 최종 GREEN 8 passed. 전체 verify 526 passed / 30 skipped, TypeScript·ESLint 통과.
+- 빌드: 샌드박스에서는 Turbopack 포트 제한이 재현됐고 webpack 대체 빌드는 성공했다. root가 승인된 권한으로 기본 `npm run build`를 재실행해 Turbopack 컴파일·타입·정적 6개 페이지 생성을 모두 확인했다.
+- 독립 코드 검토: 명세의 코드 요건·품질 Approved, 코드 결함 없음. 실제 출력 QA는 별도 완료 조건이다.
+- 실제 UI: 합성 3개 불연속 회차와 단일 지출 결측 파일 산출, 0·음수, 독립 수입 계열 유지, 선택월과 최신 참고자료의 독립성, 복귀 시 업로드 보존, 재열기 시 체크 해제를 확인했다. 모바일 390px에서 가로 넘침 없음, 정상 보고서 콘솔 오류 없음.
+- 실제 출력: 정상 자료의 기본 미리보기 5쪽 문제를 발견해 4쪽·3쪽 순으로 수정했다. 마지막 기본 3쪽 미리보기는 확인했다. 저장 대화상자에서 사용자가 Chrome을 전환해 CUA가 중단되어 저장 파일·참고 포함 4쪽·긴 자료의 실제 저장은 아직 미검증이다. 사용자 사용 창을 다시 조작하지 않고 조정 응답을 기다린다.
+- 자동 회귀로 확인한 추가 항목: 전체 참고항목 실패, 22열의 기준월 포함 18열, 같은 회차·같은 이름 수정본, 외부 로딩/실패·늦은 응답 보호. 이 항목을 모두 실제 브라우저 QA로 확인했다고 보고하지 않는다.
+- 다음: 전체 브랜치 코드 리뷰와 저장 PDF QA. 실제 미검증 항목이 남으면 완료로 표시하지 않고 이 문서에 남긴다.
+
+### 실행 중 결정과 비용
+
+1. 기존 보고서와 서버를 보존하도록 현재 체크아웃의 전용 브랜치에서 순차 구현했다. 잘못 판단하면 동시 작업과 충돌할 수 있어 파일 소유권을 분리했다.
+2. 위험지표의 현재·적정 시재 비교는 두 값이 함께 유효해야 한다. 수입·지출 참고 차트에는 계열별 실패를 적용한다. 잘못 판단하면 유효한 일부 시재가 숨겨질 수 있어 회귀 테스트로 고정했다.
+3. 기존 react-dom/server로 실제 UI SSR 테스트를 추가했다. 잘못 판단하면 테스트 유지비가 늘지만 새 의존성은 없다.
+4. Vitest 검색 패턴에 TSX를 포함했다. 잘못 판단하면 추가 테스트가 실행될 수 있어 전체 verify로 검증했다.
+5. 실제 SSR 경고를 해결하도록 SVG title의 단일 문자열 수정 한 줄을 Task 5에 포함했다. 잘못 판단하면 접근성 제목이 바뀔 수 있어 동일 제목과 경고 없는 렌더를 검증했다.
