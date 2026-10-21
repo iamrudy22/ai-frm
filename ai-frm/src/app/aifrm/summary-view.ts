@@ -28,6 +28,34 @@ export type SummaryTile = {
   readonly note: string;
 };
 
+type ReportReadiness = {
+  readonly completed: number;
+  readonly loading: number;
+  readonly unavailable: number;
+};
+
+/** 보고서에 사용하는 기존 결과 상태만 집계한다. 등급과 계산값은 바꾸지 않는다. */
+export function reportReadiness(
+  dashboard: Dashboard,
+  perception: PerceptionResponse | null,
+  isPerceptionLoading: boolean,
+  funding: FundingRiskResponse | null,
+): ReportReadiness {
+  const states: (keyof ReportReadiness)[] = [
+    dashboard.paymentRecovery?.ok === true ? 'completed' : 'unavailable',
+    dashboard.liquidityGap.ok ? 'completed' : 'unavailable',
+    dashboard.adequateCash.ok ? 'completed' : 'unavailable',
+    perception === null || isPerceptionLoading ? 'loading'
+      : perception.ok && perception.value.result.kind === 'ok' ? 'completed' : 'unavailable',
+    funding === null ? 'loading'
+      : funding.ok && funding.value.result.kind === 'ok' ? 'completed' : 'unavailable',
+  ];
+  return states.reduce((counts, state) => {
+    counts[state] += 1;
+    return counts;
+  }, { completed: 0, loading: 0, unavailable: 0 });
+}
+
 const MINUS = '−';
 const NONE = '—';
 const SEE_BELOW = '아래 사유를 확인하세요';

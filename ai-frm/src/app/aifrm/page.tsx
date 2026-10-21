@@ -50,6 +50,7 @@ import {
   perceptionTile,
   recoveryBasis,
   recoveryTile,
+  reportReadiness,
   type SummaryStatus,
   type SummaryTile,
 } from './summary-view';
@@ -163,6 +164,8 @@ export default function AifrmDashboardPage() {
   const perception = usePerception(loaded?.latest.statement ?? null, loaded?.rounds ?? null);
   // 판단월 = 최신 회차의 달(대금 회수 위험과 같다). 금리는 그 전달 마지막 평가일 값이다.
   const fundingRisk = useFundingRisk(loaded?.latest.round ?? null);
+  const readiness = dashboard === null ? null
+    : reportReadiness(dashboard, perception.response, perception.isLoading, fundingRisk.response);
 
   const report = useMemo(() => {
     if (reportOpenedAt === null) return null;
@@ -245,12 +248,18 @@ export default function AifrmDashboardPage() {
                   window.scrollTo({ top: 0 });
                 }}
               />
-              <Text type="supporting">
-                {loaded === null
+              <Text type="supporting"
+                role={readiness === null ? undefined : 'status'}
+                aria-live={readiness === null ? undefined : 'polite'}
+                aria-atomic={readiness === null ? undefined : true}
+                aria-label={readiness === null ? undefined : '보고서 준비 상태'}>
+                {readiness === null
                   ? '파일을 올리기 전에도 기본 3쪽의 보고서 양식을 볼 수 있습니다.'
-                  : perception.isLoading || fundingRisk.response === null
-                    ? '외부 자료를 조회하고 있습니다. 보고서에도 진행 상태가 표시됩니다.'
-                  : '현재 산출 결과로 보고서를 확인한 뒤 PDF로 저장할 수 있습니다.'}
+                  : `지표 5개 중 ${[
+                    readiness.completed > 0 ? `${readiness.completed}개 산출 완료` : null,
+                    readiness.loading > 0 ? `${readiness.loading}개 조회 중` : null,
+                    readiness.unavailable > 0 ? `${readiness.unavailable}개 산출 불가` : null,
+                  ].filter(Boolean).join(' · ')}`}
               </Text>
             </VStack>
 

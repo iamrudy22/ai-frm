@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { adequateCashTile, fundingRiskTile, gapTile, perceptionTile, recoveryBasis, recoveryTile } from '@/app/aifrm/summary-view';
+import { adequateCashTile, fundingRiskTile, gapTile, perceptionTile, recoveryBasis, recoveryTile, reportReadiness } from '@/app/aifrm/summary-view';
+import type { PerceptionReportDto, PerceptionResponse } from '@/app/api/construction-perception/dto';
+import type { FundingRiskReportDto, FundingRiskResponse } from '@/app/api/funding-risk/dto';
+import { assessDashboard } from '@/application/dashboard';
+import { createStatement } from '@/domain/cashflow/statement';
+import { assessLiquidityGap } from '@/domain/risk/liquidity-gap/liquidity-gap';
+import { perceptionIndex } from '@/domain/risk/construction-perception/policy';
+import { spread } from '@/domain/risk/funding-risk/policy';
+import { amount } from '@/domain/shared/amount';
+import { calendarDate } from '@/domain/shared/calendar-date';
+import { yearMonth } from '@/domain/shared/year-month';
 
 const ym = (s: string) => s as never;
 
@@ -171,5 +181,106 @@ describe('요약 — 조달위험 인식 지수', () => {
 
   it('요청이 실패했으면 산출 불가', () => {
     expect(fundingRiskTile({ ok: false, reason: 'x' }).status).toEqual({ kind: 'dot', variant: 'error', label: '산출 불가' });
+  });
+});
+
+describe('보고서 준비 상태 — 기존 지표 결과의 집계', () => {
+  const reportMonth = yearMonth(2026, 8);
+  const baseMonth = yearMonth(2026, 6);
+  const statement = (month: number) => {
+    const values = Array.from({ length: 12 }, () => amount(100));
+    return createStatement({
+      asOf: new Date(2026, month - 1, 10),
+      monthLabels: Array.from({ length: 12 }, (_, index) => `${index + 1}월`),
+      baseMonthIndex: month - 1,
+      planYearEndIndex: 11,
+      amounts: { 기초시재: values, 수입계: values, 수입: values, 분양회수: values, 기타수입: values, 지출: values },
+    });
+  };
+  const latest = statement(8);
+  const dashboard = assessDashboard(statement(7), latest, latest.defaultBaseMonth);
+  const perceptionResponse = (result: PerceptionReportDto['result'] = {
+    kind: 'ok', month: baseMonth, index: perceptionIndex(10), grade: '정상', lines: [],
+  }): PerceptionResponse => ({
+    ok: true,
+    value: {
+      basis: { baseMonth, reportMonth, source: '회차' },
+      selectable: { from: yearMonth(2026, 5), to: yearMonth(2026, 7) },
+      result,
+      diagnostics: {
+        indicators: [], ledger: { latestRound: reportMonth, rounds: [yearMonth(2026, 7), reportMonth] },
+        fetchedAt: '2026-09-01T00:00:00.000Z',
+      },
+    },
+  });
+  const fundingResponse = (result: FundingRiskReportDto['result'] = {
+    kind: 'ok', judgedMonth: reportMonth, observedMonth: yearMonth(2026, 7),
+    evaluationDate: calendarDate(2026, 7, 31), monthEnd: calendarDate(2026, 7, 31),
+    publicAaa: { average: 3.2, byAgency: { 나이스피앤아이: 3.2, 한국자산평가: 3.2, KIS자산평가: 3.2 } },
+    treasury: { average: 3, byAgency: { 나이스피앤아이: 3, 한국자산평가: 3, KIS자산평가: 3 } },
+    spread: spread(0.2), grade: '정상',
+  }): FundingRiskResponse => ({ ok: true, value: { source: '회차', result, fetchedAt: '2026-09-01T00:00:00.000Z' } });
+  const unavailablePerception = perceptionResponse({
+    kind: 'unavailable', month: baseMonth, missing: [{ key: '총수주액', reason: '해당 월 자료가 없습니다.' }],
+  });
+  const unavailableFunding = fundingResponse({
+    kind: 'unavailable', judgedMonth: reportMonth, observedMonth: yearMonth(2026, 7), reason: '금리 값이 없습니다.',
+  });
+
+  it('다섯 지표의 결과가 있으면 모두 산출 완료로 집계한다', () => {
+    expect(reportReadiness(dashboard, perceptionResponse(), false, fundingResponse()))
+      .toEqual({ completed: 5, loading: 0, unavailable: 0 });
+  });
+
+  it('외부 자료를 처음 조회할 때는 엑셀 지표 세 개만 완료다', () => {
+    expect(reportReadiness(dashboard, null, false, null))
+      .toEqual({ completed: 3, loading: 2, unavailable: 0 });
+  });
+
+  it.each([perceptionResponse(), { ok: false as const, reason: '이전 연결 실패' }, unavailablePerception])(
+    'ECOS 재조회 중에는 이전 응답 %j를 현재의 완료·불가 개수에 넣지 않는다', (previous) => {
+      expect(reportReadiness(dashboard, previous, true, fundingResponse()))
+        .toEqual({ completed: 4, loading: 1, unavailable: 0 });
+    },
+  );
+
+  it.each([
+    { perception: { ok: false as const, reason: '외부 연결 실패' }, funding: { ok: false as const, reason: '외부 연결 실패' } },
+    { perception: unavailablePerception, funding: unavailableFunding },
+  ])('외부 응답의 실패와 값 부재는 모두 산출 불가로 집계한다: %j', ({ perception, funding }) => {
+    expect(reportReadiness(dashboard, perception, false, funding))
+      .toEqual({ completed: 3, loading: 0, unavailable: 2 });
+  });
+
+  it('직전 회차가 없거나 엑셀 항목 판독에 실패하면 해당 지표를 산출 불가로 센다', () => {
+    expect(reportReadiness({
+      ...dashboard, paymentRecovery: null,
+      liquidityGap: { ok: false, reason: '수입 항목 없음' },
+      adequateCash: { ok: false, reason: '지출 항목 없음' },
+    }, perceptionResponse(), false, fundingResponse()))
+      .toEqual({ completed: 2, loading: 0, unavailable: 3 });
+    expect(reportReadiness({ ...dashboard, paymentRecovery: { ok: false, reason: '연속 회차가 아닙니다.' } }, null, false, null))
+      .toEqual({ completed: 2, loading: 2, unavailable: 1 });
+  });
+
+  it('순유입·적정 시재 F·위기 등급도 판정된 결과이므로 산출 완료다', () => {
+    if (!dashboard.adequateCash.ok) throw new Error('합성 시재 결과가 필요합니다.');
+    expect(reportReadiness({
+      ...dashboard,
+      liquidityGap: { ok: true, value: assessLiquidityGap({ openingCash: amount(10), income: amount(200), expense: amount(100) }) },
+      adequateCash: { ok: true, value: { ...dashboard.adequateCash.value, isAdequate: false, surplus: amount(-10) } },
+    }, perceptionResponse({ kind: 'ok', month: baseMonth, index: perceptionIndex(90), grade: '위기', lines: [] }), false, fundingResponse()))
+      .toEqual({ completed: 5, loading: 0, unavailable: 0 });
+  });
+
+  it('완료·조회 중·산출 불가의 합은 항상 지표 다섯 개다', () => {
+    for (const perception of [null, perceptionResponse(), unavailablePerception, { ok: false as const, reason: '합성 실패' }]) {
+      for (const funding of [null, fundingResponse(), unavailableFunding, { ok: false as const, reason: '합성 실패' }]) {
+        for (const loading of [false, true]) {
+          const readiness = reportReadiness(dashboard, perception, loading, funding);
+          expect(readiness.completed + readiness.loading + readiness.unavailable).toBe(5);
+        }
+      }
+    }
   });
 });
