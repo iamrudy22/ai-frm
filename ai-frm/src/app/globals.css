@@ -21,8 +21,6 @@
   --color-report-paper: var(--astryx-theme-my-theme-report-paper);
   --color-report-ink: var(--astryx-theme-my-theme-report-ink);
   --color-report-blue: var(--astryx-theme-my-theme-report-blue);
-  --color-report-status-normal: var(--astryx-theme-my-theme-report-status-normal);
-  --color-report-status-alert: var(--astryx-theme-my-theme-report-status-alert);
   --color-report-summary: var(--astryx-theme-my-theme-report-summary);
   --color-report-normal: var(--astryx-theme-my-theme-report-normal);
   --color-report-caution: var(--astryx-theme-my-theme-report-caution);
@@ -103,12 +101,7 @@
   }
 
   .report-chart svg {
-    min-width: 0 !important;
     height: calc(var(--spacing-8) * 4);
-  }
-
-  .report-chart-scroll {
-    overflow: visible !important;
   }
 
   .report-sheet-last {

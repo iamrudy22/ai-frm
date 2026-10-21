@@ -1,4 +1,3 @@
-import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
@@ -49,36 +48,6 @@ function valueText(value: number, unit: string): string {
   return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: unit === '억원' ? 0 : unit === '%p' ? 3 : 2 }).format(value);
 }
 
-type ChartValueRow = { month: string; series: string; value: string; status: string } & Record<string, unknown>;
-const VALUE_COLUMNS = [
-  { key: 'month', header: '월', width: proportional(1) },
-  { key: 'series', header: '계열', width: proportional(1) },
-  { key: 'value', header: '값 · 단위', width: proportional(1) },
-  { key: 'status', header: '상태 · 사유', width: proportional(2) },
-];
-
-/** 차트에 넘긴 점을 그대로 읽을 수 있게 투영한다. 계산값과 표시 정밀도는 SVG와 같다. */
-function ChartValues({ title, unit, series }: Pick<ChartFrameProps, 'title' | 'unit' | 'series'>) {
-  const rows: ChartValueRow[] = series.flatMap((item) => item.points.map((point) => {
-    const available = point.kind === 'available' && Number.isFinite(point.value);
-    return {
-      month: point.month,
-      series: item.name,
-      value: available ? `${valueText(point.value!, unit)} ${unit}` : '—',
-      status: available ? point.planned === undefined ? '산출값' : point.planned ? '계획' : '실적'
-        : point.kind === 'not-applicable' ? `비율 비적용: ${point.reason}`
-          : point.kind === 'missing' ? `결측: ${point.reason}` : '결측: 표시할 수 있는 값이 없습니다.',
-    };
-  }));
-  if (rows.length === 0) return null;
-  return (
-    <details className="report-screen-details w-full min-w-0 wrap-anywhere">
-      <summary>월별 값과 상태 보기</summary>
-      <Table data={rows} columns={VALUE_COLUMNS} density="compact" aria-label={`${title} 월별 값과 상태`} />
-    </details>
-  );
-}
-
 /** 위험 이력과 참고 금액은 어댑터에서 투영하고 축·선·접근성은 같은 SVG로 표시한다. */
 function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage, reference = false }: ChartFrameProps) {
   const points = series[0]?.points ?? [];
@@ -86,11 +55,10 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
     point.kind === 'available' && Number.isFinite(point.value) ? [point.value] : []));
   if (values.length === 0) {
     return (
-      <VStack as="figure" gap={1} className="report-chart min-w-0 border! border-solid border-report-ink/30!" padding={3}>
+      <VStack as="figure" gap={1} className="report-chart border! border-solid border-report-ink/30!" padding={3}>
         <Text type="label" color="inherit" justify="center">{title}</Text>
         <Text size="sm" color="inherit" justify="center">{emptyMessage}</Text>
         <figcaption><Text size="xsm" color="inherit" justify="center">{note}</Text></figcaption>
-        <ChartValues title={title} unit={unit} series={series} />
       </VStack>
     );
   }
@@ -131,12 +99,9 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
   });
 
   return (
-    <VStack as="figure" gap={1} className="report-chart min-w-0 border! border-solid border-report-ink/30!" padding={2}>
+    <VStack as="figure" gap={1} className="report-chart border! border-solid border-report-ink/30!" padding={2}>
       <Text type="label" color="inherit" size="sm" justify="center">{title}</Text>
-      <Text size="xsm" color="inherit" className="report-screen-details sm:hidden!">가로로 스크롤하면 차트 전체를 볼 수 있습니다.</Text>
-      <VStack isScrollable width="100%" className="report-chart-scroll min-w-0" role="region" tabIndex={0}
-        aria-label={`${title} 가로 스크롤 영역`}>
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width="100%" role="img" className="min-w-2xl"
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width="100%" role="img"
         aria-label={`${title}. 단위 ${unit}. ${points.length}개 기준월. ${note}`}>
         <title>{`${title} (단위: ${unit})`}</title>
         <desc>{note} 결측과 비적용 월은 연결하지 않습니다.</desc>
@@ -203,9 +168,7 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
           <text x={493} y={160} fill={INK} className="text-xs">계획</text>
         </g>}
       </svg>
-      </VStack>
       <figcaption><Text size="xsm" color="inherit" justify="center">{note}</Text></figcaption>
-      <ChartValues title={title} unit={unit} series={series} />
     </VStack>
   );
 }

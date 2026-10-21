@@ -56,13 +56,6 @@ function metricWithPoints(id: FinancialReport['metrics'][number]['id'], points: 
   return { ...metric, points, historyCoverage: summarizeHistory(points) };
 }
 
-function chartTableRows(html: string, label: string): string[][] {
-  const table = html.match(new RegExp(`<table\\b[^>]*aria-label="${label}"[^>]*>[\\s\\S]*?</table>`))?.[0] ?? '';
-  const body = table.match(/<tbody\b[^>]*>([\s\S]*?)<\/tbody>/)?.[1] ?? '';
-  return [...body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((row) =>
-    [...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => cell[1].replace(/<[^>]*>/g, '')));
-}
-
 function statusText(html: string, label: string): string | undefined {
   return html.match(new RegExp(`<[^>]+role="status"[^>]*aria-label="${label}"[^>]*>([^<]*)</[^>]+>`))?.[1];
 }
@@ -106,22 +99,17 @@ describe('보고서 작업 영역과 출력 상태', () => {
 });
 
 describe('HTML 보고서와 PDF 참고자료 선택', () => {
-  it('회수율과 Gap의 숫자 주값에 배 단위를 붙이고 값의 정밀도는 유지한다', () => {
+  it('고정 템플릿의 주값에는 모델이 제공한 표시값을 그대로 싣는다', () => {
     const value = report();
     const html = markup({ ...value, metrics: value.metrics.map((item) =>
       item.id === 'recovery' ? { ...item, value: '1.00' }
         : item.id === 'liquidity' ? { ...item, value: '1.69' } : item) });
-    expect(html).toContain('>1.00 배<');
-    expect(html).toContain('>1.69 배<');
+    expect(page(html, 1)).toContain('>1.00<');
+    expect(page(html, 1)).toContain('>1.69<');
+    expect(page(html, 1)).not.toContain('1.00 배');
+    expect(page(html, 1)).not.toContain('1.69 배');
   });
 
-  it.each(['—', '순유입', '수지 균형'])('비율이 아닌 %s에는 배 단위를 붙이지 않는다', (display) => {
-    const value = report();
-    const html = markup({ ...value, metrics: value.metrics.map((item) =>
-      item.id === 'liquidity' ? { ...item, value: display } : item) });
-    expect(html).toContain(`>${display}<`);
-    expect(html).not.toContain(`${display} 배`);
-  });
 
   it('빈 양식은 3쪽만 제공하며 참고자료와 인쇄 선택을 생략한다', () => {
     const html = markup(buildFinancialReport());
@@ -238,71 +226,6 @@ describe('HTML 보고서와 PDF 참고자료 선택', () => {
     expect(html).toMatch(/2026\/08 · 기초시재 · 월 순번 8 \(8월\) · 기준월 월초 잔고/);
     expect(html).toMatch(/2026\/09 · 기초시재 · 월 순번 9 \(9월\) · 계획 이월 잔고/);
     expect(html).not.toMatch(/2026\/07 · 기초시재[^<]*기준월/);
-  });
-});
-
-describe('차트의 월별 값과 상태 표', () => {
-  it('차트와 같은 월·계열·단위로 0·음수·비적용·결측 사유를 읽을 수 있다', () => {
-    const points: ReportPoint[] = [
-      { month: ym('2026/05'), kind: 'available', value: 0 },
-      { month: ym('2026/06'), kind: 'available', value: -0.239 },
-      { month: ym('2026/07'), kind: 'not-applicable', value: null, reason: '비율을 적용하지 않습니다.' },
-      { month: ym('2026/08'), kind: 'missing', value: null, reason: '해당 월 응답이 없습니다.' },
-    ];
-    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('funding', points)} />);
-    expect(chartTableRows(html, '조달위험 인식 지수 추이 월별 값과 상태')).toEqual([
-      ['2026/05', '조달위험 인식 지수', '0 %p', '산출값'],
-      ['2026/06', '조달위험 인식 지수', '-0.239 %p', '산출값'],
-      ['2026/07', '조달위험 인식 지수', '—', '비율 비적용: 비율을 적용하지 않습니다.'],
-      ['2026/08', '조달위험 인식 지수', '—', '결측: 해당 월 응답이 없습니다.'],
-    ]);
-  });
-
-  it('적정 시재는 현재시재·적정시재 두 계열의 값을 따로 제공한다', () => {
-    const points: ReportPoint[] = [
-      { month: ym('2026/07'), kind: 'available', value: 0, secondary: -10 },
-      { month: ym('2026/08'), kind: 'available', value: -1, secondary: 2 },
-    ];
-    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('cash', points)} />);
-    expect(chartTableRows(html, '적정 시재 추이 월별 값과 상태')).toEqual([
-      ['2026/07', '현재시재', '0 억원', '산출값'],
-      ['2026/08', '현재시재', '-1 억원', '산출값'],
-      ['2026/07', '적정시재', '-10 억원', '산출값'],
-      ['2026/08', '적정시재', '2 억원', '산출값'],
-    ]);
-  });
-
-  it('모든 월이 결측·비적용이어도 빈 차트 안내와 월별 사유 표를 함께 제공한다', () => {
-    const points: ReportPoint[] = [
-      { month: ym('2026/07'), kind: 'missing', value: null, reason: '이전 회차가 없습니다.' },
-      { month: ym('2026/08'), kind: 'not-applicable', value: null, reason: '순유입입니다.' },
-    ];
-    const html = renderToStaticMarkup(<ReportChart metric={metricWithPoints('liquidity', points)} />);
-    expect(html).not.toContain('<svg');
-    expect(html).toContain('비율 비적용 1개월');
-    expect(chartTableRows(html, '유동성 Gap 추이 월별 값과 상태')).toEqual([
-      ['2026/07', '유동성 Gap', '—', '결측: 이전 회차가 없습니다.'],
-      ['2026/08', '유동성 Gap', '—', '비율 비적용: 순유입입니다.'],
-    ]);
-  });
-
-  it('참고자료 표는 차트에 사용한 실적·계획을 구분하며 0과 음수를 유지한다', () => {
-    const rows = chartTableRows(page(markup(), 4), '분양회수 월별 금액 월별 값과 상태');
-    expect(rows).toHaveLength(18);
-    expect(rows[0]).toEqual(['2026/01', '분양회수', '0 억원', '실적']);
-    expect(rows[6]).toEqual(['2026/07', '분양회수', '-60 억원', '실적']);
-    expect(rows[7]).toEqual(['2026/08', '분양회수', '-70 억원', '계획']);
-  });
-
-  it('읽지 못한 참고자료도 월별 결측 사유를 표에서 확인할 수 있다', () => {
-    const rows = chartTableRows(page(markup(report({ missing: ['분양회수'] })), 4), '분양회수 월별 금액 월별 값과 상태');
-    expect(rows).toHaveLength(18);
-    expect(rows[0]).toEqual(['2026/01', '분양회수', '—', `결측: ${fullReason}`]);
-  });
-
-  it('이력이 없는 양식에는 존재하지 않는 월별 표를 만들지 않는다', () => {
-    const html = markup(buildFinancialReport());
-    expect(html).not.toContain('월별 값과 상태');
   });
 });
 

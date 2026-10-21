@@ -34,15 +34,13 @@ function makeTheme() {
       '--astryx-theme-my-theme-report-paper': '#FFFFFF',
       '--astryx-theme-my-theme-report-ink': '#171717',
       '--astryx-theme-my-theme-report-blue': '#0088BF',
-      '--astryx-theme-my-theme-report-status-normal': '#005B80',
-      '--astryx-theme-my-theme-report-status-alert': '#A9200B',
       '--astryx-theme-my-theme-report-summary': '#FFFDD4',
       '--astryx-theme-my-theme-report-normal': '#97CF4C',
       '--astryx-theme-my-theme-report-caution': '#FFF100',
       '--astryx-theme-my-theme-report-warning': '#FFB200',
       '--astryx-theme-my-theme-report-crisis': '#FF3B16',
-      '--astryx-theme-my-theme-report-line': '#17344D',
-      '--astryx-theme-my-theme-report-cash': '#8A3A00',
+      '--astryx-theme-my-theme-report-line': '#528FC6',
+      '--astryx-theme-my-theme-report-cash': '#E47735',
     },
     components: {
       button: {
