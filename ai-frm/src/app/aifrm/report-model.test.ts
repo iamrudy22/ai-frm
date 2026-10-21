@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import * as charts from './report-chart';
 import type { PerceptionResponse } from '@/app/api/construction-perception/dto';
 import type { FundingRiskResponse } from '@/app/api/funding-risk/dto';
 import { assessDashboard } from '@/application/dashboard';
@@ -96,7 +99,7 @@ describe('보고서의 기준월과 표시 단위', () => {
       expect(m.value).toBe('—');
       expect(m.status).toBe('산출 전');
       expect(m.grade).toBeNull();
-      expect(m.points).toEqual([]);
+      expect(m.points).toMatchObject([]);
     }
     const empty = buildFinancialReport(input([statement(8)], { rounds: [], generatedAt: new Date('2026-10-31T15:30:00Z') }));
     expect(empty.reportMonth).toBe('—');
@@ -120,7 +123,7 @@ describe('보고서의 기준월과 표시 단위', () => {
     expect(metric(report, 'recovery').points.at(-1)?.month).toBe('2026/07');
     expect(metric(report, 'liquidity').basis).toContain('2026/09~2026/11');
     expect(metric(report, 'cash').basis).toContain('2026/09~2026/11');
-    expect(metric(report, 'construction').points).toEqual([{ month: '2026/06', value: 12.345 }]);
+    expect(metric(report, 'construction').points).toMatchObject([{ month: '2026/06', value: 12.345 }]);
     expect(metric(report, 'funding').points[0].month).toBe('2026/07');
     expect(metric(report, 'funding').basis).toContain('판단월 2026/08');
   });
@@ -134,7 +137,7 @@ describe('보고서의 기준월과 표시 단위', () => {
     expect(metric(report, 'cash').value).toBe('60 억원');
     expect(metric(report, 'cash').grade).toBeNull();
     expect(metric(report, 'cash').status).toBe('안정적');
-    expect(metric(report, 'cash').points.at(-1)).toEqual({ month: '2026/08', value: 860, secondary: 60 });
+    expect(metric(report, 'cash').points.at(-1)).toMatchObject({ month: '2026/08', value: 860, secondary: 60 });
     expect(report.metrics.every((m) => !/전월보다|줄고 있습니다|벌어지고 있습니다|추세입니다/.test(m.narrative))).toBe(true);
   });
 
@@ -157,17 +160,17 @@ describe('보고서 이력의 결측과 당시 회차 보존', () => {
     const report = buildFinancialReport(input([statement(5), statement(8)]));
     expect(metric(report, 'recovery').value).toBe('—');
     expect(metric(report, 'recovery').narrative).toContain('2026/07 회차가 없어');
-    expect(metric(report, 'recovery').points.at(-1)).toEqual({ month: '2026/07', value: null });
+    expect(metric(report, 'recovery').points.at(-1)).toMatchObject({ month: '2026/07', value: null });
     expect(metric(report, 'liquidity').value).not.toBe('—');
   });
 
   it('회차 사이 빠진 달은 0이 아닌 null로 두어 차트가 이어지지 않게 한다', () => {
     const report = buildFinancialReport(input([statement(5), statement(8)]));
-    expect(metric(report, 'liquidity').points).toEqual([
+    expect(metric(report, 'liquidity').points).toMatchObject([
       { month: '2026/05', value: 920 / 60 }, { month: '2026/06', value: null },
       { month: '2026/07', value: null }, { month: '2026/08', value: 860 / 60 },
     ]);
-    expect(metric(report, 'cash').points[1]).toEqual({ month: '2026/06', value: null, secondary: null });
+    expect(metric(report, 'cash').points[1]).toMatchObject({ month: '2026/06', value: null, secondary: null });
   });
 
   it('최신 회차에 수정된 과거 값이 있어도 이전 회차 당시 이력을 바꾸지 않는다', () => {
@@ -214,10 +217,10 @@ describe('보고서 이력의 결측과 당시 회차 보존', () => {
     }));
     expect(metric(report, 'liquidity').points).toEqual(metric(defaultReport, 'liquidity').points);
     expect(metric(report, 'cash').points).toEqual(metric(defaultReport, 'cash').points);
-    expect(metric(report, 'liquidity').points).toEqual([
+    expect(metric(report, 'liquidity').points).toMatchObject([
       { month: '2026/07', value: 10 }, { month: '2026/08', value: 30 },
     ]);
-    expect(metric(report, 'cash').points).toEqual([
+    expect(metric(report, 'cash').points).toMatchObject([
       { month: '2026/07', value: 600, secondary: 60 }, { month: '2026/08', value: 9_000, secondary: 162 },
     ]);
     expect(metric(report, 'liquidity').value).toBe('30.00');
@@ -230,9 +233,9 @@ describe('보고서 이력의 결측과 당시 회차 보존', () => {
   it('이력은 최대 18개월로 제한하고 외부 지표의 과거 점은 만들지 않는다', () => {
     const report = buildFinancialReport(input([statement(1, {}, 2024), statement(8)], { perception: perception(0), funding: funding(3, 3) }));
     expect(metric(report, 'liquidity').points).toHaveLength(18);
-    expect(metric(report, 'liquidity').points[0]).toEqual({ month: '2025/03', value: null });
-    expect(metric(report, 'construction').points).toEqual([{ month: '2026/06', value: 0 }]);
-    expect(metric(report, 'funding').points).toEqual([{ month: '2026/07', value: 0 }]);
+    expect(metric(report, 'liquidity').points[0]).toMatchObject({ month: '2025/03', value: null });
+    expect(metric(report, 'construction').points).toMatchObject([{ month: '2026/06', value: 0 }]);
+    expect(metric(report, 'funding').points).toMatchObject([{ month: '2026/07', value: 0 }]);
     expect(metric(report, 'construction').historyNote).toContain('과거 산출 이력 미조회');
     expect(metric(report, 'funding').historyNote).toContain('과거 산출 이력 미조회');
   });
@@ -256,7 +259,7 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     const report = buildFinancialReport(input([statement(8)], { perception: perception(), perceptionLoading: true }));
     expect(metric(report, 'construction').status).toBe('산출 중');
     expect(metric(report, 'construction').value).toBe('—');
-    expect(metric(report, 'construction').points).toEqual([]);
+    expect(metric(report, 'construction').points).toMatchObject([]);
     expect(metric(report, 'construction').basis).not.toContain('2026/06');
   });
 
@@ -272,7 +275,7 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     const report = buildFinancialReport(input([statement(8)], { perception: unavailable, funding: { ok: false, reason: '합성 조회 실패' } }));
     expect(metric(report, 'construction').status).toBe('산출 불가');
     expect(metric(report, 'construction').narrative).toContain('주가: 아직 공표 전');
-    expect(metric(report, 'construction').points).toEqual([{ month: '2026/06', value: null }]);
+    expect(metric(report, 'construction').points).toMatchObject([{ month: '2026/06', value: null }]);
     expect(metric(report, 'funding').narrative).toBe('합성 조회 실패');
   });
 
@@ -281,7 +284,7 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     for (const id of ['construction', 'funding'] as const) {
       expect(metric(report, id).status).toBe('산출 중');
       expect(metric(report, id).value).toBe('—');
-      expect(metric(report, id).points).toEqual([]);
+      expect(metric(report, id).points).toMatchObject([]);
     }
   });
 
@@ -294,7 +297,7 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     expect(result.status).toBe('산출 불가');
     expect(result.value).toBe('—');
     expect(result.narrative).toBe('마지막 평가일 3사 평균이 비어 있습니다.');
-    expect(result.points).toEqual([{ month: '2026/07', value: null }]);
+    expect(result.points).toMatchObject([{ month: '2026/07', value: null }]);
   });
 
   it('긴 건설경기 누락 사유와 시재 진단은 보고서에서 집계해 요약한다', () => {
@@ -310,6 +313,7 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     }));
     expect(metric(report, 'construction').narrative).toContain('이외 1개 지표');
     expect(metric(report, 'construction').narrative).not.toContain('합성 셋째 사유');
+    expect(metric(report, 'construction').points[0]).toMatchObject({ kind: 'missing', reason: expect.stringContaining('합성 셋째 사유') });
     expect(report.warnings).toContain('시재 이월 불일치 13건: 대시보드에서 상세 확인하세요.');
     expect(report.warnings).toContain('산출 불가 지표 2개 · 산출 중 지표 1개: 해당 지표의 사유를 확인하세요.');
   });
@@ -327,5 +331,110 @@ describe('보고서의 실패·로딩·음수 처리', () => {
     expect(cash.status).toBe('안정적');
     expect(metric(report, 'funding').value).toBe('−0.120%p');
     expect(metric(report, 'funding').points[0].value).toBe(-0.12);
+  });
+});
+
+
+describe('상태를 보존하는 위험 이력과 최신 파일 참고자료 통합', () => {
+  it('빈 양식은 참고자료가 없으며 파일 하나로 참고 3차트를 만든다', () => {
+    expect(buildFinancialReport().referenceTrends).toBeNull();
+    const report = buildFinancialReport(input([statement(8)]));
+    expect(report.referenceTrends?.charts.map((chart) => chart.id)).toEqual(['sales-recovery', 'income-expense', 'opening-cash']);
+    expect(report.referenceTrends?.sourceRound).toBe('2026/08');
+    expect(metric(report, 'recovery').historyCoverage.availableMonths).toEqual([]);
+    expect(metric(report, 'recovery').points[0]).toMatchObject({ kind: 'missing', reason: expect.stringContaining('연속한 두 회차') });
+  });
+
+  it.each([100, 120])('순유입·수지 균형 수입 %s는 정상 등급과 비적용 사유를 보존한다', (income) => {
+    const gap = metric(buildFinancialReport(input([statement(8, { 수입: flat(income) })])), 'liquidity');
+    expect(gap.grade).toBe('정상');
+    expect(gap.points).toEqual([{ month: '2026/08', kind: 'not-applicable', value: null, reason: expect.stringContaining('Gap 비율') }]);
+    expect(gap.historyCoverage).toMatchObject({ kind: 'empty', availableMonths: [], missingMonths: [], notApplicableMonths: ['2026/08'] });
+    expect(gap.historyNote).toContain('비율 비적용 1개월');
+  });
+
+  it('최신월이 실패해도 과거 유효 한 점의 실제 월과 최신 실패 사유를 함께 표시한다', () => {
+    const gap = metric(buildFinancialReport(input([statement(7), statement(8, { 지출: unreadable('합성 지출 누락') })])), 'liquidity');
+    expect(gap.status).toBe('산출 불가');
+    expect(gap.historyCoverage).toMatchObject({ kind: 'single', availableMonths: ['2026/07'], missingMonths: ['2026/08'] });
+    expect(gap.points[1]).toMatchObject({ kind: 'missing', reason: expect.stringContaining('합성 지출 누락') });
+    expect(gap.historyNote).toContain('2026/07의 1개월 값 확보');
+    expect(gap.historyNote).not.toContain('현재값');
+  });
+
+  it.each([
+    [0, -1, 'available'], [0, undefined, 'missing'], [NaN, 0, 'missing'], [0, Infinity, 'missing'],
+  ] as const)('시재 비교 (%s, %s)는 %s이며 렌더링과 coverage 기준이 같다', (openingCash, adequateCash, kind) => {
+    const data = input([statement(8)]);
+    const cash = data.dashboard.adequateCash;
+    if (!cash.ok) throw new Error('합성 시재 오류');
+    // 런타임 외부 경계의 손상 값을 합성한다. 도메인 Amount 생성 규칙은 변경하지 않는다.
+    data.dashboard = { ...data.dashboard, adequateCash: { ok: true, value: { ...cash.value, openingCash, adequateCash } } } as typeof data.dashboard;
+    const result = metric(buildFinancialReport(data), 'cash');
+    expect(result.points[0].kind).toBe(kind);
+    expect(result.historyCoverage.availableMonths).toHaveLength(kind === 'available' ? 1 : 0);
+    const markup = renderToStaticMarkup(createElement(charts.ReportChart, { metric: result }));
+    expect((markup.match(/<circle /g) ?? []).length).toBe(kind === 'available' ? 2 : 0);
+    expect(markup).not.toMatch(/(?:cy|points)="[^"]*(?:NaN|Infinity)/);
+  });
+
+  it('응답 로딩·실패 상태와 사유를 유지하고 참고자료 금액에 영향을 주지 않는다', () => {
+    const data = input([statement(8)]);
+    const pending = buildFinancialReport(data);
+    const failed = buildFinancialReport({ ...data, perception: { ok: false, reason: '합성 원자료 오류' }, funding: { ok: false, reason: '합성 금리 오류' } });
+    expect(failed.referenceTrends).toEqual(pending.referenceTrends);
+    expect(metric(pending, 'construction').status).toBe('산출 중');
+    expect(metric(pending, 'construction').historyNote).toContain('산출 중');
+    expect(metric(failed, 'construction').historyNote).toContain('합성 원자료 오류');
+    expect(metric(failed, 'funding').historyNote).toContain('합성 금리 오류');
+  });
+
+  it('선택월·과거 회차 추가·순서 변경은 같은 최신 파일 참고자료를 바꾸지 않는다', () => {
+    const july = statement(7);
+    const august = statement(8);
+    const data = input([august]);
+    const base = buildFinancialReport(data).referenceTrends;
+    const other = input([july, august]);
+    const latest = data.rounds[0];
+    const rounds = [latest, ...other.rounds.filter((round) => round.round !== latest.round)];
+    expect(buildFinancialReport({ ...data, rounds, gapMonth: ym('2026/09'), dashboard: assessDashboard(july, august, august.months[8]) }).referenceTrends).toEqual(base);
+  });
+
+  it('같은 회차·파일명의 수정본은 내용이 갱신되고 새 회차는 출처 회차도 갱신된다', () => {
+    const original = input([statement(8)]);
+    const changed = input([statement(8, { 수입: flat(222) })]);
+    const first = buildFinancialReport(original).referenceTrends!;
+    const next = buildFinancialReport(changed).referenceTrends!;
+    expect(next.sourceFile).toBe(first.sourceFile);
+    expect(next.sourceRound).toBe(first.sourceRound);
+    expect(next.charts[1].series[0].points[0].value).toBe(222);
+    expect(first.charts[1].series[0].points[0].value).toBe(80);
+    expect(buildFinancialReport(input([statement(9)])).referenceTrends?.sourceRound).toBe('2026/09');
+  });
+
+  it('참고 SVG는 독립 계열 결측·실적 실선·계획 점선과 출처를 표현한다', () => {
+    const trend = buildFinancialReport(input([statement(8, { 수입: unreadable('합성 수입 누락') })])).referenceTrends!;
+    const markup = renderToStaticMarkup(createElement(charts.StatementReferenceChart, { trend, chart: trend.charts[1] }));
+    expect(markup).toContain('<title>');
+    expect(markup).toContain('<desc>');
+    expect(markup).toContain('수입·지출');
+    expect(markup).toContain('단위: 억원');
+    expect(markup).toContain('2026/08');
+    expect(markup).toContain('synthetic-0.xlsx');
+    expect(markup).toContain('실적 실선');
+    expect(markup).toContain('계획 점선');
+    expect(markup).toContain('합성 수입 누락');
+    expect(markup).toContain('stroke-dasharray=');
+    expect(markup).toContain('data-series="지출"');
+    expect(markup).not.toContain('report-normal');
+    expect((markup.match(/<circle /g) ?? []).length).toBe(labels.length);
+  });
+
+  it.each([0, -123, 8_000_000])('참고 SVG의 값 %s는 유한한 축 영역 안에 표시된다', (value) => {
+    const trend = buildFinancialReport(input([statement(8, { 기초시재: flat(value) })])).referenceTrends!;
+    const markup = renderToStaticMarkup(createElement(charts.StatementReferenceChart, { trend, chart: trend.charts[2] }));
+    const ys = [...markup.matchAll(/cy="([^"]+)"/g)].map((match) => Number(match[1]));
+    expect(ys).toHaveLength(labels.length);
+    expect(ys.every((y) => Number.isFinite(y) && y >= 24 && y <= 120)).toBe(true);
   });
 });

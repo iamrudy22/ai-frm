@@ -13,8 +13,10 @@ import { addMonths, compareYearMonth, parseYearMonth, type YearMonth } from '@/d
 import { spanText } from './dashboard-view';
 import { money, percentPoints } from './format';
 import type { UploadedRound } from './uploaded-rounds';
+import { summarizeHistory, type ChartDatum, type HistoryCoverage } from './report-chart-view';
+import { buildStatementReferenceTrends, type StatementReferenceTrends } from './report-reference';
 
-export type ReportPoint = { month: string; value: number | null; secondary?: number | null };
+export type ReportPoint = ChartDatum & { secondary?: number | null };
 
 export type ReportMetric = {
   id: 'recovery' | 'liquidity' | 'construction' | 'funding' | 'cash';
@@ -28,6 +30,7 @@ export type ReportMetric = {
   source: string;
   points: readonly ReportPoint[];
   historyNote: string;
+  historyCoverage: HistoryCoverage;
 };
 
 export type FinancialReport = {
@@ -38,6 +41,7 @@ export type FinancialReport = {
   isTemplate: boolean;
   metrics: readonly ReportMetric[];
   warnings: readonly string[];
+  referenceTrends: StatementReferenceTrends | null;
 };
 
 export type FinancialReportInput = {
@@ -72,6 +76,7 @@ function metric(id: ReportMetric['id'], basis: string, points: readonly ReportPo
     basis,
     narrative: '자금수지표를 업로드하고 지표를 산출하면 결과가 표시됩니다.',
     points,
+    historyCoverage: summarizeHistory(points),
     historyNote: id === 'construction' || id === 'funding' ? EXTERNAL_HISTORY : LOCAL_HISTORY,
   };
 }
@@ -92,7 +97,26 @@ function narrativeMoney(value: number): string {
     : money(value);
 }
 
-/** 빠진 달을 null로 채운다. 결측과 산출값 0은 서로 다르다. */
+function missingPoint(month: YearMonth, reason: string): ReportPoint {
+  return { month, kind: 'missing', value: null, reason };
+}
+
+function availablePoint(month: YearMonth, value: number): ReportPoint {
+  return Number.isFinite(value)
+    ? { month, kind: 'available', value }
+    : missingPoint(month, '산출값이 유한한 수가 아닙니다.');
+}
+
+const CASH_COMPARISON_MISSING = '현재시재와 적정시재가 모두 유한한 수여야 비교할 수 있습니다.';
+
+/** 현재시재·적정시재는 한 쌍으로 비교한다. 0과 음수도 유효하다. */
+function cashPoint(month: YearMonth, openingCash: number, adequateCash: number): ReportPoint {
+  return Number.isFinite(openingCash) && Number.isFinite(adequateCash)
+    ? { month, kind: 'available', value: openingCash, secondary: adequateCash }
+    : { ...missingPoint(month, CASH_COMPARISON_MISSING), secondary: null };
+}
+
+/** 빠진 달에는 회차 부재 사유를 남긴다. 결측과 산출값 0은 서로 다르다. */
 function continuousPoints(points: readonly ReportPoint[]): ReportPoint[] {
   const byMonth = new Map(points.map((point) => [point.month, point]));
   const months = [...byMonth.keys()].map(parseYearMonth).sort(compareYearMonth);
@@ -103,7 +127,7 @@ function continuousPoints(points: readonly ReportPoint[]): ReportPoint[] {
   const hasSecondary = points.some((point) => point.secondary !== undefined);
   const result: ReportPoint[] = [];
   for (let month = from; compareYearMonth(month, to) <= 0; month = addMonths(month, 1)) {
-    result.push(byMonth.get(month) ?? { month, value: null, ...(hasSecondary ? { secondary: null } : {}) });
+    result.push(byMonth.get(month) ?? { ...missingPoint(month, '업로드 회차가 없습니다.'), ...(hasSecondary ? { secondary: null } : {}) });
   }
   return result;
 }
@@ -125,9 +149,21 @@ function localHistory(rounds: readonly UploadedRound[], latest: UploadedRound, i
     const gap = dashboard.liquidityGap;
     const cash = dashboard.adequateCash;
     const cashMonth = cash.ok ? calendarOf(current.statement, cash.value.month) : base;
-    history.recovery.push({ month: addMonths(current.round, -1), value: recovery?.ok ? recovery.value.rate : null });
-    history.liquidity.push({ month: base, value: gap.ok && gap.value.kind === 'gap' ? gap.value.gapRatio : null });
-    history.cash.push({ month: cashMonth, value: cash.ok ? cash.value.openingCash : null, secondary: cash.ok ? cash.value.adequateCash : null });
+    const recoveryMonth = addMonths(current.round, -1);
+    history.recovery.push(recovery?.ok
+      ? availablePoint(recoveryMonth, recovery.value.rate)
+      : missingPoint(recoveryMonth, recovery === null
+        ? '직전 회차가 없어 비교할 수 없습니다. 연속한 두 회차가 필요합니다.'
+        : recovery.reason));
+    history.liquidity.push(!gap.ok
+      ? missingPoint(base, gap.reason)
+      : gap.value.kind === 'gap'
+        ? availablePoint(base, gap.value.gapRatio)
+        : { month: base, kind: 'not-applicable', value: null,
+          reason: `${gap.value.netInflow === 0 ? '수지 균형' : '순유입'}으로 순지출이 없어 Gap 비율을 산출하지 않습니다.` });
+    history.cash.push(cash.ok
+      ? cashPoint(cashMonth, cash.value.openingCash, cash.value.adequateCash)
+      : { ...missingPoint(cashMonth, cash.reason), secondary: null });
   }
   return {
     recovery: continuousPoints(history.recovery),
@@ -191,6 +227,7 @@ function cashMetric(input: FinancialReportInput, latest: UploadedRound, history:
   };
   if (!outcome.ok) return unavailable(base, outcome.reason);
   const result = outcome.value;
+  if (!Number.isFinite(result.openingCash) || !Number.isFinite(result.adequateCash)) return unavailable(base, CASH_COMPARISON_MISSING);
   const difference = result.surplus === 0 ? '두 금액이 같습니다' : `${narrativeMoney(Math.abs(result.surplus))} ${result.surplus > 0 ? '여유가 있습니다' : '부족합니다'}`;
   return {
     ...base, value: money(result.adequateCash), status: verdictLabel(result.isAdequate),
@@ -227,13 +264,13 @@ function constructionMetric(input: FinancialReportInput, latest: UploadedRound):
   if (result.kind === 'unavailable') {
     const reasons = result.missing.slice(0, 2).map((m) => `${m.key}: ${m.reason}`).join(' / ');
     const rest = result.missing.length > 2 ? ` / 이외 ${result.missing.length - 2}개 지표는 대시보드에서 상세 확인하세요.` : '';
-    return unavailable({ ...withBasis, points: [{ month: result.month, value: null }] }, `${reasons}${rest}` || '필요한 세부지표가 없어 산출하지 못했습니다.');
+    return unavailable({ ...withBasis, points: [missingPoint(result.month, result.missing.map((item) => `${item.key}: ${item.reason}`).join(' / ') || '필요한 세부지표가 없어 산출하지 못했습니다.')] }, `${reasons}${rest}` || '필요한 세부지표가 없어 산출하지 못했습니다.');
   }
   const changes = constructionChanges(result.lines);
   return {
     ...withBasis, value: result.index.toFixed(2), status: result.grade, grade: result.grade,
     narrative: `${result.month} 기준 건설경기 인식 지수는 ${result.index.toFixed(2)}로 '${result.grade}' 단계입니다.${changes ? ` ${changes}입니다.` : ''}`,
-    points: [{ month: result.month, value: result.index }],
+    points: [availablePoint(result.month, result.index)],
   };
 }
 
@@ -245,11 +282,34 @@ function fundingMetric(input: FinancialReportInput, latest: UploadedRound): Repo
   const result = response.value.result;
   if (result.judgedMonth !== latest.round) return unavailable(base, `${latest.round} 판단월의 금리 응답을 기다리고 있습니다.`, '산출 중');
   const withBasis = { ...base, basis: `판단월 ${result.judgedMonth} · ${result.observedMonth} 말 금리` };
-  if (result.kind === 'unavailable') return unavailable({ ...withBasis, points: [{ month: result.observedMonth, value: null }] }, result.reason);
+  if (result.kind === 'unavailable') return unavailable({ ...withBasis, points: [missingPoint(result.observedMonth, result.reason)] }, result.reason);
   return {
     ...withBasis, value: percentPoints(result.spread), status: result.grade, grade: result.grade,
     narrative: `${result.evaluationDate} 평가일의 공사채 AAA 1년 금리는 ${result.publicAaa.average.toFixed(3)}%, 국고채 1년 금리는 ${result.treasury.average.toFixed(3)}%이며, 금리 차이는 ${percentPoints(result.spread)}입니다. 정책 구간에 따른 판정은 '${result.grade}'입니다.`,
-    points: [{ month: result.observedMonth, value: result.spread }],
+    points: [availablePoint(result.observedMonth, result.spread)],
+  };
+}
+
+/** 최종 점으로 coverage를 정하되 현재 지표의 로딩·실패·정상 판정은 유지한다. */
+function withHistoryCoverage(metric: ReportMetric): ReportMetric {
+  const coverage = summarizeHistory(metric.points);
+  const count = coverage.availableMonths.length;
+  const availability = count === 1
+    ? `${coverage.availableMonths[0]}의 1개월 값 확보`
+    : count > 1 ? `산출값 ${count}개월 확보` : '';
+  const notApplicable = coverage.notApplicableMonths.length > 0
+    ? `비율 비적용 ${coverage.notApplicableMonths.length}개월` : '';
+  const missing = coverage.missingMonths.length > 0 ? `결측 ${coverage.missingMonths.length}개월` : '';
+  const reasons = [...new Set(metric.points.flatMap((point) => point.kind === 'available' ? [] : [point.reason]))];
+  // 외부 지표의 긴 원천 사유는 점에 온전히 남기고, 인쇄 캡션은 기존 본문 요약을 쓴다.
+  const displayedReasons = metric.id === 'construction' || metric.id === 'funding' ? [] : reasons.slice(0, 2);
+  const additionalReasons = displayedReasons.length > 0 && reasons.length > displayedReasons.length
+    ? `이외 ${reasons.length - displayedReasons.length}개 사유` : '';
+  const current = metric.status === '산출 중' || metric.status === '산출 불가'
+    ? `${metric.status}: ${metric.narrative}` : '';
+  return {
+    ...metric, historyCoverage: coverage,
+    historyNote: [metric.historyNote, availability, notApplicable, missing, ...displayedReasons, additionalReasons, current].filter(Boolean).join(' · '),
   };
 }
 
@@ -262,13 +322,14 @@ export function buildFinancialReport(input?: FinancialReportInput): FinancialRep
       title: '재무위험관리시스템 현황 보고 (양식)', reportMonth: NONE, latestRound: NONE, generatedOn: date, isTemplate: true,
       metrics: DEFINITIONS.map((definition) => metric(definition.id, '자료 업로드 전')),
       warnings: ['빈 보고서 양식입니다. 업로드·산출 전에는 수치를 표시하지 않습니다.'],
+      referenceTrends: null,
     };
   }
   const history = localHistory(rounds, latest, input);
   const metrics = [
     recoveryMetric(input, latest, history), liquidityMetric(input, latest, history),
     constructionMetric(input, latest), fundingMetric(input, latest), cashMetric(input, latest, history),
-  ];
+  ].map(withHistoryCoverage);
   const diagnostics = input.dashboard.diagnostics;
   const unavailableCount = metrics.filter((item) => item.status === '산출 불가').length;
   const loadingCount = metrics.filter((item) => item.status === '산출 중').length;
@@ -287,5 +348,6 @@ export function buildFinancialReport(input?: FinancialReportInput): FinancialRep
   return {
     title: `재무위험관리시스템 현황 보고 (${reportMonth})`, reportMonth, latestRound: latest.round,
     generatedOn: date, isTemplate: false, metrics, warnings: [...new Set(warnings)],
+    referenceTrends: buildStatementReferenceTrends(latest),
   };
 }
