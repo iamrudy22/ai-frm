@@ -68,7 +68,7 @@ export function FundingRiskCard({ fundingRisk }: { fundingRisk: FundingRiskState
   const { response, retry } = fundingRisk;
   return (
     <VStack gap={3}>
-      <Heading level={2}>조달위험 인식 지수</Heading>
+      <Heading level={2} id="risk-funding" tabIndex={-1}>조달위험 인식 지수</Heading>
       {response === null ? (
         <Text type="supporting">금융투자협회 채권정보센터에서 금리를 불러오는 중…</Text>
       ) : response.ok ? (

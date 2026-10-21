@@ -133,7 +133,7 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
   return (
     <VStack as="figure" gap={1} className="report-chart min-w-0 border! border-solid border-report-ink/30!" padding={2}>
       <Text type="label" color="inherit" size="sm" justify="center">{title}</Text>
-      <Text size="xsm" color="inherit" className="report-screen-details sm:hidden">가로로 스크롤하면 차트 전체를 볼 수 있습니다.</Text>
+      <Text size="xsm" color="inherit" className="report-screen-details sm:hidden!">가로로 스크롤하면 차트 전체를 볼 수 있습니다.</Text>
       <VStack isScrollable width="100%" className="report-chart-scroll min-w-0" role="region" tabIndex={0}
         aria-label={`${title} 가로 스크롤 영역`}>
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width="100%" role="img" className="min-w-2xl"

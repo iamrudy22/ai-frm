@@ -140,7 +140,7 @@ export function ConstructionPerceptionCard({ perception }: { perception: Percept
   const { response, isLoading, unreadable, selectedMonth, choose, reset, retry } = perception;
   return (
     <VStack gap={3}>
-      <Heading level={2}>건설경기 인식 지수</Heading>
+      <Heading level={2} id="risk-construction" tabIndex={-1}>건설경기 인식 지수</Heading>
       {unreadable !== null && (
         <Banner status="warning" title="분양회수를 읽지 못한 회차가 있습니다" description={unreadable.text} />
       )}

@@ -194,17 +194,8 @@ export default function AifrmDashboardPage() {
           height="auto"
           padding={6}
           content={
-            <LayoutContent>
-              <VStack gap={4}>
-                <HStack className="report-controls bg-report-paper" padding={3}>
-                  <Button
-                    label="대시보드로 돌아가기"
-                    variant="secondary"
-                    onClick={() => setReportOpenedAt(null)}
-                  />
-                </HStack>
-                <FinancialReportPreview report={report} />
-              </VStack>
+            <LayoutContent isScrollable={false}>
+              <FinancialReportPreview report={report} onBack={() => setReportOpenedAt(null)} />
             </LayoutContent>
           }
         />
@@ -300,6 +291,8 @@ export default function AifrmDashboardPage() {
               <Text type="supporting">
                 {loaded === null
                   ? '파일을 올리기 전에도 기본 3쪽의 보고서 양식을 볼 수 있습니다.'
+                  : perception.isLoading || fundingRisk.response === null
+                    ? '외부 자료를 조회하고 있습니다. 보고서에도 진행 상태가 표시됩니다.'
                   : '현재 산출 결과로 보고서를 확인한 뒤 PDF로 저장할 수 있습니다.'}
               </Text>
             </VStack>
@@ -313,7 +306,7 @@ export default function AifrmDashboardPage() {
                 <Divider />
 
                 <VStack gap={3}>
-                  <Heading level={2}>대금 회수 위험</Heading>
+                  <Heading level={2} id="risk-recovery" tabIndex={-1}>대금 회수 위험</Heading>
                   <RecoveryResult
                     recovery={dashboard.paymentRecovery}
                     statement={loaded.latest.statement}
@@ -325,7 +318,7 @@ export default function AifrmDashboardPage() {
 
                 <VStack gap={5}>
                   <VStack gap={3} align="start">
-                    <Heading level={2}>유동성 Gap · 적정 시재</Heading>
+                    <Heading level={2} id="risk-liquidity" tabIndex={-1}>유동성 Gap · 적정 시재</Heading>
                     <Selector
                       label="Gap·시재 기준월"
                       description={`${LIQUIDITY_WINDOW_MONTHS}개월 창의 첫 달입니다. 기본값은 최신 회차의 기준월입니다`}
@@ -341,7 +334,7 @@ export default function AifrmDashboardPage() {
                   </VStack>
 
                   <VStack gap={3}>
-                    <Heading level={3}>적정 시재</Heading>
+                    <Heading level={3} id="risk-cash" tabIndex={-1}>적정 시재</Heading>
                     <AdequateCashResult adequateCash={dashboard.adequateCash} statement={loaded.latest.statement} />
                   </VStack>
                 </VStack>
@@ -388,10 +381,15 @@ function summaryTiles(
   ];
 }
 
-/**
- * 다섯 지표를 먼저 한 줄로. 상세는 아래 섹션에 있다.
- * 칸의 최소 폭은 다섯 칸이 본문 폭(960)에 한 줄로 들어가게 잡았다. 좁은 화면에서는 줄을 바꾼다.
- */
+const RESULT_TARGETS: Record<string, string> = {
+  '대금 회수 위험': 'risk-recovery',
+  '유동성 Gap': 'risk-liquidity',
+  '적정 시재': 'risk-cash',
+  '건설경기 인식 지수': 'risk-construction',
+  '조달위험 인식 지수': 'risk-funding',
+};
+
+/** 다섯 요약과 상세 이동. 좁은 화면에서는 카드 줄을 바꾼다. */
 function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
   return (
     <Grid gap={4} columns={{ minWidth: 160, repeat: 'fit' }}>
@@ -407,6 +405,16 @@ function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
             <Text type="supporting" size="xsm">
               {tile.note}
             </Text>
+            {RESULT_TARGETS[tile.title] && (
+              <Button label="상세 보기" aria-label={`${tile.title} 상세 보기`} variant="ghost" size="sm"
+                href={`#${RESULT_TARGETS[tile.title]}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  const heading = document.getElementById(RESULT_TARGETS[tile.title]);
+                  heading?.focus();
+                  heading?.scrollIntoView({ block: 'start' });
+                }} />
+            )}
           </VStack>
         </Card>
       ))}

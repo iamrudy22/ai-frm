@@ -63,6 +63,48 @@ function chartTableRows(html: string, label: string): string[][] {
     [...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => cell[1].replace(/<[^>]*>/g, '')));
 }
 
+function statusText(html: string, label: string): string | undefined {
+  return html.match(new RegExp(`<[^>]+role="status"[^>]*aria-label="${label}"[^>]*>([^<]*)</[^>]+>`))?.[1];
+}
+
+describe('보고서 작업 영역과 출력 상태', () => {
+  it('실제 산출값이 없는 양식 미리보기 상태를 알린다', () => {
+    expect(statusText(markup(buildFinancialReport()), '지표 산출 상태')).toBe('양식 미리보기 · 실제 산출값 없음');
+  });
+
+  it('현재 보고서의 산출 중·산출 불가 개수를 알려 완료 결과와 구별한다', () => {
+    const value = report();
+    const html = markup({ ...value, metrics: value.metrics.map((metric, index) => ({
+      ...metric, status: index < 2 ? '산출 중' : index === 2 ? '산출 불가' : '정상',
+    })) });
+    expect(statusText(html, '지표 산출 상태')).toBe('산출 중 2개 · 산출 불가 1개');
+    expect(html).toContain('현재 상태와 사유를 포함해 출력합니다.');
+    expect(html).not.toContain('지표 5개 산출 완료');
+  });
+
+  it('조회 중이거나 산출 불가인 지표가 없으면 전체 지표의 산출 완료를 알린다', () => {
+    const value = report();
+    const html = markup({ ...value, metrics: value.metrics.map((metric) => ({ ...metric, status: '정상' })) });
+    expect(statusText(html, '지표 산출 상태')).toBe('지표 5개 산출 완료');
+  });
+
+  it('HTML에 참고자료가 있어도 기본 PDF 출력은 3쪽으로 안내한다', () => {
+    const html = markup();
+    expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(4);
+    expect(statusText(html, 'PDF 출력 구성')).toBe('PDF 출력: 3쪽');
+    expect(html).toContain('월별 금액 참고자료를 PDF에 포함');
+  });
+
+  it('복귀 동작을 제공하면 보고서 안에 복귀 버튼과 인쇄·PDF 저장 버튼을 함께 제공한다', () => {
+    const html = renderToStaticMarkup(<FinancialReportPreview report={report()} onBack={() => {}} />);
+    const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    expect(buttons.filter((button) => button.includes('대시보드로 돌아가기'))).toHaveLength(1);
+    expect(buttons.filter((button) => button.includes('인쇄 / PDF 저장'))).toHaveLength(1);
+    expect(html).toMatch(/<h2\b[^>]*id="report-view-heading"[^>]*tabindex="-1"/);
+    expect(markup()).not.toContain('대시보드로 돌아가기');
+  });
+});
+
 describe('HTML 보고서와 PDF 참고자료 선택', () => {
   it('회수율과 Gap의 숫자 주값에 배 단위를 붙이고 값의 정밀도는 유지한다', () => {
     const value = report();

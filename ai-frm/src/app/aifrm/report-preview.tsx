@@ -259,9 +259,15 @@ function StatementReferencePage({ trend }: { trend: StatementReferenceTrends }) 
   );
 }
 
-export function FinancialReportPreview({ report }: { report: FinancialReport }) {
+export function FinancialReportPreview({ report, onBack }: { report: FinancialReport; onBack?: () => void }) {
   const [includeReferenceInPrint, setIncludeReferenceInPrint] = useState(false);
   const hasReference = report.referenceTrends !== null;
+  const loadingCount = report.metrics.filter((item) => item.status === '산출 중').length;
+  const unavailableCount = report.metrics.filter((item) => item.status === '산출 불가').length;
+  const calculationStatus = report.isTemplate ? '양식 미리보기 · 실제 산출값 없음'
+    : loadingCount === 0 && unavailableCount === 0 ? `지표 ${report.metrics.length}개 산출 완료`
+      : `산출 중 ${loadingCount}개 · 산출 불가 ${unavailableCount}개`;
+  const printPages = hasReference && includeReferenceInPrint ? 4 : 3;
   const metric = (id: ReportMetric['id']) => report.metrics.find((item) => item.id === id);
   const recovery = metric('recovery');
   const liquidity = metric('liquidity');
@@ -272,15 +278,26 @@ export function FinancialReportPreview({ report }: { report: FinancialReport }) 
   return (
     <VStack as="article" gap={5} className="report-root min-w-0 text-report-ink" aria-label="재무위험관리 HTML 보고서"
       data-include-reference-in-print={includeReferenceInPrint}>
-      <HStack gap={4} wrap="wrap" vAlign="center" hAlign="between" className="report-controls bg-report-paper" padding={4}>
-        <VStack gap={1}>
+      <VStack gap={2} padding={3}
+        className="report-controls sticky! top-0! z-10 min-w-0 bg-report-paper border-b! border-solid border-report-ink/30!">
+        <HStack gap={2} wrap="wrap" vAlign="center" hAlign="between">
           <Heading level={2} color="inherit" className="text-lg" id="report-view-heading" tabIndex={-1}>HTML 보고서</Heading>
-          <Text size="sm" color="inherit">인쇄 창에서 ‘PDF로 저장’을 선택하면 PDF 파일로 받을 수 있습니다.</Text>
-          {hasReference && <CheckboxInput label="월별 금액 참고자료를 PDF에 포함" value={includeReferenceInPrint}
-            onChange={setIncludeReferenceInPrint} description="기본 3쪽 · 선택 시 참고자료를 포함한 4쪽" />}
-        </VStack>
-        <Button label="PDF로 저장" variant="primary" onClick={() => window.print()} />
-      </HStack>
+          <Text size="sm" color="inherit" role="status" aria-label="PDF 출력 구성">{`PDF 출력: ${printPages}쪽`}</Text>
+        </HStack>
+        <HStack gap={2} wrap="wrap" vAlign="center" hAlign="between">
+          <Text size="sm" color="inherit" role="status" aria-label="지표 산출 상태">{calculationStatus}</Text>
+          <HStack gap={2} wrap="wrap">
+            {onBack && <Button label="대시보드로 돌아가기" variant="secondary" size="sm" onClick={onBack} />}
+            <Button label="인쇄 / PDF 저장" variant="primary" size="sm" onClick={() => window.print()} />
+          </HStack>
+        </HStack>
+      </VStack>
+      <VStack gap={2} padding={4} className="report-controls bg-report-paper">
+        <Text size="sm" color="inherit">인쇄 창에서 ‘PDF로 저장’을 선택하면 PDF 파일로 받을 수 있습니다.</Text>
+        {!report.isTemplate && <Text size="sm" color="inherit">산출 중이거나 산출할 수 없는 지표도 현재 상태와 사유를 포함해 출력합니다.</Text>}
+        {hasReference && <CheckboxInput label="월별 금액 참고자료를 PDF에 포함" value={includeReferenceInPrint}
+          onChange={setIncludeReferenceInPrint} description="기본 3쪽 · 선택 시 참고자료를 포함한 4쪽" />}
+      </VStack>
 
       <Sheet page={1}>
         <VStack as="header" gap={2}>
