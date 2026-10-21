@@ -7,15 +7,13 @@ import { Button } from '@astryxdesign/core/Button';
 import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
-import { FileInput } from '@astryxdesign/core/FileInput';
 import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Step, Stepper } from '@astryxdesign/core/Stepper';
-import { proportional, Table } from '@astryxdesign/core/Table';
+import { Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
@@ -41,10 +39,8 @@ import { ConstructionPerceptionCard, usePerception, type Perception } from './co
 import { FundingRiskCard, useFundingRisk, type FundingRiskState } from './funding-risk-card';
 import {
   arrangeRounds,
-  requirementsOf,
   roundsText,
   type NamedStatement,
-  type UploadedRound,
 } from './uploaded-rounds';
 import { calendarOfLabel, calendarOptions, monthAt, spanText } from './dashboard-view';
 import {
@@ -62,6 +58,7 @@ import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
+import { UploadPanel } from './upload-panel';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -71,20 +68,6 @@ const COLUMNS = [
   { key: '항목', header: '항목' },
   { key: '값', header: '값' },
 ];
-
-type RoundRow = { 회차: string; 쓰임: string; 파일: string } & Record<string, unknown>;
-
-const ROUND_COLUMNS = [
-  { key: '회차', header: '회차', width: proportional(1) },
-  { key: '쓰임', header: '쓰임', width: proportional(2) },
-  { key: '파일', header: '파일', width: proportional(2) },
-];
-
-const ROLE_TEXT: Record<UploadedRound['role'], string> = {
-  '최신 회차': '최신 회차 — 유동성 Gap·적정 시재 기준, 대금 회수 위험·분양회수 실적, 조달위험 판단월',
-  '이전 회차': '이전 회차 — 대금 회수 위험 계획',
-  분양회수: '건설경기 인식 지수(분양회수)만',
-};
 
 // ── 화면 ─────────────────────────────────────────────────────────────────
 
@@ -210,58 +193,20 @@ export default function AifrmDashboardPage() {
       content={
         <LayoutContent>
           <VStack gap={6}>
-            <VStack gap={1}>
-              <Heading level={1}>재무위험 선행지표</Heading>
-              <Text type="supporting">
-                자금수지표 회차를 올리면 대금 회수 위험·유동성 Gap·적정 시재와 건설경기·조달위험 인식
-                지수를 함께 판정합니다. 올린 파일은 저장하지 않습니다.
-              </Text>
-            </VStack>
+            <Heading level={1}>자금수지표 등록</Heading>
 
-            <Stepper label="보고서 작성 단계" density="compact"
-              activeStep={prepared.kind === 'ready' && loaded === prepared.rounds ? 2
-                : prepared.kind === 'reading' || prepared.kind === 'ready' ? 1 : 0}
-              horizontalOptions={{ minimumStepWidth: '7rem', collapsedVariant: 'withLabel' }}>
-              <Step step={0} label="파일 선택" />
-              <Step step={1} label="회차 확인" />
-              <Step step={2} label="결과 확인" />
-              <Step step={3} label="보고서 저장" />
-            </Stepper>
-
-            <VStack gap={3} align="start">
-              <Heading level={2}>자금수지표 준비</Heading>
-              <Text type="supporting">
-                기본 산출에 필요한 회차 예: 최신이 8월이면 5·7·8월입니다. 실제 필요 회차와 판독 상태는
-                파일 선택 후 표에서 확인하세요.
-              </Text>
-              <Text type="supporting">
-                최신 파일 하나로 월별 금액을 볼 수 있습니다. 위험지표 추이는 올린 회차에서 확보한 값만
-                표시하며, 빠진 달은 채우지 않습니다.
-              </Text>
-              <FileInput
-                label="자금수지표 회차"
-                description="최신 회차와 그 전 회차들을 한 번에 올리세요. 고르면 바로 읽어 지표마다 필요한 회차가 있는지 알려 드립니다."
-                placeholder="자금수지표 파일 선택(여러 개)"
-                accept=".xlsx,.xls"
-                isMultiple
-                value={files}
-                onChange={(picked) => {
-                  const list = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
-                  const id = nextReadId();
-                  dispatchUpload({ type: 'select', id, files: list });
-                  void prepare(list, id);
-                }}
-              />
-
-              {prepared.kind === 'ready' && <Requirements rounds={prepared.rounds} />}
-
-              <Button
-                label={prepared.kind === 'reading' ? `읽는 중… ${prepared.done}/${prepared.total}` : '산출하기'}
-                variant="primary"
-                isDisabled={prepared.kind !== 'ready' || loaded === prepared.rounds}
-                onClick={handleSubmit}
-              />
-            </VStack>
+            <UploadPanel
+              files={files}
+              prepared={prepared}
+              isApplied={prepared.kind === 'ready' && loaded === prepared.rounds}
+              onFilesChange={(picked) => {
+                const list = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+                const id = nextReadId();
+                dispatchUpload({ type: 'select', id, files: list });
+                void prepare(list, id);
+              }}
+              onSubmit={handleSubmit}
+            />
 
             {prepared.kind === 'error' && (
               <Banner status="error" title="새 파일을 확인하지 못했습니다" description={prepared.reason} />
@@ -430,64 +375,6 @@ function StatusMark({ status }: { status: SummaryStatus }) {
       <Text type="supporting">{status.label}</Text>
     </HStack>
   );
-}
-
-// ── 필요한 회차 ──────────────────────────────────────────────────────────
-
-type RequirementRow = { 지표: string; 회차: string; 상태: string; ok: boolean } & Record<string, unknown>;
-
-const REQUIREMENT_COLUMNS = [
-  { key: '지표', header: '지표', width: proportional(2) },
-  { key: '회차', header: '필요한 회차', width: proportional(1) },
-  {
-    key: '상태',
-    header: '올린 회차',
-    width: proportional(2),
-    renderCell: (row: RequirementRow) => (
-      <HStack gap={2} vAlign="center">
-        <StatusDot variant={row.ok ? 'success' : 'warning'} label={row.ok ? '있음' : '없음'} />
-        <Text>{row.상태}</Text>
-      </HStack>
-    ),
-  },
-];
-
-/**
- * 산출 전에 지표마다 필요한 회차가 올라왔는지 보인다. 빠진 회차가 있어도 산출은 막지 않는다 —
- * 그 지표만 산출불가가 되고 나머지는 나온다.
- */
-function Requirements({ rounds }: { rounds: Loaded }) {
-  const rows: RequirementRow[] = requirementsOf(rounds.rounds.map((r) => r.round)).map((req) => ({
-    지표: req.indicator,
-    회차: roundsText(req.needed),
-    상태: req.missing.length === 0 ? '모두 있음' : `${roundsText(req.missing)} 없음 — ${req.ifMissing}`,
-    ok: req.missing.length === 0,
-  }));
-
-  return (
-    <VStack gap={2}>
-      <Text type="supporting" size="xsm">
-        올린 회차 {rounds.rounds.length}개: {roundsText(rounds.rounds.map((r) => r.round))} (최신 {rounds.latest.round}).
-        건설경기 기준월은 산출 뒤 바꿀 수 있고, 그러면 필요한 회차도 바뀝니다.
-      </Text>
-      <Table data={rows} columns={REQUIREMENT_COLUMNS} />
-      <Collapsible trigger="파일별 회차" defaultIsOpen={false}>
-        <VStack gap={2}>
-          <Text type="supporting" size="xsm">
-            회차는 파일 기준일의 달입니다. 올린 순서와 상관없이 회차 순서로 씁니다.
-          </Text>
-          <Table data={roundRows(rounds.rounds)} columns={ROUND_COLUMNS} />
-          <Text type="supporting" size="xsm">
-            파일을 바꾸려면 위에서 다시 고르세요.
-          </Text>
-        </VStack>
-      </Collapsible>
-    </VStack>
-  );
-}
-
-function roundRows(rounds: readonly UploadedRound[]): RoundRow[] {
-  return [...rounds].reverse().map((r) => ({ 회차: r.round, 쓰임: ROLE_TEXT[r.role], 파일: r.file }));
 }
 
 // ── 진단 ─────────────────────────────────────────────────────────────────

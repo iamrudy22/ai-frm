@@ -23,3 +23,6 @@ Thumbs.db
 
 # Temporary files
 *.tsbuildinfo
+
+# Local UI mockups and companion server session state
+.superpowers/brainstorm/
