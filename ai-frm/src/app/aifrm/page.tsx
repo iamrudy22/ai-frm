@@ -13,7 +13,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Table } from '@astryxdesign/core/Table';
+import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
@@ -566,10 +566,10 @@ function remarkText(m: AdequateCashMonth): string {
 type BreakdownRow = { 항목: string; 합계: string; 가중치: string; 가중값: string } & Record<string, unknown>;
 
 const BREAKDOWN_COLUMNS = [
-  { key: '항목', header: '항목' },
-  { key: '합계', header: '3개월 합계' },
-  { key: '가중치', header: '가중치' },
-  { key: '가중값', header: '가중값' },
+  { key: '항목', header: '항목', width: proportional(1) },
+  { key: '합계', header: '3개월 합계', width: proportional(1) },
+  { key: '가중치', header: '가중치', width: proportional(1) },
+  { key: '가중값', header: '가중값', width: proportional(1) },
 ];
 
 // 고른 기준월 한 달치만 보여 준다. 8월 기준이면 8월만 — 다음 달들의 추이는 내지 않는다.

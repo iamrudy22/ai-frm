@@ -25,7 +25,7 @@ import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Selector } from '@astryxdesign/core/Selector';
-import { Table } from '@astryxdesign/core/Table';
+import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 
@@ -49,11 +49,11 @@ import { commentFor } from '@/domain/risk/construction-perception/policy';
 import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
 const INDICATOR_COLUMNS = [
-  { key: '지표', header: '지표' },
-  { key: '원값', header: '당월 원값' },
-  { key: '변화율', header: '변화율' },
-  { key: '점수', header: '점수' },
-  { key: '기여도', header: '기여도' },
+  { key: '지표', header: '지표', width: proportional(2) },
+  { key: '원값', header: '당월 원값', width: proportional(1) },
+  { key: '변화율', header: '변화율', width: proportional(1) },
+  { key: '점수', header: '점수', width: proportional(1) },
+  { key: '기여도', header: '기여도', width: proportional(1) },
 ];
 
 const MISSING_COLUMNS = [
@@ -167,7 +167,8 @@ export function ConstructionPerceptionCard({ perception }: { perception: Percept
             {isLoading ? ' · 다시 불러오는 중…' : ''}
           </Text>
           <HStack gap={2} wrap="wrap">
-            <Button label="다시 불러오기" variant="secondary" onClick={retry} isLoading={isLoading} />
+            <Button label="다시 불러오기" variant="secondary" onClick={retry} isLoading={isLoading}
+              tooltip="같은 기준월의 ECOS 자료를 다시 조회합니다" />
             {selectedMonth !== undefined && (
               <Button label="기본값으로" variant="secondary" onClick={reset} isDisabled={isLoading} />
             )}
@@ -217,7 +218,8 @@ function PerceptionResult({
         {selectedMonth !== undefined && (
           <Button label="기본값으로" variant="secondary" onClick={onReset} isDisabled={isLoading} />
         )}
-        <Button label="다시 불러오기" variant="secondary" onClick={onRetry} isLoading={isLoading} />
+        <Button label="다시 불러오기" variant="secondary" onClick={onRetry} isLoading={isLoading}
+          tooltip="같은 기준월의 ECOS 자료를 다시 조회합니다" />
       </HStack>
       <Text type="supporting" role="status">
         {basisNote(basis)} · ECOS 조회 {fetchedAt}
