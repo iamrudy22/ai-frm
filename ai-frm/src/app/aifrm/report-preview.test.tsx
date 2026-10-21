@@ -57,6 +57,23 @@ function metricWithPoints(id: FinancialReport['metrics'][number]['id'], points: 
 }
 
 describe('HTML 보고서와 PDF 참고자료 선택', () => {
+  it('회수율과 Gap의 숫자 주값에 배 단위를 붙이고 값의 정밀도는 유지한다', () => {
+    const value = report();
+    const html = markup({ ...value, metrics: value.metrics.map((item) =>
+      item.id === 'recovery' ? { ...item, value: '1.00' }
+        : item.id === 'liquidity' ? { ...item, value: '1.69' } : item) });
+    expect(html).toContain('>1.00 배<');
+    expect(html).toContain('>1.69 배<');
+  });
+
+  it.each(['—', '순유입', '수지 균형'])('비율이 아닌 %s에는 배 단위를 붙이지 않는다', (display) => {
+    const value = report();
+    const html = markup({ ...value, metrics: value.metrics.map((item) =>
+      item.id === 'liquidity' ? { ...item, value: display } : item) });
+    expect(html).toContain(`>${display}<`);
+    expect(html).not.toContain(`${display} 배`);
+  });
+
   it('빈 양식은 3쪽만 제공하며 참고자료와 인쇄 선택을 생략한다', () => {
     const html = markup(buildFinancialReport());
     expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(3);

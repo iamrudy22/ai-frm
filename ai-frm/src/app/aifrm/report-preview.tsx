@@ -110,6 +110,9 @@ function coverageText(metric: ReportMetric): string {
 }
 
 function MetricSection({ metric }: { metric: ReportMetric }) {
+  const value = (metric.id === 'recovery' || metric.id === 'liquidity')
+    && metric.value.trim() !== '' && Number.isFinite(Number(metric.value))
+    ? `${metric.value} 배` : metric.value;
   const coverage = coverageText(metric);
   const reasons = [...new Set(metric.points.flatMap((point) => point.kind === 'available' ? [] : [point.reason]))];
   const printReason = reasons.length > 1
@@ -120,7 +123,7 @@ function MetricSection({ metric }: { metric: ReportMetric }) {
     <VStack as="section" gap={2} className="break-inside-avoid wrap-anywhere" aria-label={metric.title}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Heading level={3} color="inherit" className="text-base">○ {metric.title}</Heading>
-        <Text type="label" color="inherit" hasTabularNumbers>{metric.value}</Text>
+        <Text type="label" color="inherit" hasTabularNumbers>{value}</Text>
         <Text type="label" color="inherit" className={statusClass(metric)}>[{metric.status}]</Text>
       </HStack>
       <Text size="sm" color="inherit" className={hasFailure ? 'report-screen-details' : undefined}>- {metric.narrative}</Text>

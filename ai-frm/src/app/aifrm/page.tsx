@@ -364,10 +364,11 @@ function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
         <Card key={tile.title}>
           <VStack gap={2}>
             <Text type="label">{tile.title}</Text>
-            <HStack>
-              <StatusMark status={tile.status} />
+            {tile.status.kind === 'grade' && <StatusMark status={tile.status} />}
+            <HStack gap={2} vAlign="center" wrap="wrap">
+              <Text type="display-3">{tile.value}</Text>
+              {tile.status.kind === 'dot' && <StatusMark status={tile.status} />}
             </HStack>
-            <Text type="display-3">{tile.value}</Text>
             <Text type="supporting" size="xsm">
               {tile.note}
             </Text>
