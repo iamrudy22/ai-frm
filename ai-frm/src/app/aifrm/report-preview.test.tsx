@@ -60,9 +60,13 @@ function statusText(html: string, label: string): string | undefined {
   return html.match(new RegExp(`<[^>]+role="status"[^>]*aria-label="${label}"[^>]*>([^<]*)</[^>]+>`))?.[1];
 }
 
+function visibleText(html: string): string {
+  return html.replace(/<svg\b[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, ' ');
+}
+
 describe('보고서 작업 영역과 출력 상태', () => {
-  it('실제 산출값이 없는 양식 미리보기 상태를 알린다', () => {
-    expect(statusText(markup(buildFinancialReport()), '지표 산출 상태')).toBe('양식 미리보기 · 실제 산출값 없음');
+  it('산출 전 모델은 완료된 보고서로 표시하지 않는다', () => {
+    expect(statusText(markup(buildFinancialReport()), '지표 산출 상태')).toBe('산출 전');
   });
 
   it('현재 보고서의 산출 중·산출 불가 개수를 알려 완료 결과와 구별한다', () => {
@@ -71,7 +75,7 @@ describe('보고서 작업 영역과 출력 상태', () => {
       ...metric, status: index < 2 ? '산출 중' : index === 2 ? '산출 불가' : '정상',
     })) });
     expect(statusText(html, '지표 산출 상태')).toBe('산출 중 2개 · 산출 불가 1개');
-    expect(html).toContain('현재 상태와 사유를 포함해 출력합니다.');
+    expect(html).not.toContain('현재 상태와 사유를 포함해 출력합니다.');
     expect(html).not.toContain('지표 5개 산출 완료');
   });
 
@@ -81,11 +85,19 @@ describe('보고서 작업 영역과 출력 상태', () => {
     expect(statusText(html, '지표 산출 상태')).toBe('지표 5개 산출 완료');
   });
 
-  it('HTML에 참고자료가 있어도 기본 PDF 출력은 3쪽으로 안내한다', () => {
+  it('월별 참고자료가 모델에 있어도 HTML과 PDF는 골든셋의 세 쪽만 제공한다', () => {
+    expect(report().referenceTrends).not.toBeNull();
     const html = markup();
-    expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(4);
+    expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(3);
     expect(statusText(html, 'PDF 출력 구성')).toBe('PDF 출력: 3쪽');
-    expect(html).toContain('월별 금액 참고자료를 PDF에 포함');
+    expect(page(html, 3)).toContain('report-sheet-last');
+    expect(html).not.toContain('월별 금액 참고자료를 PDF에 포함');
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain('data-include-reference-in-print');
+    expect(html).not.toContain('report-reference-sheet');
+    expect(html).not.toContain('최신 파일의 월별 금액 참고자료');
+    expect(html.match(/<figure/g)).toHaveLength(5);
+    expect(html).not.toContain('인쇄 창에서');
   });
 
   it('복귀 동작을 제공하면 보고서 안에 복귀 버튼과 인쇄·PDF 저장 버튼을 함께 제공한다', () => {
@@ -98,134 +110,108 @@ describe('보고서 작업 영역과 출력 상태', () => {
   });
 });
 
-describe('HTML 보고서와 PDF 참고자료 선택', () => {
-  it('고정 템플릿의 주값에는 모델이 제공한 표시값을 그대로 싣는다', () => {
+describe('골든셋에 맞춘 보고서 본문', () => {
+  it('본문의 주값·등급·해석·산식은 모델 그대로 표시하고 부가 메타데이터는 생략한다', () => {
     const value = report();
-    const html = markup({ ...value, metrics: value.metrics.map((item) =>
-      item.id === 'recovery' ? { ...item, value: '1.00' }
-        : item.id === 'liquidity' ? { ...item, value: '1.69' } : item) });
+    const html = markup({ ...value, warnings: ['합성 부가 경고'], metrics: value.metrics.map((item) => ({
+      ...item, status: '정상', grade: '정상', narrative: `${item.title} 해석 유지`,
+      value: item.id === 'recovery' ? '1.00' : item.id === 'liquidity' ? '1.69' : item.value,
+      source: '합성 원천 자료명', basis: `${item.id} 합성 기준`,
+    })) });
+    const body = visibleText(html);
     expect(page(html, 1)).toContain('>1.00<');
     expect(page(html, 1)).toContain('>1.69<');
     expect(page(html, 1)).not.toContain('1.00 배');
     expect(page(html, 1)).not.toContain('1.69 배');
+    expect(body).toContain('재무위험지수 종합');
+    expect(body).toContain('위험수준 측정결과');
+    expect(body).toContain('적정시재 산정결과');
+    for (const metric of value.metrics) {
+      expect(body).toContain(`${metric.title} 해석 유지`);
+      expect(body).toContain(metric.formula);
+      expect(body).not.toContain(`자료: ${metric.source}`);
+    }
+    expect(body).toContain('기준: construction 합성 기준');
+    for (const id of ['recovery', 'liquidity', 'funding', 'cash']) expect(body).not.toContain(`${id} 합성 기준`);
+    expect(body).not.toContain('합성 원천 자료명');
+    expect(body).not.toContain('합성 부가 경고');
+    expect(body).not.toContain('보고 기준:');
+    expect(body).not.toContain('최신 회차:');
+    expect(body).not.toContain('자료 상태:');
+    expect(html).not.toContain('<details');
+    expect(html).not.toContain('<figcaption');
   });
 
-
-  it('빈 양식은 3쪽만 제공하며 참고자료와 인쇄 선택을 생략한다', () => {
+  it('산출 전에도 세 쪽과 기준표·가중치·LCR 산식은 유지한다', () => {
     const html = markup(buildFinancialReport());
     expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(3);
-    expect(html).not.toContain('월별 금액 참고자료를 PDF에 포함');
-    expect(html).not.toContain('report-reference-sheet');
-    expect(page(html, 3)).toContain('report-sheet-last');
+    expect(html).not.toContain('양식 미리보기:');
+    const reference = visibleText(page(html, 3));
+    expect(reference).toContain('위험단계 기준');
+    expect(reference).toContain('건설경기 인식 지수 구성');
+    expect(reference).toContain('적정시재 산정방식 (LCR 방식)');
+    expect(page(html, 3).match(/<table/g)).toHaveLength(2);
+    expect(reference).toContain('80% 이상');
+    expect(reference).toContain('적정시재 = 향후 3개월 분양회수 × 20%');
+    expect(reference).toContain('기타수입 × 10%');
+    expect(reference).toContain('지출 × 10%');
+    expect(reference).toContain('수지차(지출 − 수입) × 40%');
+    for (const addition of ['경계값은', '가중치는 소수점', '가중치 합계:', '기준 출처:', '각 항목은 3개월 합계', '발표 시차']) {
+      expect(reference).not.toContain(addition);
+    }
   });
 
-  it('파일 하나로 HTML 4쪽과 참고 차트 3개를 보이고 PDF 포함은 해제 상태로 시작한다', () => {
-    const html = markup();
-    expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(4);
-    expect(html).toContain('data-include-reference-in-print="false"');
-    const input = html.match(/<input[^>]*type="checkbox"[^>]*>/)?.[0];
-    expect(input).toBeDefined();
-    expect(input).not.toContain('checked=""');
-    expect(html).toContain('월별 금액 참고자료를 PDF에 포함');
-    expect(page(html, 3)).toContain('report-sheet-last');
-    expect(page(html, 4)).toContain('report-sheet-last');
-    expect(page(html, 4).match(/<figure/g)).toHaveLength(3);
-    expect(page(html, 4)).toContain('분양회수 월별 금액');
-    expect(page(html, 4)).toContain('수입·지출 월별 금액');
-    expect(page(html, 4)).toContain('기초시재 월별 금액');
+  it('부족한 자료와 긴 판독 오류도 산출 불가 상태·해석을 유지하며 정상이나 0으로 대신하지 않는다', () => {
+    const value = report({ file: fullFile, missing: ['분양회수', '지출', '기초시재'] });
+    const target = value.metrics.find((metric) => metric.id === 'liquidity')!;
+    const html = markup({ ...value, metrics: value.metrics.map((metric) => metric.id === 'liquidity'
+      ? { ...metric, value: '—', status: '산출 불가', grade: null, narrative: fullReason } : metric) });
+    const section = html.match(new RegExp(`<section[^>]*aria-label="${target.title}"[^>]*>[\\s\\S]*?</section>`))?.[0] ?? '';
+    expect(section).toContain('[산출 불가]');
+    expect(section).toContain(fullReason);
+    expect(section).toContain('>—<');
+    expect(section).not.toContain('[정상]');
+    expect(section).not.toContain('>0<');
+    expect(section).not.toContain('<details');
+    const summary = section.match(/class="[^"]*report-print-summary[^"]*"[^>]*>([^<]*)/)?.[1] ?? '';
+    expect([...summary].length).toBeLessThanOrEqual(90);
+    expect(summary).toContain('판독 실패');
+    expect(summary).not.toContain('\uFFFD');
+    expect(visibleText(html)).not.toContain(fullFile);
   });
 
-  it('참고 차트의 SVG 제목에 지표명과 단위를 하나의 텍스트로 전달한다', () => {
-    expect(page(markup(), 4)).toContain('<title>분양회수 월별 금액 (단위: 억원)</title>');
-  });
-
-  it('전체 파일명과 오류는 HTML에 남기고 인쇄용 출처·사유는 유니코드를 보존하며 제한 길이로 축약한다', () => {
-    const html = markup(report({ file: fullFile, missing: ['분양회수'] }));
-    const reference = page(html, 4);
-    expect(reference).toContain(fullFile);
-    expect(reference).toContain(fullReason);
-    const printSource = reference.match(/class="[^"]*report-print-source[^"]*"[^>]*>출처: (.*?) · /)?.[1] ?? '';
-    const printReason = reference.match(/class="[^"]*report-print-reason[^"]*"[^>]*>분양회수 결측: (.*?) \(상세는 HTML 참고\)/)?.[1] ?? '';
-    expect([...printSource]).toHaveLength(48);
-    expect(printSource.endsWith('…')).toBe(true);
-    expect([...printReason]).toHaveLength(60);
-    expect(printReason.endsWith('…')).toBe(true);
-    expect(reference).toContain('상세는 HTML 참고');
-    expect(printSource).not.toContain('\uFFFD');
-    expect(printReason).not.toContain('\uFFFD');
-    expect(reference).toContain('report-screen-details');
-    expect(reference).toContain('report-print-summary');
-  });
-
-  it('표시 창과 생략 범위, 실적·계획·계획연도 이후를 설명하고 실제 0·음수를 유지한다', () => {
-    const html = page(markup(report({ base: 0 })), 4);
-    expect(html).toContain('2026/01~2027/06');
-    expect(html).toContain('뒤 생략: 2027/07~2027/10 (4개월)');
-    expect(html).toContain('실적 실선 · 계획 점선');
-    expect(html).toContain('계획 이월 잔고');
-    expect(html).toContain('다음 해 미확정 계획 포함');
-    expect(html).toContain('2026/01 분양회수: 0 억원 (계획)');
-    expect(html).toContain('2026/02 분양회수: -10 억원 (계획)');
-    expect(page(markup(report({ base: 19 })), 4)).toContain('앞 생략: 2026/01~2026/02 (2개월)');
-  });
-
-  it.each([{ label: '한 항목', missing: ['분양회수'] as const }, { label: '전체 항목', missing: ['분양회수', '수입', '지출', '기초시재'] as const }])('$label 판독 실패에도 4쪽과 출처·결측 사유를 유지한다', ({ missing }) => {
-    const html = page(markup(report({ missing })), 4);
-    expect(html.match(/<figure/g)).toHaveLength(3);
-    expect(html).toContain('synthetic.xlsx');
-    expect(html).toContain(fullReason);
-    expect(html).toContain('결측 18개월');
-    expect(html).toContain('2026/08 회차');
-    expect(html).toContain('단위: 억원');
-  });
-
-  it('현재 로딩·실패를 과거 확보 안내로 덮지 않고 비적용과 결측을 나누어 표시한다', () => {
+  it('이력의 상세 설명을 생략해도 현재 로딩·실패와 차트의 결측·0 값은 보존한다', () => {
     const value = report();
     const points: ReportPoint[] = [
       { month: ym('2026/05'), kind: 'available', value: 0 },
       { month: ym('2026/06'), kind: 'not-applicable', value: null, reason: '정상 순유입으로 비율을 적용하지 않습니다.' },
       { month: ym('2026/07'), kind: 'missing', value: null, reason: fullReason },
     ];
-    const metrics = value.metrics.map((metric) => metric.id === 'liquidity' ? {
-      ...metric, status: '산출 불가', grade: null, narrative: fullReason, points, historyCoverage: summarizeHistory(points),
-    } : metric);
-    const html = markup({ ...value, metrics });
+    const html = markup({ ...value, metrics: value.metrics.map((metric) => metric.id === 'liquidity' ? {
+      ...metric, value: '—', status: '산출 불가', grade: null, narrative: fullReason, points, historyCoverage: summarizeHistory(points),
+    } : metric) });
     expect(html).toContain('[산출 중]');
     expect(html).toContain('[산출 불가]');
-    expect(html).toContain('2026/05의 1개월 값 확보');
-    expect(html).toContain('비율 비적용 1개월');
-    expect(html).toContain('결측 1개월');
     expect(html).toContain(fullReason);
-    expect(html).not.toContain('자료 없음');
+    expect(html).toContain('2026/05 유동성 Gap: 0 배');
+    const liquiditySection = html.match(/<section[^>]*aria-label="유동성 Gap"[^>]*>[\s\S]*?<\/section>/)?.[0] ?? '';
+    expect(liquiditySection).not.toContain('<polyline');
+    const body = visibleText(html);
+    for (const addition of ['자료 상태:', '이력의 결측', '추가 사유', '과거 산출 이력 미조회', '회차 기준월의 당시 계획']) {
+      expect(body).not.toContain(addition);
+    }
   });
 
-  it.each(['liquidity', 'cash'] as const)('최신 %s가 정상이어도 18개월의 서로 다른 긴 사유를 인쇄 요약 두 줄로 제한하고 HTML 전문을 보존한다', (id) => {
-    const reasons = Array.from({ length: 17 }, (_, index) => `${index + 1}번째 합성 사유 ${'서로 다른 월별 판독 오류 '.repeat(40)}`.slice(0, 500));
-    const points: ReportPoint[] = reasons.map((reason, index) => ({ month: addMonths(ym('2025/01'), index),
-      kind: index === 0 ? 'not-applicable' : 'missing', value: null, reason }));
-    points.push({ month: ym('2026/06'), kind: 'available', value: 1, secondary: 2 });
-    const value = report();
-    const target = { ...metricWithPoints(id, points), status: '정상', grade: '정상' as const };
-    const html = markup({ ...value, metrics: value.metrics.map((metric) => metric.id === id ? target : metric) });
-    const section = html.match(new RegExp(`<section[^>]*aria-label="${target.title}"[^>]*>[\\s\\S]*?</section>`))?.[0] ?? '';
-    const summaries = [...section.matchAll(/<[^>]+class="[^"]*report-print-summary[^"]*"[^>]*>([^<]*)<\/[^>]+>/g)].map((match) => match[1]);
-    expect(summaries).toHaveLength(2);
-    expect(summaries[1]).toContain('추가 사유 16종');
-    expect(summaries[1]).toContain('상세는 HTML 참고');
-    expect(summaries[1].match(/상세는 HTML 참고/g)).toHaveLength(1);
-    expect([...summaries[1]].length).toBeLessThanOrEqual(100);
-    for (const reason of reasons) expect(section).toContain(reason);
-    expect(section).toContain('비율 비적용 1개월');
-    expect(section).toContain('결측 16개월');
-    expect(section).toContain('2026/06의 1개월 값 확보');
-  });
-
-  it('월초 잔고의 과거·기준월·미래 상태를 HTML 상세에서 구별한다', () => {
-    const html = page(markup(), 4);
-    expect(html).toMatch(/2026\/07 · 기초시재 · 월 순번 7 \(7월\) · 월초 잔고/);
-    expect(html).toMatch(/2026\/08 · 기초시재 · 월 순번 8 \(8월\) · 기준월 월초 잔고/);
-    expect(html).toMatch(/2026\/09 · 기초시재 · 월 순번 9 \(9월\) · 계획 이월 잔고/);
-    expect(html).not.toMatch(/2026\/07 · 기초시재[^<]*기준월/);
+  it('정상 차트와 빈 차트 모두 시각적 주석만 생략하고 SVG 접근성 설명은 유지한다', () => {
+    const metric = metricWithPoints('funding', [{ month: ym('2026/08'), kind: 'available', value: 0.239 }]);
+    const html = renderToStaticMarkup(<ReportChart metric={metric} />);
+    expect(html).not.toContain('<figcaption');
+    expect(html).toContain('<title>조달위험 인식 지수 추이 (단위: %p)</title>');
+    expect(html).toContain(`<desc>${metric.historyNote} 결측과 비적용 월은 연결하지 않습니다.</desc>`);
+    expect(html).toContain('aria-label="조달위험 인식 지수 추이. 단위 %p. 1개 기준월.');
+    const empty = renderToStaticMarkup(<ReportChart metric={{ ...metric, points: [], historyCoverage: summarizeHistory([]) }} />);
+    expect(empty).not.toContain('<figcaption');
+    expect(empty).toContain(metric.narrative);
   });
 });
 

@@ -170,8 +170,7 @@ export default function AifrmDashboardPage() {
     : reportReadiness(dashboard, perception.response, perception.isLoading, fundingRisk.response);
 
   const report = useMemo(() => {
-    if (reportOpenedAt === null) return null;
-    if (loaded === null || dashboard === null || gapMonth === null) return buildFinancialReport();
+    if (reportOpenedAt === null || loaded === null || dashboard === null || gapMonth === null) return null;
     return buildFinancialReport({
       rounds: loaded.rounds,
       dashboard,
@@ -237,33 +236,26 @@ export default function AifrmDashboardPage() {
               />
             )}
 
-            <VStack gap={1} align="start">
-              {loaded !== null && dashboard !== null && (
-                <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
-              )}
+            {loaded !== null && dashboard !== null && readiness !== null && <VStack gap={1} align="start">
+              <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
               <Button
                 id="report-entry"
-                label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}
-                variant={loaded === null ? 'secondary' : 'primary'}
+                label="HTML 보고서 보기"
+                variant="primary"
                 onClick={() => {
                   setReportOpenedAt(new Date());
                   window.scrollTo({ top: 0 });
                 }}
               />
               <Text type="supporting"
-                role={readiness === null ? undefined : 'status'}
-                aria-live={readiness === null ? undefined : 'polite'}
-                aria-atomic={readiness === null ? undefined : true}
-                aria-label={readiness === null ? undefined : '보고서 준비 상태'}>
-                {readiness === null
-                  ? '파일을 올리기 전에도 기본 3쪽의 보고서 양식을 볼 수 있습니다.'
-                  : `지표 5개 중 ${[
-                    readiness.completed > 0 ? `${readiness.completed}개 산출 완료` : null,
-                    readiness.loading > 0 ? `${readiness.loading}개 조회 중` : null,
-                    readiness.unavailable > 0 ? `${readiness.unavailable}개 산출 불가` : null,
-                  ].filter(Boolean).join(' · ')}`}
+                role="status" aria-live="polite" aria-atomic aria-label="보고서 준비 상태">
+                {`지표 5개 중 ${[
+                  readiness.completed > 0 ? `${readiness.completed}개 산출 완료` : null,
+                  readiness.loading > 0 ? `${readiness.loading}개 조회 중` : null,
+                  readiness.unavailable > 0 ? `${readiness.unavailable}개 산출 불가` : null,
+                ].filter(Boolean).join(' · ')}`}
               </Text>
-            </VStack>
+            </VStack>}
 
             {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
 

@@ -58,7 +58,6 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
       <VStack as="figure" gap={1} className="report-chart border! border-solid border-report-ink/30!" padding={3}>
         <Text type="label" color="inherit" justify="center">{title}</Text>
         <Text size="sm" color="inherit" justify="center">{emptyMessage}</Text>
-        <figcaption><Text size="xsm" color="inherit" justify="center">{note}</Text></figcaption>
       </VStack>
     );
   }
@@ -168,7 +167,6 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
           <text x={493} y={160} fill={INK} className="text-xs">계획</text>
         </g>}
       </svg>
-      <figcaption><Text size="xsm" color="inherit" justify="center">{note}</Text></figcaption>
     </VStack>
   );
 }
