@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
@@ -43,7 +43,6 @@ import {
   arrangeRounds,
   requirementsOf,
   roundsText,
-  type ArrangedRounds,
   type NamedStatement,
   type UploadedRound,
 } from './uploaded-rounds';
@@ -62,6 +61,7 @@ import { GRADE_COLOR, money, percent } from './format';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
+import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -71,9 +71,6 @@ const COLUMNS = [
   { key: '항목', header: '항목' },
   { key: '값', header: '값' },
 ];
-
-/** 읽어 정리한 회차 묶음. 최신·이전 회차와 올린 회차 전부(회차 순서). */
-type Loaded = Extract<ArrangedRounds, { ok: true }>;
 
 type RoundRow = { 회차: string; 쓰임: string; 파일: string } & Record<string, unknown>;
 
@@ -95,16 +92,13 @@ const ROLE_TEXT: Record<UploadedRound['role'], string> = {
  * 파일을 고르면 바로 읽는다. 회차를 알아야 산출 전에 빠진 회차를 알릴 수 있다.
  * 산출하기는 읽어 둔 회차로 결과를 펼치기만 한다.
  */
-type Prepared =
-  | { readonly kind: 'empty' }
-  | { readonly kind: 'reading'; readonly done: number; readonly total: number }
-  | { readonly kind: 'error'; readonly reason: string }
-  | { readonly kind: 'ready'; readonly rounds: Loaded };
-
 export default function AifrmDashboardPage() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [prepared, setPrepared] = useState<Prepared>({ kind: 'empty' });
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [upload, dispatchUpload] = useReducer(uploadSessionReducer, INITIAL_UPLOAD_SESSION);
+  const { files, prepared, committed } = upload;
+  const loaded = committed?.rounds ?? null;
+  const hasUnappliedFiles = committed !== null && (prepared.kind !== 'ready' || prepared.rounds !== committed.rounds);
+  const committedSource = loaded === null ? ''
+    : `${roundsText(loaded.rounds.map((round) => round.round))} 회차의 ${loaded.rounds.map((round) => round.file).join(' · ')} 파일`;
   const [reportOpenedAt, setReportOpenedAt] = useState<Date | null>(null);
   const reportWasOpen = useRef(false);
   useEffect(() => {
@@ -120,44 +114,46 @@ export default function AifrmDashboardPage() {
   const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
   // 읽는 중에 파일을 다시 고르면 앞선 읽기의 결과를 버린다.
   const readToken = useRef(0);
+  const nextReadId = useCallback(() => ++readToken.current, []);
 
-  const prepare = useCallback(async (list: File[]) => {
-    const token = ++readToken.current;
+  const prepare = useCallback(async (list: File[], token: number) => {
     const stale = () => token !== readToken.current;
-    if (list.length === 0) {
-      setPrepared({ kind: 'empty' });
-      return;
-    }
+    if (list.length === 0) return;
 
-    setPrepared({ kind: 'reading', done: 0, total: list.length });
     try {
       // 하나라도 못 읽으면 멈춘다. 빠진 회차로 조용히 다른 결과를 내지 않는다.
       const named: NamedStatement[] = [];
       for (const [i, file] of list.entries()) {
         // 파일 하나를 파싱하는 동안(1초 남짓) 화면이 멈춘다. 진행 표시가 먼저 그려지게 한 번 양보한다.
         await new Promise((resolve) => setTimeout(resolve, 0));
+        if (stale()) return;
         const result = readStatement(await file.arrayBuffer());
         if (stale()) return;
         if (!result.ok) {
-          setPrepared({ kind: 'error', reason: `${file.name}을(를) 읽지 못했습니다 — ${result.error}` });
+          dispatchUpload({ type: 'fail', id: token, reason: `${file.name}을(를) 읽지 못했습니다 — ${result.error}` });
           return;
         }
         named.push({ file: file.name, statement: result.statement });
-        setPrepared({ kind: 'reading', done: i + 1, total: list.length });
+        dispatchUpload({ type: 'progress', id: token, done: i + 1 });
       }
 
       const arranged = arrangeRounds(named);
-      setPrepared(arranged.ok ? { kind: 'ready', rounds: arranged } : { kind: 'error', reason: arranged.reason });
+      dispatchUpload(arranged.ok ? { type: 'ready', id: token, rounds: arranged }
+        : { type: 'fail', id: token, reason: arranged.reason });
     } catch {
-      if (!stale()) setPrepared({ kind: 'error', reason: '파일을 처리하는 중 문제가 생겼습니다.' });
+      if (!stale()) dispatchUpload({ type: 'fail', id: token, reason: '파일을 처리하는 중 문제가 생겼습니다.' });
     }
   }, []);
 
   const handleSubmit = useCallback(() => {
-    if (prepared.kind !== 'ready') return;
-    setLoaded(prepared.rounds);
+    if (prepared.kind !== 'ready' || loaded === prepared.rounds) return;
+    dispatchUpload({ type: 'apply' });
     setGapMonth(prepared.rounds.latest.round);
-  }, [prepared]);
+  }, [prepared, loaded]);
+
+  const restorePrevious = useCallback(() => {
+    dispatchUpload({ type: 'restore', id: nextReadId() });
+  }, [nextReadId]);
 
   const baseMonth: Month | null = useMemo(() => {
     if (loaded === null || gapMonth === null) return null;
@@ -260,10 +256,9 @@ export default function AifrmDashboardPage() {
                 value={files}
                 onChange={(picked) => {
                   const list = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
-                  setFiles(list);
-                  setLoaded(null);
-                  setGapMonth(null);
-                  void prepare(list);
+                  const id = nextReadId();
+                  dispatchUpload({ type: 'select', id, files: list });
+                  void prepare(list, id);
                 }}
               />
 
@@ -278,7 +273,18 @@ export default function AifrmDashboardPage() {
             </VStack>
 
             {prepared.kind === 'error' && (
-              <Banner status="error" title="판정할 수 없습니다" description={prepared.reason} />
+              <Banner status="error" title="새 파일을 확인하지 못했습니다" description={prepared.reason} />
+            )}
+
+            {hasUnappliedFiles && loaded !== null && (
+              <Banner
+                status="info"
+                title={prepared.kind === 'empty' ? '파일 선택을 해제했습니다' : '새 파일이 아직 결과에 반영되지 않았습니다'}
+                description={prepared.kind === 'empty'
+                  ? `이전 결과와 보고서는 ${committedSource} 원본을 계속 사용합니다. 다른 파일을 고르거나 이전 선택으로 돌아갈 수 있습니다.`
+                  : `현재 결과와 보고서는 ${committedSource} 원본을 사용합니다. 새 파일의 회차를 확인한 뒤 산출하기를 누르면 결과가 바뀝니다.`}
+                endContent={<Button label="이전 결과로 돌아가기" variant="secondary" onClick={restorePrevious} />}
+              />
             )}
 
             <VStack gap={1} align="start">
