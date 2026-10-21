@@ -142,20 +142,45 @@ describe('골든셋에 맞춘 보고서 본문', () => {
     expect(html).not.toContain('<figcaption');
   });
 
-  it('산출 전에도 세 쪽과 기준표·가중치·LCR 산식은 유지한다', () => {
+  it('참고 표는 골든셋 원본 이미지로 보존하며 세 쪽 구성을 유지한다', () => {
     const html = markup(buildFinancialReport());
     expect(html.match(/aria-label="보고서 \d쪽"/g)).toHaveLength(3);
     expect(html).not.toContain('양식 미리보기:');
     const reference = visibleText(page(html, 3));
     expect(reference).toContain('위험단계 기준');
-    expect(reference).toContain('건설경기 인식 지수 구성');
     expect(reference).toContain('적정시재 산정방식 (LCR 방식)');
-    expect(page(html, 3).match(/<table/g)).toHaveLength(2);
-    expect(reference).toContain('80% 이상');
-    expect(reference).toContain('적정시재 = 향후 3개월 분양회수 × 20%');
-    expect(reference).toContain('기타수입 × 10%');
-    expect(reference).toContain('지출 × 10%');
-    expect(reference).toContain('수지차(지출 − 수입) × 40%');
+    const images = page(html, 3).match(/<img\b[^>]*>/g) ?? [];
+    expect(images).toHaveLength(2);
+    expect(images[0]).toContain('reference-risk-criteria.png');
+    expect(images[0]).toContain('alt="골든셋 원본 위험단계 기준표: 내부·외부 관리지표와 산식, 구성 가중치, 정상·주의·경고·위기 기준"');
+    expect(images[1]).toContain('reference-lcr-formula.png');
+    expect(images[1]).toContain('alt="골든셋 원본 적정시재 산정방식(LCR 방식) 표"');
+    for (const image of images) {
+      expect(image).toContain('loading="eager"');
+      expect(image).toContain('h-auto w-full');
+    }
+    const descriptions = images.map((image, index) => {
+      const id = index === 0 ? 'reference-risk-criteria-description' : 'reference-lcr-formula-description';
+      expect(image).toContain(`aria-describedby="${id}"`);
+      const element = page(html, 3).match(new RegExp(`<div\\b[^>]*id="${id}"[^>]*>([\\s\\S]*?)</div>`))?.[0] ?? '';
+      expect(element).not.toBe('');
+      expect(element).not.toContain('aria-hidden="true"');
+      return visibleText(element).replace(/\s+/g, ' ').trim();
+    });
+    for (const row of [
+      '정상(G) 90%이상, 주의(Y) 90%미만 80%이상, 경고(O) 80%미만 70%이상, 위기(R) 70%미만',
+      '정상(G) 50%이상, 주의(Y) 50%미만 25%이상, 경고(O) 25%미만 15%이상, 위기(R) 15%미만',
+      '정상(G) 20미만, 주의(Y) 20이상 40미만, 경고(O) 40이상 60미만, 위기(R) 60이상',
+      '정상(G) 0.24%미만, 주의(Y) 0.24%이상 0.52%미만, 경고(O) 0.52%이상 0.79%미만, 위기(R) 0.79%이상',
+    ]) expect(descriptions[0]).toContain(row);
+    for (const component of [
+      '국내건설수주액(11)', '주택매매가격지수(23)', '미분양주택현황(4)', '주택건설인허가실적(31)', '설비투자지수(14)',
+      '직전3개월 분양회수예측오차(3)', '대출금리(2)', 'KOSPI지수(5)', '원/달러환율(5)', '선행지수순환변동치(3)',
+    ]) expect(descriptions[0]).toContain(component);
+    expect(descriptions[0]).toContain('※ ( ) 괄호 안 : 가중치');
+    expect(descriptions[1]).toBe('적정시재 = (향후 3개월) 분양회수예정액 X 20% + 기타회수예정액 X 10% + 사업비지출계획 X 10% + 순지출계획 X 40%');
+    expect(page(html, 3)).not.toContain('<table');
+    expect(reference).not.toContain('건설경기 인식 지수 구성');
     for (const addition of ['경계값은', '가중치는 소수점', '가중치 합계:', '기준 출처:', '각 항목은 3개월 합계', '발표 시차']) {
       expect(reference).not.toContain(addition);
     }

@@ -1,72 +1,18 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import Image from 'next/image';
 import { Button } from '@astryxdesign/core/Button';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
-import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
+import { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
 import { VStack } from '@astryxdesign/core/VStack';
 
-import type { Band, Grade } from '@/domain/risk/grade';
-import { PAYMENT_RECOVERY_BANDS } from '@/domain/risk/payment-recovery/policy';
-import { LIQUIDITY_GAP_BANDS } from '@/domain/risk/liquidity-gap/policy';
-import { SCORING_RULES, STAGE_BANDS } from '@/domain/risk/construction-perception/policy';
-import { FUNDING_RISK_BANDS } from '@/domain/risk/funding-risk/policy';
-import { LCR_WEIGHTS } from '@/domain/risk/adequate-cash/policy';
 import { ReportChart } from './report-chart';
 import type { FinancialReport, ReportMetric } from './report-model';
-
-type CriterionRow = { indicator: string; 정상: string; 주의: string; 경고: string; 위기: string } & Record<string, unknown>;
-
-function threshold(value: number, unit: '%' | '%p' | '점'): string {
-  const display = unit === '%' ? value * 100 : value;
-  return `${Number(display.toFixed(8))}${unit}`;
-}
-
-function intervals(bands: readonly Band[], unit: '%' | '%p' | '점'): Record<Grade, string> {
-  const result = {} as Record<Grade, string>;
-  for (const [index, band] of bands.entries()) {
-    const upper = index === 0 ? null : bands[index - 1].atLeast;
-    result[band.grade] = [
-      Number.isFinite(band.atLeast) ? `${threshold(band.atLeast, unit)} 이상` : null,
-      upper === null ? null : `${threshold(upper, unit)} 미만`,
-    ].filter(Boolean).join(' · ');
-  }
-  return result;
-}
-
-const CRITERIA: CriterionRow[] = [
-  { indicator: '대금 회수 위험 = 실적 ÷ 계획', ...intervals(PAYMENT_RECOVERY_BANDS, '%') },
-  { indicator: '유동성 Gap = 기초시재 ÷ 향후 3개월 순지출', ...intervals(LIQUIDITY_GAP_BANDS, '%') },
-  { indicator: '건설경기 인식 지수 = 10개 지표의 점수 × 가중치 합계', ...intervals(STAGE_BANDS, '점') },
-  { indicator: '조달위험 인식 지수 = 공사채 AAA 1년 − 국고채 1년 금리', ...intervals(FUNDING_RISK_BANDS, '%p') },
-];
-
-const CRITERIA_COLUMNS = [
-  { key: 'indicator', header: '관리지표 및 산식', width: proportional(2) },
-  ...(['정상', '주의', '경고', '위기'] as Grade[]).map((grade) => ({
-    key: grade,
-    header: grade,
-    width: proportional(1),
-    renderCell: (row: CriterionRow) => <Text size="xsm" color="inherit">{row[grade]}</Text>,
-  })),
-];
-
-type WeightRow = { first: string; firstWeight: string; second: string; secondWeight: string } & Record<string, unknown>;
-const WEIGHTS: WeightRow[] = SCORING_RULES.slice(0, 5).map((rule, index) => ({
-  first: rule.key,
-  firstWeight: String(Number(rule.weight.toFixed(4))),
-  second: SCORING_RULES[index + 5].key,
-  secondWeight: String(Number(SCORING_RULES[index + 5].weight.toFixed(4))),
-}));
-
-const WEIGHT_COLUMNS = [
-  { key: 'first', header: '구성 지표', width: proportional(1) },
-  { key: 'firstWeight', header: '가중치', width: proportional(1) },
-  { key: 'second', header: '구성 지표', width: proportional(1) },
-  { key: 'secondWeight', header: '가중치', width: proportional(1) },
-];
+import referenceRiskCriteria from './assets/reference-risk-criteria.png';
+import referenceLcrFormula from './assets/reference-lcr-formula.png';
 
 function statusClass(metric: ReportMetric): string {
   if (metric.grade === '정상') return 'text-report-blue!';
@@ -124,24 +70,36 @@ function ReferencePage() {
       <HStack className="border-b! border-solid border-report-line!" paddingBlockEnd={2}>
         <Text type="label" color="inherit" className="text-report-blue!">참고</Text>
       </HStack>
-      <VStack gap={3} className="[&>.astryx-table-scroll-wrapper]:mb-0!">
+      <VStack gap={3} className="break-inside-avoid">
         <Heading level={2} color="inherit" className="text-lg">□ 위험단계 기준</Heading>
-        <Table data={CRITERIA} columns={CRITERIA_COLUMNS} density="compact" dividers="grid" />
-      </VStack>
-      <VStack gap={3} className="break-inside-avoid [&>.astryx-table-scroll-wrapper]:mb-0!">
-        <Heading level={3} color="inherit" className="text-base">건설경기 인식 지수 구성</Heading>
-        <Table data={WEIGHTS} columns={WEIGHT_COLUMNS} density="compact" dividers="grid" />
+        <Image src={referenceRiskCriteria} width={1350} height={1332}
+          alt="골든셋 원본 위험단계 기준표: 내부·외부 관리지표와 산식, 구성 가중치, 정상·주의·경고·위기 기준"
+          aria-describedby="reference-risk-criteria-description"
+          unoptimized loading="eager" className="h-auto w-full" />
+        <VisuallyHidden as="div" id="reference-risk-criteria-description">
+          관리지표 및 산식. 위험단계: 정상(G), 주의(Y), 경고(O), 위기(R).
+          내부지표. [대금회수위험] = 매월 실제 대금회수금액 / 매월 대금회수 계획금액(자금계획).
+          정상(G) 90%이상, 주의(Y) 90%미만 80%이상, 경고(O) 80%미만 70%이상, 위기(R) 70%미만.
+          [유동성위험] = 매월 기초시재 / 향후 3개월 순지출 계획금액.
+          정상(G) 50%이상, 주의(Y) 50%미만 25%이상, 경고(O) 25%미만 15%이상, 위기(R) 15%미만.
+          외부지표. [건설경기인식지수].
+          - 국내건설수주액(11), - 주택매매가격지수(23), - 미분양주택현황(4), - 주택건설인허가실적(31), - 설비투자지수(14),
+          - 직전3개월 분양회수예측오차(3), - 대출금리(2), - KOSPI지수(5), - 원/달러환율(5), - 선행지수순환변동치(3).
+          ※ ( ) 괄호 안 : 가중치.
+          정상(G) 20미만, 주의(Y) 20이상 40미만, 경고(O) 40이상 60미만, 위기(R) 60이상.
+          [조달위기지수] = 1년만기 공사AAA채권과 국고채의 금리 차이.
+          정상(G) 0.24%미만, 주의(Y) 0.24%이상 0.52%미만, 경고(O) 0.52%이상 0.79%미만, 위기(R) 0.79%이상.
+        </VisuallyHidden>
       </VStack>
       <VStack gap={3} className="break-inside-avoid">
         <Heading level={2} color="inherit" className="text-lg">□ 적정시재 산정방식 (LCR 방식)</Heading>
-        <VStack padding={3} className="border! border-solid border-report-ink/40!">
-          <Text size="sm" color="inherit">
-            적정시재 = 향후 3개월 분양회수 × {LCR_WEIGHTS.분양회수 * 100}%
-            {' + '}기타수입 × {LCR_WEIGHTS.기타수입 * 100}%
-            {' + '}지출 × {LCR_WEIGHTS.지출 * 100}%
-            {' + '}수지차(지출 − 수입) × {LCR_WEIGHTS.수지차 * 100}%
-          </Text>
-        </VStack>
+        <Image src={referenceLcrFormula} width={1350} height={156}
+          alt="골든셋 원본 적정시재 산정방식(LCR 방식) 표"
+          aria-describedby="reference-lcr-formula-description"
+          unoptimized loading="eager" className="h-auto w-full" />
+        <VisuallyHidden as="div" id="reference-lcr-formula-description">
+          적정시재 = (향후 3개월) 분양회수예정액 X 20% + 기타회수예정액 X 10% + 사업비지출계획 X 10% + 순지출계획 X 40%
+        </VisuallyHidden>
       </VStack>
     </Sheet>
   );
