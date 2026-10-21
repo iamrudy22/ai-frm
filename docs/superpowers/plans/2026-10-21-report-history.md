@@ -193,11 +193,11 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 **Files:** §2의 statement·round-entry·adequate-cash와 각 기존 테스트.
 **Interfaces:** §2.1의 natureOf, beyondPlanYearOf를 제공한다.
 
-- [ ] **1. 실패 테스트:** 8월 회차의 흐름 7월 actual/8월 plan, 기초시재 8월 opening-balance/9월 planned-opening-balance, 계획연도 끝과 다음 열의 false/true, 소속이 맞지 않는 월 거부를 검증한다.
-- [ ] **2. 실패 확인:** `npx vitest run src/domain/cashflow/statement.test.ts`.
-- [ ] **3. 공유 함수 구현:** 값·임계값을 바꾸지 않고, 기존 round-entry의 계획 경계와 adequateCashAt의 메타 계산에서 사용한다.
-- [ ] **4. 회귀 확인:** `npx vitest run src/domain/cashflow src/domain/risk/adequate-cash src/boundaries.test.ts`. 기존 값·isPlan·beyondPlanYear·회차 배열이 모두 동일해야 한다.
-- [ ] **5. 해당 변경 검토·커밋:** 미검증 원본 자료는 포함하지 않는다.
+- [x] **1. 실패 테스트:** 8월 회차의 흐름 7월 actual/8월 plan, 기초시재 8월 opening-balance/9월 planned-opening-balance, 계획연도 끝과 다음 열의 false/true, 소속이 맞지 않는 월 거부를 검증한다.
+- [x] **2. 실패 확인:** `npx vitest run src/domain/cashflow/statement.test.ts`.
+- [x] **3. 공유 함수 구현:** 값·임계값을 바꾸지 않고, 기존 round-entry의 계획 경계와 adequateCashAt의 메타 계산에서 사용한다.
+- [x] **4. 회귀 확인:** `npx vitest run src/domain/cashflow src/domain/risk/adequate-cash src/boundaries.test.ts`. 기존 값·isPlan·beyondPlanYear·회차 배열이 모두 동일해야 한다.
+- [x] **5. 해당 변경 검토·커밋:** 미검증 원본 자료는 포함하지 않는다.
 
 ### Task 2: 참고 금액과 기준월 포함 범위
 
@@ -303,3 +303,11 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 - 시작 기준: `ef0a7ff`. 기존 HTML/PDF 보고서 작업을 먼저 별도 기준 커밋으로 보존한다.
 - 실행 전 검증: `npm run verify` — TypeScript 통과, 448 passed / 30 skipped. 스킵은 실물 fixture·명시적 외부 실호출 테스트이며 정답 일치 검증으로 집계하지 않는다.
 - 단계마다 RED/GREEN 증거, QA·독립 검토 결과, 커밋, 다음 작업을 기록한다. 실제 재무수치는 기록하지 않는다.
+
+### Task 1 완료
+
+- 구현 커밋: `10c1b6a` — 도메인 자료 성격과 계획 경계 공유.
+- TDD: 신규 의미 계약 RED 9건 → GREEN. 관련 회귀 109 passed, 전체 verify 461 passed / 30 skipped. 관련 ESLint·diff 검사 통과.
+- 독립 검토: 명세 준수·코드 품질 Approved, 추가 논리 모순·DDD 경계 위반 없음.
+- 컨텍스트: `natureOf`, `beyondPlanYearOf`가 기존 statement에 있으며 round-entry·adequateCashAt이 소비한다. 금액·회차 정책은 유지된다.
+- 다음: Task 2, 최신 파일의 월별 금액 읽기 모델과 기준월 포함 표시 범위.
