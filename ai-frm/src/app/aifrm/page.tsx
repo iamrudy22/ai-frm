@@ -14,6 +14,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
 import { Selector } from '@astryxdesign/core/Selector';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
+import { Step, Stepper } from '@astryxdesign/core/Stepper';
 import { proportional, Table } from '@astryxdesign/core/Table';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
@@ -222,23 +223,26 @@ export default function AifrmDashboardPage() {
               </Text>
             </VStack>
 
-            <VStack gap={1} align="start">
-              <Button
-                label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}
-                variant="secondary"
-                onClick={() => {
-                  setReportOpenedAt(new Date());
-                  window.scrollTo({ top: 0 });
-                }}
-              />
-              <Text type="supporting">
-                {loaded === null
-                  ? '3페이지 보고서 형식을 먼저 볼 수 있습니다. 파일을 올려 산출하면 실제 결과가 반영됩니다.'
-                  : '현재 산출 결과로 보고서를 확인한 뒤 PDF로 저장할 수 있습니다.'}
-              </Text>
-            </VStack>
+            <Stepper label="보고서 작성 단계" density="compact"
+              activeStep={prepared.kind === 'ready' && loaded === prepared.rounds ? 2
+                : prepared.kind === 'reading' || prepared.kind === 'ready' ? 1 : 0}
+              horizontalOptions={{ minimumStepWidth: '7rem', collapsedVariant: 'withLabel' }}>
+              <Step step={0} label="파일 선택" />
+              <Step step={1} label="회차 확인" />
+              <Step step={2} label="결과 확인" />
+              <Step step={3} label="보고서 저장" />
+            </Stepper>
 
             <VStack gap={3} align="start">
+              <Heading level={2}>자금수지표 준비</Heading>
+              <Text type="supporting">
+                기본 산출에 필요한 회차 예: 최신이 8월이면 5·7·8월입니다. 실제 필요 회차와 판독 상태는
+                파일 선택 후 표에서 확인하세요.
+              </Text>
+              <Text type="supporting">
+                최신 파일 하나로 월별 금액을 볼 수 있습니다. 위험지표 추이는 올린 회차에서 확보한 값만
+                표시하며, 빠진 달은 채우지 않습니다.
+              </Text>
               <FileInput
                 label="자금수지표 회차"
                 description="최신 회차와 그 전 회차들을 한 번에 올리세요. 고르면 바로 읽어 지표마다 필요한 회차가 있는지 알려 드립니다."
@@ -268,6 +272,22 @@ export default function AifrmDashboardPage() {
             {prepared.kind === 'error' && (
               <Banner status="error" title="판정할 수 없습니다" description={prepared.reason} />
             )}
+
+            <VStack gap={1} align="start">
+              <Button
+                label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}
+                variant={loaded === null ? 'secondary' : 'primary'}
+                onClick={() => {
+                  setReportOpenedAt(new Date());
+                  window.scrollTo({ top: 0 });
+                }}
+              />
+              <Text type="supporting">
+                {loaded === null
+                  ? '파일을 올리기 전에도 기본 3쪽의 보고서 양식을 볼 수 있습니다.'
+                  : '현재 산출 결과로 보고서를 확인한 뒤 PDF로 저장할 수 있습니다.'}
+              </Text>
+            </VStack>
 
             {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
 
