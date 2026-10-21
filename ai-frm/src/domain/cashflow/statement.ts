@@ -18,6 +18,12 @@ import { addMonths, yearMonthOfDate, type YearMonth } from '@/domain/shared/year
 
 export type ItemName = '기초시재' | '수입계' | '수입' | '분양회수' | '기타수입' | '지출';
 
+export type CashflowNature =
+  | 'actual'
+  | 'plan'
+  | 'opening-balance'
+  | 'planned-opening-balance';
+
 const ITEM_NAMES: readonly ItemName[] = ['기초시재', '수입계', '수입', '분양회수', '기타수입', '지출'];
 
 const ROLL_FORWARD_ITEMS: readonly ItemName[] = ['기초시재', '수입계', '지출'];
@@ -156,10 +162,29 @@ export function windowFrom(statement: Statement, base: Month, count: number): re
  * '26.1월'로 적어 두어서, 라벨을 믿으면 2027년 1월이 2026년 1월이 된다.
  */
 export function calendarOf(statement: Statement, month: Month): YearMonth {
+  assertMonthBelongsTo(statement, month);
+  return addMonths(yearMonthOfDate(statement.asOf), month.index - statement.defaultBaseMonth.index);
+}
+
+/** 흐름은 기준월부터 계획이고, 기초시재는 기준월 다음 달부터 계획 이월 잔고다. */
+export function natureOf(statement: Statement, item: ItemName, month: Month): CashflowNature {
+  assertMonthBelongsTo(statement, month);
+  if (item === '기초시재') {
+    return month.index > statement.defaultBaseMonth.index ? 'planned-opening-balance' : 'opening-balance';
+  }
+  return month.index >= statement.defaultBaseMonth.index ? 'plan' : 'actual';
+}
+
+/** 계획연도 마지막 열까지는 연도 안에 포함한다. 다음 해 라벨은 해석하지 않는다. */
+export function beyondPlanYearOf(statement: Statement, month: Month): boolean {
+  assertMonthBelongsTo(statement, month);
+  return month.index > statement.planYearEnd.index;
+}
+
+function assertMonthBelongsTo(statement: Statement, month: Month): void {
   if (statement.months[month.index]?.label !== month.label) {
     throw new Error(`이 회차에 없는 월입니다: ${month.label}`);
   }
-  return addMonths(yearMonthOfDate(statement.asOf), month.index - statement.defaultBaseMonth.index);
 }
 
 export type ConsecutiveCheck ={ readonly ok: true } | { readonly ok: false; readonly reason: string };

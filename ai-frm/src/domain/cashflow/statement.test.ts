@@ -4,7 +4,10 @@ import {
   windowFrom,
   checkConsecutive,
   calendarOf,
+  natureOf,
+  beyondPlanYearOf,
   unreadable,
+  type ItemName,
   type StatementInput,
 } from '@/domain/cashflow/statement';
 import { amount } from '@/domain/shared/amount';
@@ -137,6 +140,38 @@ describe('항목 조회', () => {
   it('이 회차에 없는 월은 거부한다', () => {
     const s = createStatement(input());
     expect(() => s.amountOf('수입', { index: 99, label: '없는달' })).toThrow(/없는달/);
+  });
+});
+
+describe('항목의 실적·계획 구분', () => {
+  const s = createStatement(input());
+
+  it.each<ItemName>(['수입계', '수입', '분양회수', '기타수입', '지출'])(
+    '8월 회차의 %s 항목은 7월까지 실적이고 8월부터 계획이다',
+    (item) => {
+      expect(natureOf(s, item, s.months[6])).toBe('actual');
+      expect(natureOf(s, item, s.months[7])).toBe('plan');
+    },
+  );
+
+  it('기초시재는 8월까지 기초 잔고이고 9월부터 계획 이월 잔고다', () => {
+    expect(natureOf(s, '기초시재', s.months[6])).toBe('opening-balance');
+    expect(natureOf(s, '기초시재', s.months[7])).toBe('opening-balance');
+    expect(natureOf(s, '기초시재', s.months[8])).toBe('planned-opening-balance');
+  });
+
+  it('계획연도 끝은 연도 안이고 바로 다음 열부터 연도 밖이다', () => {
+    expect(beyondPlanYearOf(s, s.months[11])).toBe(false);
+    expect(beyondPlanYearOf(s, s.months[12])).toBe(true);
+  });
+
+  it.each([
+    { index: 99, label: '없는달' },
+    { index: 7, label: '다른달' },
+  ])('소속이 맞지 않는 월 $label 은 두 규칙 모두 거부한다', (month) => {
+    expect(() => natureOf(s, '수입', month)).toThrow(/이 회차에 없는 월/);
+    expect(() => natureOf(s, '기초시재', month)).toThrow(/이 회차에 없는 월/);
+    expect(() => beyondPlanYearOf(s, month)).toThrow(/이 회차에 없는 월/);
   });
 });
 

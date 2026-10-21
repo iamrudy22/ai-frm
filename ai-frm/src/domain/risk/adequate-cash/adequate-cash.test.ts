@@ -142,6 +142,20 @@ describe('한 달치 — 계획·다음 해 표시', () => {
   const s = statement();
   const at = (i: number) => adequateCashAt(s, s.months[i]);
 
+  it.each([
+    [7, 10007, false, false],
+    [8, 10008, true, false],
+    [10, 10010, true, true],
+  ] as const)('월 인덱스 %i의 계획 표시는 산출 금액과 함께 유지된다', (index, openingCash, isPlan, beyondPlanYear) => {
+    expect(at(index)).toMatchObject({
+      openingCash,
+      adequateCash: 1920,
+      isAdequate: true,
+      isPlan,
+      beyondPlanYear,
+    });
+  });
+
   it('회차 기준월(8월)은 계획이 아니다 — 기초시재가 7월 실적에서 이어진 값이다', () => {
     expect(at(7)).toMatchObject({ isPlan: false, beyondPlanYear: false });
   });

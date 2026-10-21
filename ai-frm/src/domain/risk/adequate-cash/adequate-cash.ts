@@ -16,7 +16,7 @@
  */
 
 import { minus, scale, sumOf, type Amount } from '@/domain/shared/amount';
-import { windowFrom, type ItemName, type Month, type Statement } from '@/domain/cashflow/statement';
+import { beyondPlanYearOf, natureOf, windowFrom, type ItemName, type Month, type Statement } from '@/domain/cashflow/statement';
 import { LCR_WEIGHTS, type LcrComponent } from '@/domain/risk/adequate-cash/policy';
 
 /** 정책이 정한 관측 구간. */
@@ -112,7 +112,7 @@ export function adequateCashAt(statement: Statement, base: Month): AdequateCashM
     ...assessment,
     month: base,
     windowEnd,
-    isPlan: base.index > statement.defaultBaseMonth.index,
-    beyondPlanYear: windowEnd.index > statement.planYearEnd.index,
+    isPlan: natureOf(statement, '기초시재', base) === 'planned-opening-balance',
+    beyondPlanYear: beyondPlanYearOf(statement, windowEnd),
   };
 }

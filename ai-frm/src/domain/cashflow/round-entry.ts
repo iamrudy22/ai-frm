@@ -13,7 +13,7 @@
  * (roundEntry) 같은 불변식을 지난다. 자금수지표 원본은 서버로 가지 않는다.
  */
 
-import { calendarOf, type Statement } from '@/domain/cashflow/statement';
+import { beyondPlanYearOf, calendarOf, natureOf, type Statement } from '@/domain/cashflow/statement';
 import { amount, type Amount } from '@/domain/shared/amount';
 import { addMonths, compareYearMonth, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 
@@ -47,7 +47,7 @@ export function roundEntryOf(statement: Statement): RoundEntry {
   const sheetStart = calendarOf(statement, statement.months[0]);
 
   const actuals = statement.months
-    .slice(0, base.index)
+    .filter((m) => natureOf(statement, '분양회수', m) === 'actual')
     .map((m) => ({ month: calendarOf(statement, m), value: statement.amountOf('분양회수', m) }));
 
   const plans = Array.from({ length: PLAN_MONTHS }, (_, i): PlanCell => {
@@ -57,7 +57,7 @@ export function roundEntryOf(statement: Statement): RoundEntry {
       return { month, missing: `${round} 회차 시트에 ${month} 열이 없습니다.` };
     }
     const value = statement.amountOf('분양회수', column);
-    return column.index > statement.planYearEnd.index ? { month, value, beyondPlanYear: true } : { month, value };
+    return beyondPlanYearOf(statement, column) ? { month, value, beyondPlanYear: true } : { month, value };
   }) as unknown as RoundEntry['plans'];
 
   return { round, sheetStart, actuals, plans };

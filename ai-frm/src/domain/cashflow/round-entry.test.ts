@@ -35,6 +35,18 @@ const actual = (month: string, value: number) => ({ month, value });
 const plan = (month: string, value: number) => ({ month, value });
 
 describe('회차에서 기재분을 떼어 낸다 (정책 §3-3, 2026-09-28 개정)', () => {
+  it('8월 회차는 7월을 마지막 실적으로 두고 8월부터 네 달 계획을 보존한다', () => {
+    const entry = roundEntryOf(createStatement(input(8)));
+    expect(entry.actuals).toEqual([
+      actual('2026/01', 101), actual('2026/02', 102), actual('2026/03', 103),
+      actual('2026/04', 104), actual('2026/05', 105), actual('2026/06', 106),
+      actual('2026/07', 107),
+    ]);
+    expect(entry.plans).toEqual([
+      plan('2026/08', 108), plan('2026/09', 109), plan('2026/10', 110), plan('2026/11', 111),
+    ]);
+  });
+
   it('7월 회차 → 그 시트의 실적 전부(1~6월)와 7·8·9·10월 계획', () => {
     const entry = roundEntryOf(createStatement(input(7)));
     expect(entry.round).toBe('2026/07');
