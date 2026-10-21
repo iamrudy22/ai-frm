@@ -80,7 +80,7 @@ function ChartFrame({ title, unit, minimumMax, bands, series, note, emptyMessage
       <Text type="label" color="inherit" size="sm" justify="center">{title}</Text>
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width="100%" role="img"
         aria-label={`${title}. 단위 ${unit}. ${points.length}개 기준월. ${note}`}>
-        <title>{title} (단위: {unit})</title>
+        <title>{`${title} (단위: ${unit})`}</title>
         <desc>{note} 결측과 비적용 월은 연결하지 않습니다.</desc>
         {bands.map((band, index) => {
           const bottom = Math.max(min, band.atLeast);

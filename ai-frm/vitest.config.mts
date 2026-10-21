@@ -11,6 +11,6 @@ export default defineConfig({
   test: {
     // 도메인은 순수 TypeScript다. DOM이 필요 없다.
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

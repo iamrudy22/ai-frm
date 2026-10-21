@@ -54,8 +54,16 @@
     padding: 0;
   }
 
-  .report-controls {
+  .report-controls,
+  .report-screen-details,
+  .report-root[data-include-reference-in-print="false"] .report-reference-sheet,
+  .report-reference-chart figcaption,
+  .report-metric-chart figcaption {
     display: none !important;
+  }
+
+  .report-print-summary {
+    display: block !important;
   }
 
   .report-root,
@@ -78,8 +86,22 @@
     break-after: page;
   }
 
+  .report-sheet .astryx-stack {
+    gap: var(--spacing-1) !important;
+  }
+
+  .report-sheet .astryx-text {
+    font-size: var(--font-size-xs) !important;
+    line-height: var(--text-heading-1-leading) !important;
+  }
+
   .report-chart {
+    padding: var(--spacing-1) !important;
     break-inside: avoid;
+  }
+
+  .report-chart svg {
+    height: calc(var(--spacing-8) * 4);
   }
 
   .report-sheet-last {
@@ -88,5 +110,11 @@
 
   .report-root .astryx-table-scroll-wrapper {
     overflow: visible;
+  }
+}
+
+@media screen {
+  .report-print-summary {
+    display: none !important;
   }
 }

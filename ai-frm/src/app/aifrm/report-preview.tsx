@@ -1,7 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '@astryxdesign/core/Button';
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { proportional, Table } from '@astryxdesign/core/Table';
@@ -14,8 +15,9 @@ import { LIQUIDITY_GAP_BANDS } from '@/domain/risk/liquidity-gap/policy';
 import { SCORING_RULES, STAGE_BANDS } from '@/domain/risk/construction-perception/policy';
 import { FUNDING_RISK_BANDS } from '@/domain/risk/funding-risk/policy';
 import { LCR_WEIGHTS } from '@/domain/risk/adequate-cash/policy';
-import { ReportChart } from './report-chart';
+import { ReportChart, StatementReferenceChart } from './report-chart';
 import type { FinancialReport, ReportMetric } from './report-model';
+import type { ReferencePoint, StatementReferenceTrends } from './report-reference';
 
 type CriterionRow = { indicator: string; 정상: string; 주의: string; 경고: string; 위기: string } & Record<string, unknown>;
 
@@ -74,10 +76,12 @@ function statusClass(metric: ReportMetric): string {
   return 'text-report-ink';
 }
 
-function Sheet({ children, page, last = false }: { children: ReactNode; page: number; last?: boolean }) {
+function Sheet({ children, page, last = false, className = '' }: {
+  children: ReactNode; page: number; last?: boolean; className?: string;
+}) {
   return (
     <VStack as="section" gap={5} padding={8} width="100%" maxWidth="210mm" minHeight="297mm"
-      className={`report-sheet self-center bg-report-paper text-report-ink ${last ? 'report-sheet-last' : ''}`}
+      className={`report-sheet self-center bg-report-paper text-report-ink ${last ? 'report-sheet-last' : ''} ${className}`}
       aria-label={`보고서 ${page}쪽`}>
       {children}
       <Text size="xsm" color="inherit" justify="center" className="report-page-number">{page}</Text>
@@ -85,26 +89,73 @@ function Sheet({ children, page, last = false }: { children: ReactNode; page: nu
   );
 }
 
+/** 표시 문구만 축약하며 원본 모델과 유니코드 코드 포인트는 보존한다. */
+function abbreviate(text: string, limit: number): string {
+  const characters = Array.from(text);
+  return characters.length <= limit ? text : `${characters.slice(0, limit - 1).join('')}…`;
+}
+
+function shortReason(reason: string): string {
+  const short = abbreviate(reason, 60);
+  return short === reason ? reason : `${short} (상세는 HTML 참고)`;
+}
+
+function coverageText(metric: ReportMetric): string {
+  const coverage = metric.historyCoverage;
+  const count = coverage.availableMonths.length;
+  return [count === 1 ? `${coverage.availableMonths[0]}의 1개월 값 확보`
+    : count > 1 ? `산출값 ${count}개월 확보` : '',
+  coverage.notApplicableMonths.length > 0 ? `비율 비적용 ${coverage.notApplicableMonths.length}개월` : '',
+  coverage.missingMonths.length > 0 ? `결측 ${coverage.missingMonths.length}개월` : ''].filter(Boolean).join(' · ');
+}
+
 function MetricSection({ metric }: { metric: ReportMetric }) {
+  const coverage = coverageText(metric);
+  const reasons = [...new Set(metric.points.flatMap((point) => point.kind === 'available' ? [] : [point.reason]))];
+  const hasFailure = metric.status === '산출 불가' || metric.status === '산출 중';
   return (
-    <VStack as="section" gap={2} className="break-inside-avoid" aria-label={metric.title}>
+    <VStack as="section" gap={2} className="break-inside-avoid wrap-anywhere" aria-label={metric.title}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Heading level={3} color="inherit" className="text-base">○ {metric.title}</Heading>
         <Text type="label" color="inherit" hasTabularNumbers>{metric.value}</Text>
         <Text type="label" color="inherit" className={statusClass(metric)}>[{metric.status}]</Text>
       </HStack>
-      <Text size="sm" color="inherit">- {metric.narrative}</Text>
+      <Text size="sm" color="inherit" className={hasFailure ? 'report-screen-details' : undefined}>- {metric.narrative}</Text>
+      {hasFailure && <Text size="sm" color="inherit" className="report-print-summary">- {shortReason(metric.narrative)}</Text>}
       <Text size="xsm" color="inherit">기준: {metric.basis}</Text>
       <Text size="xsm" color="inherit">* {metric.formula}</Text>
-      <ReportChart metric={metric} />
+      {coverage && <Text size="xsm" color="inherit">자료 상태: {coverage}</Text>}
+      <VStack gap={1} className="report-metric-chart">
+        <ReportChart metric={hasFailure ? { ...metric, narrative: shortReason(metric.narrative) } : metric} />
+        <Text size="xsm" color="inherit" className="report-print-summary">
+          {metric.id === 'construction' || metric.id === 'funding'
+            ? '확보한 외부 응답의 기준월만 표시 · 과거 산출 이력 미조회'
+            : '회차 기준월의 당시 계획 · 본문 선택 기준월과 독립 · 최대 18개월 · 결측·비적용 월은 연결하지 않음'}
+        </Text>
+      </VStack>
+      {reasons.length > 0 && (
+        <details className="report-screen-details wrap-anywhere">
+          <summary>이력의 결측·비적용 사유 상세</summary>
+          <VStack gap={1}>
+            {metric.points.filter((point) => point.kind !== 'available').map((point) => (
+              <Text key={point.month} size="xsm" color="inherit">
+                {point.month} · {point.kind === 'not-applicable' ? '비율 비적용' : '결측'}: {'reason' in point ? point.reason : ''}
+              </Text>
+            ))}
+          </VStack>
+        </details>
+      )}
+      {!hasFailure && reasons.map((reason) => (
+        <Text key={reason} size="xsm" color="inherit" className="report-print-summary">{shortReason(reason)}</Text>
+      ))}
       <Text size="xsm" color="inherit">자료: {metric.source}</Text>
     </VStack>
   );
 }
 
-function ReferencePage() {
+function ReferencePage({ last }: { last: boolean }) {
   return (
-    <Sheet page={3} last>
+    <Sheet page={3} last={last}>
       <HStack className="border-b! border-solid border-report-line!" paddingBlockEnd={2}>
         <Text type="label" color="inherit" className="text-report-blue!">참고</Text>
       </HStack>
@@ -148,7 +199,61 @@ function ReferencePage() {
   );
 }
 
+function natureText(point: ReferencePoint): string {
+  return point.nature === 'actual' ? '실적' : point.nature === 'planned-opening-balance' ? '계획 이월 잔고'
+    : point.nature === 'opening-balance' ? '기준월 잔고' : '계획';
+}
+
+function StatementReferencePage({ trend }: { trend: StatementReferenceTrends }) {
+  const source = abbreviate(trend.sourceFile, 48);
+  const omissions = ([['앞', trend.window.omittedBefore], ['뒤', trend.window.omittedAfter]] as const)
+    .flatMap(([position, range]) => range === null ? [] : [`${position} 생략: ${range.from}~${range.to} (${range.count}개월)`]);
+  return (
+    <Sheet page={4} last className="report-reference-sheet">
+      <VStack as="header" gap={2}>
+        <Heading level={2} color="inherit" className="text-lg">□ 최신 파일의 월별 금액 참고자료</Heading>
+        <Text size="xsm" color="inherit">{trend.note}</Text>
+        <Text size="xsm" color="inherit" className="report-screen-details wrap-anywhere">출처: {trend.sourceFile} · {trend.sourceRound} 회차</Text>
+        <Text size="xsm" color="inherit" className="report-print-summary report-print-source">출처: {source} · {trend.sourceRound} 회차</Text>
+        <Text size="xsm" color="inherit">단위: {trend.unit} · 기준월: {trend.sourceRound} · 표시: {trend.window.from}~{trend.window.to} (최대 18개 월열)</Text>
+        <Text size="xsm" color="inherit">{omissions.length > 0 ? omissions.join(' · ') : '앞·뒤 생략 없음'}</Text>
+      </VStack>
+      {trend.charts.map((chart) => {
+        const missing = chart.series.flatMap((series) => [...new Set(series.points.flatMap((point) => point.kind === 'missing' ? [point.reason] : []))]
+          .map((reason) => ({ item: series.item, reason })));
+        const coverage = chart.series.map((series) => `${series.item}: 확보 ${series.points.filter((point) => point.kind === 'available').length}개월 · 결측 ${series.points.filter((point) => point.kind === 'missing').length}개월`).join(' / ');
+        const beyond = chart.series.some((series) => series.points.some((point) => point.beyondPlanYear));
+        return (
+          <VStack as="section" key={chart.id} gap={1} className="report-reference-chart break-inside-avoid wrap-anywhere" aria-label={`${chart.series.map((series) => series.item).join('·')} 참고자료`}>
+            <StatementReferenceChart trend={trend} chart={chart} />
+            <Text size="xsm" color="inherit">자료 상태: {coverage}</Text>
+            <Text size="xsm" color="inherit" className="report-print-summary">
+              실적 실선 · 계획 점선 · {chart.id === 'opening-cash' ? `${trend.sourceRound} 기준월 잔고 이후는 계획 이월 잔고` : `계획은 ${trend.sourceRound}부터`}{beyond ? ' · 다음 해 미확정 계획 포함' : ''}
+            </Text>
+            {missing.map(({ item, reason }) => <Text key={`${item}-${reason}`} size="xsm" color="inherit" className="report-print-summary report-print-reason">{item} 결측: {shortReason(reason)}</Text>)}
+            <details className="report-screen-details wrap-anywhere">
+              <summary>출처·월별 상태·전체 결측 사유 상세</summary>
+              <VStack gap={1}>
+                <Text size="xsm" color="inherit">원본 파일: {trend.sourceFile} · {trend.sourceRound} 회차 · 단위: {trend.unit}</Text>
+                <Text size="xsm" color="inherit">월 순번은 소계 제거 후 1부터 세며, 엑셀 열 번호·셀 좌표가 아닙니다.</Text>
+                {chart.series.flatMap((series) => series.points.map((point) => (
+                  <Text key={`${series.item}-${point.month}`} size="xsm" color="inherit">
+                    {point.month} · {series.item} · 월 순번 {point.source.statementMonthIndex + 1} ({point.source.monthLabel}) · {natureText(point)}
+                    {point.beyondPlanYear ? ' · 다음 해 미확정 계획' : ''} · {point.kind === 'missing' ? `결측: ${point.reason}` : `${Number(point.value).toLocaleString('ko-KR')} ${trend.unit}`}
+                  </Text>
+                )))}
+              </VStack>
+            </details>
+          </VStack>
+        );
+      })}
+    </Sheet>
+  );
+}
+
 export function FinancialReportPreview({ report }: { report: FinancialReport }) {
+  const [includeReferenceInPrint, setIncludeReferenceInPrint] = useState(false);
+  const hasReference = report.referenceTrends !== null;
   const metric = (id: ReportMetric['id']) => report.metrics.find((item) => item.id === id);
   const recovery = metric('recovery');
   const liquidity = metric('liquidity');
@@ -157,11 +262,14 @@ export function FinancialReportPreview({ report }: { report: FinancialReport }) 
   const cash = metric('cash');
 
   return (
-    <VStack as="article" gap={5} className="report-root text-report-ink" aria-label="재무위험관리 HTML 보고서">
+    <VStack as="article" gap={5} className="report-root text-report-ink" aria-label="재무위험관리 HTML 보고서"
+      data-include-reference-in-print={includeReferenceInPrint}>
       <HStack gap={4} wrap="wrap" vAlign="center" hAlign="between" className="report-controls bg-report-paper" padding={4}>
         <VStack gap={1}>
           <Heading level={2} color="inherit" className="text-lg">HTML 보고서</Heading>
           <Text size="sm" color="inherit">인쇄 창에서 ‘PDF로 저장’을 선택하면 PDF 파일로 받을 수 있습니다.</Text>
+          {hasReference && <CheckboxInput label="월별 금액 참고자료를 PDF에 포함" value={includeReferenceInPrint}
+            onChange={setIncludeReferenceInPrint} description="기본 3쪽 · 선택 시 참고자료를 포함한 4쪽" />}
         </VStack>
         <Button label="PDF로 저장" variant="primary" onClick={() => window.print()} />
       </HStack>
@@ -211,7 +319,8 @@ export function FinancialReportPreview({ report }: { report: FinancialReport }) 
         )}
       </Sheet>
 
-      <ReferencePage />
+      <ReferencePage last={!hasReference || !includeReferenceInPrint} />
+      {report.referenceTrends !== null && <StatementReferencePage trend={report.referenceTrends} />}
     </VStack>
   );
 }
