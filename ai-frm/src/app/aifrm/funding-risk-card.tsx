@@ -86,6 +86,17 @@ export function FundingRiskCard({ fundingRisk }: { fundingRisk: FundingRiskState
 function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; onRetry: (() => void) | null }) {
   const { result, fetchedAt } = report;
   const fetched = fetchedAt === null ? '' : ` · 채권정보센터 조회 ${new Date(fetchedAt).toLocaleString('ko-KR')}`;
+  const calculationNotes = (
+    <VStack gap={1}>
+      <Text type="supporting" size="xsm">
+        금리 차이 = 특수채/공사채 및 공단채/AAA − 국채/국고채권/양곡,외평,재정. 둘 다 잔존 1년,
+        나이스피앤아이·한국자산평가·KIS자산평가 3사 평균이고, 판단월 전달의 마지막 평가일 값입니다.
+      </Text>
+      <Text type="supporting" size="xsm">
+        0.24%p 미만 정상 · 0.52%p 미만 주의 · 0.79%p 미만 경고 · 0.79%p 이상 위기.
+      </Text>
+    </VStack>
+  );
 
   return (
     <VStack gap={3} align="start">
@@ -102,7 +113,7 @@ function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; 
           </HStack>
           <Text type="supporting">{commentFor(result.grade)}</Text>
           {/* 표가 부모의 첫·마지막 자식이면 Astryx가 위아래로 번지게 그린다. 설명을 앞뒤에 둔다. */}
-          <Collapsible trigger="평가사별 금리" defaultIsOpen>
+          <Collapsible trigger="평가사별 금리" defaultIsOpen={false}>
             <VStack gap={2}>
               <Text type="supporting" size="xsm">
                 {result.evaluationDate} 평가일, 단위 %.
@@ -112,6 +123,7 @@ function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; 
                 3사 평균은 채권정보센터가 낸 값 그대로입니다(셋째 자리 아래를 버림). 금리 차이는 두 3사 평균의
                 차이입니다.
               </Text>
+              {calculationNotes}
             </VStack>
           </Collapsible>
         </>
@@ -131,13 +143,7 @@ function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; 
             {evaluationNote(result)}
           </Text>
         )}
-        <Text type="supporting" size="xsm">
-          금리 차이 = 특수채/공사채 및 공단채/AAA − 국채/국고채권/양곡,외평,재정. 둘 다 잔존 1년,
-          나이스피앤아이·한국자산평가·KIS자산평가 3사 평균이고, 판단월 전달의 마지막 평가일 값입니다.
-        </Text>
-        <Text type="supporting" size="xsm">
-          0.24%p 미만 정상 · 0.52%p 미만 주의 · 0.79%p 미만 경고 · 0.79%p 이상 위기.
-        </Text>
+        {result.kind === 'unavailable' && calculationNotes}
       </VStack>
     </VStack>
   );

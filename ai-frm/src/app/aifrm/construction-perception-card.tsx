@@ -196,6 +196,12 @@ function PerceptionResult({
   const { basis, result, diagnostics } = report;
   const fetchedAt = new Date(diagnostics.fetchedAt).toLocaleString('ko-KR');
   const revision = revisionNote(report);
+  const policyNote = (
+    <Text type="supporting" size="xsm">
+      종합위기단계: 20 미만 정상 · 40 미만 주의 · 60 미만 경고 · 60 이상 위기. 건설경기 기준월은
+      Gap·시재 기준월과 따로 움직입니다.
+    </Text>
+  );
 
   return (
     <VStack gap={3} align="start">
@@ -226,7 +232,7 @@ function PerceptionResult({
           </HStack>
           <Text type="supporting">{commentFor(result.grade)}</Text>
           {/* 표가 부모의 첫·마지막 자식이면 Astryx가 위아래로 번지게 그린다. 설명을 앞뒤에 둔다. */}
-          <Collapsible trigger="지표별 산출 내역" defaultIsOpen>
+          <Collapsible trigger="지표별 산출 내역" defaultIsOpen={false}>
             <VStack gap={2}>
               <Text type="supporting" size="xsm">
                 변화율을 0~1 점수로 바꾸고 가중치를 곱해 더한 값이 종합위기인식지수입니다.
@@ -236,6 +242,7 @@ function PerceptionResult({
                 원값의 단위는 ECOS 응답 그대로입니다. 대출금리 변화율은 bp(%p × 100)입니다.{' '}
                 {forecastWindowNote(result.month)}
               </Text>
+              {policyNote}
             </VStack>
           </Collapsible>
         </>
@@ -259,10 +266,7 @@ function PerceptionResult({
         <Text type="supporting" size="xsm">
           {ledgerNote(diagnostics.ledger, basis.baseMonth)}
         </Text>
-        <Text type="supporting" size="xsm">
-          종합위기단계: 20 미만 정상 · 40 미만 주의 · 60 미만 경고 · 60 이상 위기. 건설경기 기준월은
-          Gap·시재 기준월과 따로 움직입니다.
-        </Text>
+        {result.kind === 'unavailable' && policyNote}
       </VStack>
     </VStack>
   );

@@ -482,14 +482,18 @@ function RecoveryDetail({
       <Token color={GRADE_COLOR[recovery.grade]} label={recovery.grade} />
       <Table data={rows} columns={COLUMNS} />
       <Text type="supporting">{paymentRecoveryPolicy.commentFor(recovery.grade)}</Text>
-      <Text type="supporting" size="xsm">
-        {recoveryBasis(judged, target)}: 최신 회차에 적힌 가장 최근 실적(직전 달)을 이전 회차의 같은 달
-        계획과 견줍니다. 판단월의 실적은 다음 달 회차에야 나옵니다.
-      </Text>
-      <Text type="supporting" size="xsm">
-        자금수지표의 분양회수 항목을 읽습니다. 수입계나 수입이 아니라 분양 대금 회수만 봅니다 —
-        국고보조금·기금·출자금은 걷는 일과 무관합니다.
-      </Text>
+      <Collapsible trigger="산출 기준" defaultIsOpen={false}>
+        <VStack gap={2}>
+          <Text type="supporting" size="xsm">
+            {recoveryBasis(judged, target)}: 최신 회차에 적힌 가장 최근 실적(직전 달)을 이전 회차의 같은 달
+            계획과 견줍니다. 판단월의 실적은 다음 달 회차에야 나옵니다.
+          </Text>
+          <Text type="supporting" size="xsm">
+            자금수지표의 분양회수 항목을 읽습니다. 수입계나 수입이 아니라 분양 대금 회수만 봅니다 —
+            국고보조금·기금·출자금은 걷는 일과 무관합니다.
+          </Text>
+        </VStack>
+      </Collapsible>
     </VStack>
   );
 }
@@ -623,10 +627,14 @@ function AdequateCashResult({
           <Text type="supporting" size="xsm">
             수입은 자금조달을 뺀 수입 행입니다. 자금조달은 산식에 넣지 않습니다.
           </Text>
+          <Text type="supporting" size="xsm">
+            적정시재 = 분양회수 20% + 기타수입 10% + 지출 10% + 수지차(지출 − 수입) 40%, 각 3개월
+            합계. 등급 없이 현재시재가 적정시재 이상이면 안정적, 아니면 적정시재 부족입니다.
+          </Text>
         </VStack>
       </Collapsible>
 
-      <VStack gap={1}>
+      {(current.isPlan || current.beyondPlanYear) && <VStack gap={1}>
         {current.isPlan && (
           <Text type="supporting" size="xsm">
             계획: 회차 기준월 뒤의 달입니다. 기초시재가 계획된 조달까지 포함한 이월 잔고라서,
@@ -639,11 +647,7 @@ function AdequateCashResult({
             있어 적정시재가 작게 나올 수 있습니다.
           </Text>
         )}
-        <Text type="supporting" size="xsm">
-          적정시재 = 분양회수 20% + 기타수입 10% + 지출 10% + 수지차(지출 − 수입) 40%, 각 3개월
-          합계. 등급 없이 현재시재가 적정시재 이상이면 안정적, 아니면 적정시재 부족입니다.
-        </Text>
-      </VStack>
+      </VStack>}
     </VStack>
   );
 }
