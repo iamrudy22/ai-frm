@@ -127,6 +127,8 @@ node scripts/extract-perception-fixtures.mjs "<3. 건설경기인식지수(2026)
 독립 기대값은 별도로 준비한다. 같은 정책·기준월에 대응하는 인계 자료의
 `fixture_expected.csv`를 사람이 확인하여 `fixtures/건설경기인식지수-기대값.csv`로 둔다.
 추출 스크립트는 이 네 번째 CSV를 만들지 않는다.
+세 추출 CSV만 있으면 엑셀 원본 대조 두 건은 실행하고, 독립 기대값 대조 한 건만 건너뛴다.
+독립 기대값은 앱의 계산 결과나 추출 CSV의 복사로 대체하지 않는다.
 
 분양회수 예측오차는 `fixtures/자금수지표`의 회차 파일로 계산하고, 실적을 직후 회차
 값으로 바꿔 넣으면 엑셀 `분양회수data` H열과 같아지는지로 창을 검증한다.
@@ -148,7 +150,8 @@ CLI는 현재 작업 폴더를 기준으로 다음 고정 경로를 검사한다
 | 최신 실물 판독 | `fixtures/자금수지표-최신회차.xlsx` |
 | 회차 판독 | `fixtures/자금수지표/`에서 소문자 `.xlsx` 파일 1개 이상 |
 | 분양회수 예측오차 | 같은 폴더의 소문자 `.xlsx` 파일 8개 이상 + `fixtures/분양회수-오차율-엑셀.csv` |
-| 건설경기 엑셀 동등성 | 위의 세 추출 CSV + 별도 `fixtures/건설경기인식지수-기대값.csv` |
+| 건설경기 엑셀 원본 대조 (`constructionWorkbook`) | 위의 세 추출 CSV |
+| 건설경기 전체 동등성 (`constructionPerception`) | 위의 세 추출 CSV + 별도 `fixtures/건설경기인식지수-기대값.csv` |
 
 회차 개수에는 디렉터리, 빈 파일, 읽을 수 없는 파일, 대문자 `.XLSX`를 넣지 않는다.
 8개라는 개수만으로 기존 실물 테스트에 필요한 실제 연도·월별 회차 구성이 보장되지는 않는다.
@@ -159,6 +162,9 @@ JSON의 `rounds.compositionVerified`는 항상 `false`다.
 경로 상태는 `ready`, `missing`, `empty`, `not-regular-file`, `not-directory`, `unreadable`,
 `error`로 구분한다. 종료 코드는 전체 메타데이터 준비 시 0, 입력 미준비 시 2,
 예기치 않은 메타데이터 오류 시 1이다. 자료가 없을 때 exit 2는 올바른 차단 결과다.
+독립 기대값 CSV만 없으면 `constructionWorkbook.inputsReady`는 `true`,
+`constructionPerception.inputsReady`와 전체 `inputsReady`는 `false`이며 exit 2다.
+이 경우에도 엑셀 원본 대조 두 건은 실행할 수 있다.
 
 이 명령의 `scope`는 `fixture-input-metadata`다. 파일 내용을 열거나 파싱하지 않으므로
 손상 여부, CSV 헤더, 기준월, 정책, 수치 일치는 확인하지 않는다. `numericValidation`과
@@ -173,6 +179,7 @@ JSON의 `rounds.compositionVerified`는 항상 `false`다.
    `npm run check:golden-inputs`로 준비 상태를 확인하고 누락된 입력을 보완한다.
 3. `npm run verify`와 `npm run lint`를 실행한다. 일반 verify는 타입과 자동 테스트를 확인하며,
    실물 자료가 없으면 관련 테스트를 건너뛴다. 일반 verify 통과만으로 실물 정답이 검증되지는 않는다.
+   건설경기의 세 추출 CSV가 있으면 원본 대조 두 건이 실행되며, 독립 기대값이 없으면 그 대조 한 건만 건너뛴다.
    실물 테스트가 실행됐는지와 건너뛴 항목을 따로 확인한다.
 4. 대응하는 원본을 앱에 올려 보고서를 생성하고, 각 지표의 기준월·출처·적용 정책과
    계산 결과를 원본 및 PDF와 항목별로 대조한다. 자동 fixture 테스트의 통과는 PDF 전체의

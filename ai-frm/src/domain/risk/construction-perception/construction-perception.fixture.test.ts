@@ -6,9 +6,10 @@
  * 다른 값이 나온다. 그래서 여기서는 엑셀의 오차율(라벨 보정)을 **그대로 주입**한다.
  * 새 정의의 오차율은 forecast-error.rounds.fixture.test.ts가 회차 파일로 검증한다.
  *
- * fixture는 사내 데이터라 커밋하지 않는다. 없으면 통째로 건너뛴다.
+ * fixture는 사내 데이터라 커밋하지 않는다. 세 추출 CSV가 없으면 통째로 건너뛴다.
  * 만드는 법: node scripts/extract-perception-fixtures.mjs "<3. 건설경기인식지수(2026).xlsx>"
- * 그리고 인계 폴더의 fixture_expected.csv를 fixtures/건설경기인식지수-기대값.csv로 둔다.
+ * 인계 폴더의 fixture_expected.csv를 fixtures/건설경기인식지수-기대값.csv로 두면
+ * 독립 기대값 대조도 실행한다. 없으면 이 대조 한 건만 건너뛴다.
  *
  * 단언과 로그에는 사내 금액을 쓰지 않는다. 일치 여부와 단계 문자열만 남긴다.
  */
@@ -29,7 +30,8 @@ const FILES = {
   results: resolve(process.cwd(), 'fixtures/건설경기인식지수-엑셀결과.csv'),
   expected: resolve(process.cwd(), 'fixtures/건설경기인식지수-기대값.csv'),
 };
-const present = Object.values(FILES).every(existsSync);
+const workbookPresent = [FILES.raw, FILES.errorRates, FILES.results].every(existsSync);
+const expectedPresent = existsSync(FILES.expected);
 
 function readCsv(path: string): Record<string, string>[] {
   const [header, ...lines] = readFileSync(path, 'utf8').trim().split(/\r?\n/);
@@ -37,7 +39,7 @@ function readCsv(path: string): Record<string, string>[] {
   return lines.map((line) => Object.fromEntries(line.split(',').map((v, i) => [keys[i], v])));
 }
 
-describe.skipIf(!present)('엑셀 동등성 — ECOS 9종과 산식 (정책 §8)', () => {
+describe.skipIf(!workbookPresent)('엑셀 동등성 — ECOS 9종과 산식 (정책 §8)', () => {
   let input: PerceptionInput;
 
   beforeAll(() => {
@@ -60,7 +62,7 @@ describe.skipIf(!present)('엑셀 동등성 — ECOS 9종과 산식 (정책 §8)
     };
   });
 
-  it('인계 fixture 35개월(2023/08~2026/06)의 지수가 소수점 6자리까지, 단계가 전부 같다', () => {
+  it.skipIf(!expectedPresent)('인계 fixture 35개월(2023/08~2026/06)의 지수가 소수점 6자리까지, 단계가 전부 같다', () => {
     const rows = readCsv(FILES.expected).filter((r) => r['시점'] !== '2026/07');
     expect(rows).toHaveLength(35);
     for (const row of rows) {

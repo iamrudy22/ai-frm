@@ -26,6 +26,7 @@ type Report = {
     latestStatement: { inputsReady: boolean };
     statementRounds: { inputsReady: boolean };
     forecastError: { inputsReady: boolean };
+    constructionWorkbook: { inputsReady: boolean };
     constructionPerception: { inputsReady: boolean };
   };
   error?: string;
@@ -70,7 +71,8 @@ describe('골든 입력 준비 점검 CLI — 합성 메타데이터', () => {
     expect(report.rounds).toEqual({ path: ROUNDS, status: 'missing', usableFileCount: 0, compositionVerified: false });
     expect(report.validationGroups).toEqual({
       latestStatement: { inputsReady: false }, statementRounds: { inputsReady: false },
-      forecastError: { inputsReady: false }, constructionPerception: { inputsReady: false },
+      forecastError: { inputsReady: false }, constructionWorkbook: { inputsReady: false },
+      constructionPerception: { inputsReady: false },
     });
   });
 
@@ -126,13 +128,24 @@ describe('골든 입력 준비 점검 CLI — 합성 메타데이터', () => {
     expect(report.validationGroups.forecastError.inputsReady).toBe(false);
   });
 
-  it('추출된 세 CSV가 있어도 독립 기대값 CSV가 없으면 건설경기는 미준비다', () => {
+  it('세 추출 CSV만 있으면 건설경기 원본 대조는 준비되지만 전체는 exit 2다', () => {
     prepare();
     rmSync(resolve(cwd, CSV_PATHS[3]));
     const { report, status } = run();
     expect(status).toBe(2);
+    expect(report.inputsReady).toBe(false);
+    expect(report.validationGroups.constructionWorkbook.inputsReady).toBe(true);
     expect(report.validationGroups.constructionPerception.inputsReady).toBe(false);
     expect(report.validationGroups.forecastError.inputsReady).toBe(true);
+  });
+
+  it.each(CSV_PATHS.slice(0, 3))('추출 CSV %s가 없으면 건설경기 원본 대조도 미준비다', (path) => {
+    prepare();
+    rmSync(resolve(cwd, path));
+    const { report, status } = run();
+    expect(status).toBe(2);
+    expect(report.validationGroups.constructionWorkbook.inputsReady).toBe(false);
+    expect(report.validationGroups.constructionPerception.inputsReady).toBe(false);
   });
 
   it('오차율 CSV가 없으면 회차 수가 충분해도 예측오차는 미준비다', () => {

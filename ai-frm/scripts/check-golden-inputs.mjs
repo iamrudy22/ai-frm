@@ -62,6 +62,7 @@ const validationGroups = {
   forecastError: {
     inputsReady: roundsReadable && rounds.usableFileCount >= 8 && requiredInputs[2].status === 'ready',
   },
+  constructionWorkbook: { inputsReady: requiredInputs.slice(1, 4).every(({ status }) => status === 'ready') },
   constructionPerception: { inputsReady: requiredInputs.slice(1).every(({ status }) => status === 'ready') },
 };
 const inputsReady = !metadataFailed && Object.values(validationGroups).every((group) => group.inputsReady);
