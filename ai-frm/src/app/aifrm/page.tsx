@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Badge } from '@astryxdesign/core/Badge';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
 import { Card } from '@astryxdesign/core/Card';
@@ -58,14 +58,12 @@ import {
   type SummaryStatus,
   type SummaryTile,
 } from './summary-view';
-import { GRADE_BADGE, money, percent } from './format';
+import { GRADE_COLOR, money, percent } from './format';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
 
 // ── 표시 헬퍼 ────────────────────────────────────────────────────────────
-
-const BADGE_VARIANT = GRADE_BADGE;
 
 type Row = { 항목: string; 값: string } & Record<string, unknown>;
 
@@ -108,6 +106,16 @@ export default function AifrmDashboardPage() {
   const [prepared, setPrepared] = useState<Prepared>({ kind: 'empty' });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [reportOpenedAt, setReportOpenedAt] = useState<Date | null>(null);
+  const reportWasOpen = useRef(false);
+  useEffect(() => {
+    if (reportOpenedAt !== null) {
+      reportWasOpen.current = true;
+      document.getElementById('report-view-heading')?.focus();
+    } else if (reportWasOpen.current) {
+      reportWasOpen.current = false;
+      document.getElementById('report-entry')?.focus();
+    }
+  }, [reportOpenedAt]);
   // 유동성 Gap·적정 시재의 기준월(3개월 창의 첫 달). 건설경기 인식 지수의 기준월과 따로다.
   const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
   // 읽는 중에 파일을 다시 고르면 앞선 읽기의 결과를 버린다.
@@ -275,6 +283,7 @@ export default function AifrmDashboardPage() {
 
             <VStack gap={1} align="start">
               <Button
+                id="report-entry"
                 label={loaded === null ? '보고서 양식 미리보기' : 'HTML 보고서 보기'}
                 variant={loaded === null ? 'secondary' : 'primary'}
                 onClick={() => {
@@ -400,7 +409,7 @@ function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
 }
 
 function StatusMark({ status }: { status: SummaryStatus }) {
-  if (status.kind === 'grade') return <Badge variant={BADGE_VARIANT[status.grade]} label={status.grade} />;
+  if (status.kind === 'grade') return <Token color={GRADE_COLOR[status.grade]} label={status.grade} />;
   return (
     <HStack gap={2} vAlign="center">
       <StatusDot variant={status.variant} label={status.label} />
@@ -548,7 +557,7 @@ function RecoveryDetail({
 
   return (
     <VStack gap={3} align="start">
-      <Badge variant={BADGE_VARIANT[recovery.grade]} label={recovery.grade} />
+      <Token color={GRADE_COLOR[recovery.grade]} label={recovery.grade} />
       <Table data={rows} columns={COLUMNS} />
       <Text type="supporting">{paymentRecoveryPolicy.commentFor(recovery.grade)}</Text>
       <Text type="supporting" size="xsm">
@@ -595,7 +604,7 @@ function GapDetail({ gap, gapMonth }: { gap: LiquidityGap; gapMonth: YearMonth |
 
   return (
     <VStack gap={3} align="start">
-      <Badge variant={BADGE_VARIANT[gap.grade]} label={gap.grade} />
+      <Token color={GRADE_COLOR[gap.grade]} label={gap.grade} />
       <Table data={rows} columns={COLUMNS} />
       <Text type="supporting">{liquidityGapPolicy.commentFor(gap.grade)}</Text>
       <Text type="supporting" size="xsm">

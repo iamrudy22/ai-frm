@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Badge } from '@astryxdesign/core/Badge';
+import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -42,7 +42,7 @@ import {
   revisionNote,
 } from '@/app/aifrm/construction-perception-view';
 import type { NamedStatement } from '@/app/aifrm/uploaded-rounds';
-import { GRADE_BADGE } from '@/app/aifrm/format';
+import { GRADE_COLOR } from '@/app/aifrm/format';
 import { roundEntryOf, type RoundEntry } from '@/domain/cashflow/round-entry';
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
 import { commentFor } from '@/domain/risk/construction-perception/policy';
@@ -221,7 +221,7 @@ function PerceptionResult({
       {result.kind === 'ok' ? (
         <>
           <HStack gap={2} vAlign="center">
-            <Badge variant={GRADE_BADGE[result.grade]} label={result.grade} />
+            <Token color={GRADE_COLOR[result.grade]} label={result.grade} />
             <Text>종합위기인식지수 {result.index.toFixed(2)}</Text>
           </HStack>
           <Text type="supporting">{commentFor(result.grade)}</Text>

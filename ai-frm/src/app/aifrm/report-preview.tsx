@@ -71,8 +71,8 @@ const WEIGHT_COLUMNS = [
 ];
 
 function statusClass(metric: ReportMetric): string {
-  if (metric.grade === '정상') return 'text-report-blue!';
-  if (metric.grade !== null || metric.status === '적정시재 부족') return 'text-report-crisis!';
+  if (metric.grade === '정상') return 'text-report-status-normal!';
+  if (metric.grade !== null || metric.status === '적정시재 부족') return 'text-report-status-alert!';
   return 'text-report-ink';
 }
 
@@ -165,7 +165,7 @@ function ReferencePage({ last }: { last: boolean }) {
   return (
     <Sheet page={3} last={last}>
       <HStack className="border-b! border-solid border-report-line!" paddingBlockEnd={2}>
-        <Text type="label" color="inherit" className="text-report-blue!">참고</Text>
+        <Text type="label" color="inherit" className="text-report-status-normal!">참고</Text>
       </HStack>
       <VStack gap={3}>
         <Heading level={2} color="inherit" className="text-lg">□ 위험단계 기준</Heading>
@@ -274,7 +274,7 @@ export function FinancialReportPreview({ report }: { report: FinancialReport }) 
       data-include-reference-in-print={includeReferenceInPrint}>
       <HStack gap={4} wrap="wrap" vAlign="center" hAlign="between" className="report-controls bg-report-paper" padding={4}>
         <VStack gap={1}>
-          <Heading level={2} color="inherit" className="text-lg">HTML 보고서</Heading>
+          <Heading level={2} color="inherit" className="text-lg" id="report-view-heading" tabIndex={-1}>HTML 보고서</Heading>
           <Text size="sm" color="inherit">인쇄 창에서 ‘PDF로 저장’을 선택하면 PDF 파일로 받을 수 있습니다.</Text>
           {hasReference && <CheckboxInput label="월별 금액 참고자료를 PDF에 포함" value={includeReferenceInPrint}
             onChange={setIncludeReferenceInPrint} description="기본 3쪽 · 선택 시 참고자료를 포함한 4쪽" />}

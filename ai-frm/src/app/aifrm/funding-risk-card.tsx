@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Badge } from '@astryxdesign/core/Badge';
+import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -24,7 +24,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 
 import type { FundingRiskReportDto, FundingRiskResponse } from '@/app/api/funding-risk/dto';
 import { basisText, canRetry, evaluationNote, yieldRows } from '@/app/aifrm/funding-risk-view';
-import { GRADE_BADGE, percentPoints } from '@/app/aifrm/format';
+import { GRADE_COLOR, percentPoints } from '@/app/aifrm/format';
 import { AGENCIES } from '@/domain/risk/funding-risk/funding-risk';
 import { commentFor } from '@/domain/risk/funding-risk/policy';
 import type { YearMonth } from '@/domain/shared/year-month';
@@ -97,7 +97,7 @@ function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; 
       {result.kind === 'ok' ? (
         <>
           <HStack gap={2} vAlign="center">
-            <Badge variant={GRADE_BADGE[result.grade]} label={result.grade} />
+            <Token color={GRADE_COLOR[result.grade]} label={result.grade} />
             <Text>금리 차이 {percentPoints(result.spread)}</Text>
           </HStack>
           <Text type="supporting">{commentFor(result.grade)}</Text>
