@@ -238,16 +238,16 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 **Files:** Modify `ai-frm/src/app/aifrm/report-model.ts`, `report-model.test.ts`, `report-chart.tsx`.
 **Interfaces:** §2.4의 필드와 두 차트 컴포넌트를 제공한다. 기존 buildFinancialReport 입력은 유지한다.
 
-- [ ] **1. 통합 실패 테스트:** 빈 양식은 null, 파일 하나도 참고 3차트 생성, 외부 응답 로딩/실패여도 참고 금액 유지, 연속 두 회차가 없으면 회수율 생성하지 않음을 검증한다.
-- [ ] **2. 비적용 회귀:** Gap 순유입/균형은 정상 등급을 유지하고 notApplicableMonths에만 포함돼야 한다. 최신월 실패+과거 한 점에는 ‘현재값’이 아닌 실제 유효월이 표시되는지 모델을 검증한다.
-- [ ] **3. 시재 유효성:** (0,-1)은 유효, (0,undefined)·(NaN,0)·(0,Infinity)는 결측이다. 숫자가 없는 로딩·조회 오류는 기존 상태/사유로 남아야 한다.
-- [ ] **4. 입력 변경 회귀:** Gap 선택월·과거 회차 추가·업로드 순서만 바꾸면 최신 자료 참고 모델은 동일하다. 같은 회차·같은 파일명의 수정 Statement를 넣으면 sourceRound는 그대로이고 값은 새 내용으로 갱신돼야 한다. 새로운 회차이면 sourceRound도 갱신된다.
-- [ ] **5. 실패 확인:** `npx vitest run src/app/aifrm/report-model.test.ts`.
-- [ ] **6. 모델 연결:** localHistory와 외부 응답을 읽는 시점에 점별 상태·사유를 보존한다. 최종 점에서 coverage를 계산하고 Task 2의 참고자료를 연결한다. 기존 판정·본문 선택월·늦은 응답 보호를 유지한다.
-- [ ] **7. SVG 공통화:** 설치 문서·Astryx CLI 확인 후 위험배경/단위/현재·적정시재 범례는 유지한다. 참고 차트는 억원·정확한 항목명·위험배경 없음·실적 실선/계획 점선으로 표시한다. 두 계열의 결측은 독립 처리한다.
-- [ ] **8. 축·접근성 확인:** 0·모든 값 음수·큰 금액이 축 안에 표시되고 SVG title/desc·캡션에서 출처와 실적/계획 의미를 알 수 있어야 한다.
-- [ ] **9. 검사:** `npx vitest run src/app/aifrm/report-reference.test.ts src/app/aifrm/report-chart-view.test.ts src/app/aifrm/report-model.test.ts src/boundaries.test.ts`, `npx tsc --noEmit` 통과.
-- [ ] **10. 해당 변경 검토·커밋한다.**
+- [x] **1. 통합 실패 테스트:** 빈 양식은 null, 파일 하나도 참고 3차트 생성, 외부 응답 로딩/실패여도 참고 금액 유지, 연속 두 회차가 없으면 회수율 생성하지 않음을 검증한다.
+- [x] **2. 비적용 회귀:** Gap 순유입/균형은 정상 등급을 유지하고 notApplicableMonths에만 포함돼야 한다. 최신월 실패+과거 한 점에는 ‘현재값’이 아닌 실제 유효월이 표시되는지 모델을 검증한다.
+- [x] **3. 시재 유효성:** (0,-1)은 유효, (0,undefined)·(NaN,0)·(0,Infinity)는 결측이다. 숫자가 없는 로딩·조회 오류는 기존 상태/사유로 남아야 한다.
+- [x] **4. 입력 변경 회귀:** Gap 선택월·과거 회차 추가·업로드 순서만 바꾸면 최신 자료 참고 모델은 동일하다. 같은 회차·같은 파일명의 수정 Statement를 넣으면 sourceRound는 그대로이고 값은 새 내용으로 갱신돼야 한다. 새로운 회차이면 sourceRound도 갱신된다.
+- [x] **5. 실패 확인:** `npx vitest run src/app/aifrm/report-model.test.ts`.
+- [x] **6. 모델 연결:** localHistory와 외부 응답을 읽는 시점에 점별 상태·사유를 보존한다. 최종 점에서 coverage를 계산하고 Task 2의 참고자료를 연결한다. 기존 판정·본문 선택월·늦은 응답 보호를 유지한다.
+- [x] **7. SVG 공통화:** 설치 문서·Astryx CLI 확인 후 위험배경/단위/현재·적정시재 범례는 유지한다. 참고 차트는 억원·정확한 항목명·위험배경 없음·실적 실선/계획 점선으로 표시한다. 두 계열의 결측은 독립 처리한다.
+- [x] **8. 축·접근성 확인:** 0·모든 값 음수·큰 금액이 축 안에 표시되고 SVG title/desc·캡션에서 출처와 실적/계획 의미를 알 수 있어야 한다.
+- [x] **9. 검사:** `npx vitest run src/app/aifrm/report-reference.test.ts src/app/aifrm/report-chart-view.test.ts src/app/aifrm/report-model.test.ts src/boundaries.test.ts`, `npx tsc --noEmit` 통과.
+- [x] **10. 해당 변경 검토·커밋한다.**
 
 ### Task 5: HTML 상세·인쇄 요약·출력 검증
 
@@ -328,3 +328,11 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 - 독립 검토: 명세 준수·품질 Approved, 발견 사항 없음. 실제 보고서/SVG 연결은 Task 4에서 검증한다.
 - 컨텍스트: `ChartDatum`은 available/missing/not-applicable을 구분한다. `summarizeHistory`, `splitChartSegments`가 순수 표시 함수이며 교차 선분은 점선에만 속한다.
 - 다음: Task 4, 점별 상태·참고자료를 최종 보고서와 SVG에 연결. Task 5에는 기존 React DOM 서버 렌더 기반 UI TDD도 추가했다.
+
+### Task 4 완료
+
+- 구현 커밋: `e465d1e` — 점별 상태/사유·coverage·참고자료와 공통 SVG 연결.
+- TDD: 신규 통합 요구 RED 14 failed / 20 passed → GREEN 34 passed. 긴 외부 사유 보존 회귀도 RED 1건을 확인 후 수정했다. 통합 97 passed, 전체 verify 518 passed / 30 skipped, tsc·ESLint·diff 검사 통과.
+- 독립 검토: 명세 준수·품질 Approved, Critical/Important/Minor 없음.
+- 컨텍스트: 기존 위험지표의 값/등급·선택월·외부 늦은 응답 보호를 유지하며 `referenceTrends`와 `StatementReferenceChart`가 연결 준비됐다. HTML/PDF 참고자료 배치는 다음 단계다.
+- 다음: Task 5의 SSR RED/GREEN, 화면·인쇄 포함 선택·실제 PDF 3/4쪽 및 긴 자료 QA.
