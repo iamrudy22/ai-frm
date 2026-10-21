@@ -101,7 +101,12 @@
   }
 
   .report-chart svg {
+    min-width: 0 !important;
     height: calc(var(--spacing-8) * 4);
+  }
+
+  .report-chart-scroll {
+    overflow: visible !important;
   }
 
   .report-sheet-last {

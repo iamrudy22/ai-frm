@@ -80,8 +80,8 @@ function Sheet({ children, page, last = false, className = '' }: {
   children: ReactNode; page: number; last?: boolean; className?: string;
 }) {
   return (
-    <VStack as="section" gap={5} padding={8} width="100%" maxWidth="210mm" minHeight="297mm"
-      className={`report-sheet self-center bg-report-paper text-report-ink ${last ? 'report-sheet-last' : ''} ${className}`}
+    <VStack as="section" gap={5} padding={4} width="100%" maxWidth="210mm" minHeight="297mm"
+      className={`report-sheet min-w-0 self-center bg-report-paper text-report-ink sm:p-8! print:p-0! ${last ? 'report-sheet-last' : ''} ${className}`}
       aria-label={`보고서 ${page}쪽`}>
       {children}
       <Text size="xsm" color="inherit" justify="center" className="report-page-number">{page}</Text>
@@ -120,7 +120,7 @@ function MetricSection({ metric }: { metric: ReportMetric }) {
     : reasons.length === 1 ? shortReason(reasons[0]) : '';
   const hasFailure = metric.status === '산출 불가' || metric.status === '산출 중';
   return (
-    <VStack as="section" gap={2} className="break-inside-avoid wrap-anywhere" aria-label={metric.title}>
+    <VStack as="section" gap={2} className="min-w-0 break-inside-avoid wrap-anywhere" aria-label={metric.title}>
       <HStack gap={2} vAlign="center" wrap="wrap">
         <Heading level={3} color="inherit" className="text-base">○ {metric.title}</Heading>
         <Text type="label" color="inherit" hasTabularNumbers>{value}</Text>
@@ -131,7 +131,7 @@ function MetricSection({ metric }: { metric: ReportMetric }) {
       <Text size="xsm" color="inherit">기준: {metric.basis}</Text>
       <Text size="xsm" color="inherit">* {metric.formula}</Text>
       {coverage && <Text size="xsm" color="inherit">자료 상태: {coverage}</Text>}
-      <VStack gap={1} className="report-metric-chart">
+      <VStack gap={1} className="report-metric-chart min-w-0">
         <ReportChart metric={hasFailure ? { ...metric, narrative: shortReason(metric.narrative) } : metric} />
         <Text size="xsm" color="inherit" className="report-print-summary">
           {metric.id === 'construction' || metric.id === 'funding'
@@ -232,7 +232,7 @@ function StatementReferencePage({ trend }: { trend: StatementReferenceTrends }) 
         const coverage = chart.series.map((series) => `${series.item}: 확보 ${series.points.filter((point) => point.kind === 'available').length}개월 · 결측 ${series.points.filter((point) => point.kind === 'missing').length}개월`).join(' / ');
         const beyond = chart.series.some((series) => series.points.some((point) => point.beyondPlanYear));
         return (
-          <VStack as="section" key={chart.id} gap={1} className="report-reference-chart break-inside-avoid wrap-anywhere" aria-label={`${chart.series.map((series) => series.item).join('·')} 참고자료`}>
+          <VStack as="section" key={chart.id} gap={1} className="report-reference-chart min-w-0 break-inside-avoid wrap-anywhere" aria-label={`${chart.series.map((series) => series.item).join('·')} 참고자료`}>
             <StatementReferenceChart trend={trend} chart={chart} />
             <Text size="xsm" color="inherit">자료 상태: {coverage}</Text>
             <Text size="xsm" color="inherit" className="report-print-summary">
@@ -270,7 +270,7 @@ export function FinancialReportPreview({ report }: { report: FinancialReport }) 
   const cash = metric('cash');
 
   return (
-    <VStack as="article" gap={5} className="report-root text-report-ink" aria-label="재무위험관리 HTML 보고서"
+    <VStack as="article" gap={5} className="report-root min-w-0 text-report-ink" aria-label="재무위험관리 HTML 보고서"
       data-include-reference-in-print={includeReferenceInPrint}>
       <HStack gap={4} wrap="wrap" vAlign="center" hAlign="between" className="report-controls bg-report-paper" padding={4}>
         <VStack gap={1}>
