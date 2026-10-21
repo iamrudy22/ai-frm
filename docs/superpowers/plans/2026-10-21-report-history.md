@@ -204,12 +204,12 @@ function splitChartSegments(points: readonly ChartDatum[]): readonly ChartSegmen
 **Files:** Create `ai-frm/src/app/aifrm/report-reference.ts`, `ai-frm/src/app/aifrm/report-reference.test.ts`.
 **Interfaces:** Task 1을 사용해 §2.2의 buildStatementReferenceTrends와 타입을 제공한다.
 
-- [ ] **1. 실패 테스트:** 2026/03 회차·2026/01~2027/10 합성 22열은 표시 2026/01~2027/06, 앞 생략 없음, 뒤 2027/07~10의 4개월 생략이어야 한다. 18열 이하 전체 보존과 기준월이 뒤쪽인 긴 파일의 앞 생략도 검증한다.
-- [ ] **2. 보존 테스트:** 각 점의 Amount·YearMonth·자료 성격·statementMonthIndex/라벨이 일치하고, 실제 0·음수는 available, 지출 Unreadable은 지출만 missing, 전체 실패는 사유 유지, null 입력은 null을 검증한다.
-- [ ] **3. 실패 확인:** `npx vitest run src/app/aifrm/report-reference.test.ts`.
-- [ ] **4. 읽기 모델 구현:** 기존 unreadableItems와 도메인 함수를 사용한다. 원본 셀 주소를 만들어내지 않고 입력을 수정하거나 중간 반올림하지 않는다.
-- [ ] **5. 통과 확인:** 같은 명령과 Task 1 테스트 통과. 비적용은 위험지표의 개념이므로 참고 금액의 missing과 혼합하지 않는다.
-- [ ] **6. 해당 변경 검토·커밋한다.**
+- [x] **1. 실패 테스트:** 2026/03 회차·2026/01~2027/10 합성 22열은 표시 2026/01~2027/06, 앞 생략 없음, 뒤 2027/07~10의 4개월 생략이어야 한다. 18열 이하 전체 보존과 기준월이 뒤쪽인 긴 파일의 앞 생략도 검증한다.
+- [x] **2. 보존 테스트:** 각 점의 Amount·YearMonth·자료 성격·statementMonthIndex/라벨이 일치하고, 실제 0·음수는 available, 지출 Unreadable은 지출만 missing, 전체 실패는 사유 유지, null 입력은 null을 검증한다.
+- [x] **3. 실패 확인:** `npx vitest run src/app/aifrm/report-reference.test.ts`.
+- [x] **4. 읽기 모델 구현:** 기존 unreadableItems와 도메인 함수를 사용한다. 원본 셀 주소를 만들어내지 않고 입력을 수정하거나 중간 반올림하지 않는다.
+- [x] **5. 통과 확인:** 같은 명령과 Task 1 테스트 통과. 비적용은 위험지표의 개념이므로 참고 금액의 missing과 혼합하지 않는다.
+- [x] **6. 해당 변경 검토·커밋한다.**
 
 ### Task 3: 상태별 확보 요약·선 구간
 
@@ -311,3 +311,11 @@ Task 1 뒤 Task 2, Task 3은 별도 파일에서 병렬 가능하다. Task 4에�
 - 독립 검토: 명세 준수·코드 품질 Approved, 추가 논리 모순·DDD 경계 위반 없음.
 - 컨텍스트: `natureOf`, `beyondPlanYearOf`가 기존 statement에 있으며 round-entry·adequateCashAt이 소비한다. 금액·회차 정책은 유지된다.
 - 다음: Task 2, 최신 파일의 월별 금액 읽기 모델과 기준월 포함 표시 범위.
+
+### Task 2 완료
+
+- 구현 커밋: `2781c89` — 최신 Statement의 월별 금액·자료 성격·출처·표시 범위 읽기 모델.
+- TDD: null stub에서 RED 14 failed / 1 passed → 신규 GREEN 15 passed. Task 1 포함 회귀 87 passed, 전체 verify 476 passed / 30 skipped. 관련 ESLint 통과.
+- 독립 검토: 명세 준수·품질 Approved, 추가 문제 없음. 호출부의 최신 파일 선택과 화면 기준월 독립성은 Task 4에서 연결·검증한다.
+- 컨텍스트: `buildStatementReferenceTrends`는 최신 UploadedRound 하나를 받으며 Amount/YearMonth·원본 라벨·정규화된 월 순번을 보존한다. unknown 예외는 숨기지 않는다.
+- 다음: Task 3, 상태별 확보 요약과 결측/계획 선 구간.
