@@ -70,6 +70,8 @@ const COLUMNS = [
   { key: '값', header: '값' },
 ];
 
+const CHECK_UPLOAD_SOURCE = '원본 항목·회차를 확인한 뒤 파일을 다시 등록하세요.';
+
 // ── 화면 ─────────────────────────────────────────────────────────────────
 
 /**
@@ -417,7 +419,7 @@ function Diagnostics({ diagnostics }: { diagnostics: Dashboard['diagnostics'] })
         <Banner
           status="warning"
           title="최신 회차에서 읽지 못한 항목이 있습니다"
-          description={`${unreadable.map(({ item, reason }) => `${item}: ${reason}`).join(' / ')} 이 항목을 쓰는 지표만 산출하지 않았습니다.`}
+          description={`${unreadable.map(({ item, reason }) => `${item}: ${reason}`).join(' / ')} 이 항목을 쓰는 지표만 산출하지 않았습니다. 표시된 원본 항목을 확인한 뒤 파일을 다시 등록하세요.`}
         />
       )}
       {rollForward.length > 0 && (
@@ -446,13 +448,13 @@ function RecoveryResult({
   if (recovery === null) {
     return (
       <Text type="supporting">
-        이전 회차 파일이 필요합니다. 같은 달을 두 회차에서 읽어 계획과 실적을 견줍니다.
+        이전 회차({addMonths(judged, -1)}) 파일을 최신 회차와 함께 등록하세요. 같은 달을 두 회차에서 읽어 계획과 실적을 견줍니다.
       </Text>
     );
   }
 
   if (!recovery.ok) {
-    return <Banner status="error" title="판정하지 않았습니다" description={recovery.reason} />;
+    return <Banner status="error" title="판정하지 않았습니다" description={`${recovery.reason} ${CHECK_UPLOAD_SOURCE}`} />;
   }
 
   return <RecoveryDetail recovery={recovery.value} statement={statement} judged={judged} />;
@@ -500,7 +502,7 @@ function RecoveryDetail({
 
 function GapResult({ gap, gapMonth }: { gap: Outcome<LiquidityGap>; gapMonth: YearMonth | null }) {
   if (!gap.ok) {
-    return <Banner status="error" title="산출할 수 없습니다" description={gap.reason} />;
+    return <Banner status="error" title="산출할 수 없습니다" description={`${gap.reason} ${CHECK_UPLOAD_SOURCE}`} />;
   }
 
   return <GapDetail gap={gap.value} gapMonth={gapMonth} />;
@@ -579,7 +581,7 @@ function AdequateCashResult({
   statement: Statement;
 }) {
   if (!adequateCash.ok) {
-    return <Banner status="error" title="산출할 수 없습니다" description={adequateCash.reason} />;
+    return <Banner status="error" title="산출할 수 없습니다" description={`${adequateCash.reason} ${CHECK_UPLOAD_SOURCE}`} />;
   }
 
   const current = adequateCash.value;

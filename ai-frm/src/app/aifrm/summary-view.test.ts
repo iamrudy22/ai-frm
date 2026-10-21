@@ -39,7 +39,7 @@ describe('요약 — 대금 회수 위험', () => {
       title: '대금 회수 위험',
       status: { kind: 'dot', variant: 'neutral', label: '판정 안 함' },
       value: '—',
-      note: '2026/07 회차가 없습니다',
+      note: '2026/07 회차 없음 · 함께 등록하세요',
     });
   });
 
@@ -47,9 +47,26 @@ describe('요약 — 대금 회수 위험', () => {
     expect(recoveryTile({ ok: false, reason: 'x' }, { judged: ym('2026/08'), target: null, previousRound: ym('2026/07') })).toMatchObject({
       status: { kind: 'dot', variant: 'error', label: '판정 불가' },
       value: '—',
-      note: '아래 사유를 확인하세요',
+      note: '원본 항목·회차 확인 후 다시 등록',
     });
   });
+
+  it('연초 판단의 부족 회차는 전달인 전년도 12월로 안내한다', () => {
+    expect(recoveryTile(null, { judged: ym('2027/01'), target: null, previousRound: ym('2026/12') }))
+      .toMatchObject({ value: '—', note: '2026/12 회차 없음 · 함께 등록하세요' });
+  });
+
+  it.each(['항목을 읽지 못했습니다.', '계획값이 0입니다.', '예상하지 못한 합성 원문: 503/미발표/회차'])
+    ('구조화되지 않은 로컬 사유 %s를 추측해 재분류하지 않고 원본 확인을 안내한다', (reason) => {
+      const failed = { ok: false as const, reason };
+      for (const tile of [
+        recoveryTile(failed, { judged: ym('2026/08'), target: null, previousRound: ym('2026/07') }),
+        gapTile(failed, '2026/08~2026/10'),
+        adequateCashTile(failed, '2026/08~2026/10'),
+      ]) {
+        expect(tile).toMatchObject({ value: '—', note: '원본 항목·회차 확인 후 다시 등록' });
+      }
+    });
 });
 
 describe('요약 — 유동성 Gap', () => {
@@ -65,6 +82,7 @@ describe('요약 — 유동성 Gap', () => {
   it('순유입이면 비율 대신 순유입', () => {
     expect(gapTile({ ok: true, value: { kind: 'net-inflow', grade: '정상' } as never }, '2026/08~2026/10')).toMatchObject({
       value: '순유입',
+      note: '2026/08~2026/10',
     });
   });
 
@@ -133,16 +151,41 @@ describe('요약 — 건설경기 인식 지수', () => {
     });
   });
 
-  it('산출불가면 몇 개 지표가 비었는지', () => {
-    expect(perceptionTile(ok({ kind: 'unavailable', month: '2026/06', missing: [{}, {}] }))).toMatchObject({
+  it('산출불가면 구조화된 결측 개수와 지표명으로 요약하고 긴 원문 사유는 상세에서 확인하게 한다', () => {
+    expect(perceptionTile(ok({ kind: 'unavailable', month: '2026/06', missing: [
+      { key: '분양회수예측오차', reason: '합성 회차 자료가 없습니다.' },
+      { key: '총수주액', reason: '합성 원값이 없습니다.' },
+      { key: '선행지수순환변동치', reason: '합성 비교값이 없습니다.' },
+    ] }))).toMatchObject({
       status: { kind: 'dot', variant: 'warning', label: '산출불가' },
       value: '—',
-      note: '기준월 2026/06 · 2개 지표 값 없음',
+      note: '기준월 2026/06 · 3개 지표 값 없음(분양회수 예측오차 등) · 상세 사유 확인',
     });
   });
 
   it('요청이 실패했으면 산출 불가', () => {
-    expect(perceptionTile({ ok: false, reason: 'x' }).status).toEqual({ kind: 'dot', variant: 'error', label: '산출 불가' });
+    expect(perceptionTile({ ok: false, reason: '임의의 요청 처리 사유' })).toMatchObject({
+      status: { kind: 'dot', variant: 'error', label: '산출 불가' },
+      value: '—',
+      note: '요청 처리 실패 · 상세에서 다시 불러오기',
+    });
+  });
+
+  it('결측이 하나이면 해당 지표명만 보여 주고 값 부재 원인을 단정하지 않는다', () => {
+    expect(perceptionTile(ok({ kind: 'unavailable', month: '2026/06', missing: [
+      { key: '선행지수순환변동치', reason: '실패인지 공표 전인지 구분할 수 없는 원문' },
+    ] }))).toMatchObject({
+      note: '기준월 2026/06 · 1개 지표 값 없음(선행지수 순환변동치) · 상세 사유 확인',
+    });
+  });
+
+  it('재조회 중인 이전 결측 지표와 사유를 현재의 보완 안내로 노출하지 않는다', () => {
+    expect(perceptionTile(ok({ kind: 'unavailable', month: '2026/06', missing: [
+      { key: '주가', reason: '이전 주가 원문 사유' },
+    ] }), true, ym('2026/07'))).toMatchObject({
+      value: '…',
+      note: 'ECOS 조회 중 · 요청 기준월 2026/07 · 이전 결과 기준월 2026/06',
+    });
   });
 });
 
@@ -170,17 +213,24 @@ describe('요약 — 조달위험 인식 지수', () => {
     expect(fundingRiskTile(null)).toMatchObject({ status: { kind: 'dot', variant: 'neutral' }, value: '…' });
   });
 
-  it('산출불가면 판단월과 사유 안내', () => {
-    const unavailable = { kind: 'unavailable', judgedMonth: '2026/08', observedMonth: '2026/07', reason: 'x' } as never;
-    expect(fundingRiskTile({ ok: true, value: { source: '회차', result: unavailable, fetchedAt: null } })).toMatchObject({
+  it.each([
+    { fetchedAt: null, guidance: '상세에서 다시 불러오기' },
+    { fetchedAt: '2026-09-01T00:00:00.000Z', guidance: '상세 사유 확인' },
+  ])('산출불가면 판단·관측월을 유지하고 기존 재조회 가능 여부에 맞춰 안내한다: $guidance', ({ fetchedAt, guidance }) => {
+    const unavailable = { kind: 'unavailable', judgedMonth: '2026/08', observedMonth: '2026/07', reason: '아직 말일이 지나지 않았거나 자료가 비어 있습니다.' } as never;
+    expect(fundingRiskTile({ ok: true, value: { source: '회차', result: unavailable, fetchedAt } })).toMatchObject({
       status: { kind: 'dot', variant: 'warning', label: '산출불가' },
       value: '—',
-      note: '2026/08 판단 · 아래 사유를 확인하세요',
+      note: `2026/08 판단 · 2026/07 금리 자료 확인 · ${guidance}`,
     });
   });
 
   it('요청이 실패했으면 산출 불가', () => {
-    expect(fundingRiskTile({ ok: false, reason: 'x' }).status).toEqual({ kind: 'dot', variant: 'error', label: '산출 불가' });
+    expect(fundingRiskTile({ ok: false, reason: '임의의 요청 처리 사유' })).toMatchObject({
+      status: { kind: 'dot', variant: 'error', label: '산출 불가' },
+      value: '—',
+      note: '요청 처리 실패 · 상세에서 다시 불러오기',
+    });
   });
 });
 

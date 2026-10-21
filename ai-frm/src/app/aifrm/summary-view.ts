@@ -15,7 +15,9 @@ import { verdictLabel } from '@/domain/risk/adequate-cash/policy';
 import type { Grade } from '@/domain/risk/grade';
 import { toPercent } from '@/domain/shared/amount';
 import type { YearMonth } from '@/domain/shared/year-month';
+import { indicatorLabel } from './construction-perception-view';
 import { money, percent, percentPoints } from './format';
+import { canRetry } from './funding-risk-view';
 
 export type SummaryStatus =
   | { readonly kind: 'grade'; readonly grade: Grade }
@@ -58,7 +60,8 @@ export function reportReadiness(
 
 const MINUS = '−';
 const NONE = '—';
-const SEE_BELOW = '아래 사유를 확인하세요';
+const CHECK_SOURCE = '원본 항목·회차 확인 후 다시 등록';
+const RETRY_REQUEST = '요청 처리 실패 · 상세에서 다시 불러오기';
 
 const dot = (variant: Extract<SummaryStatus, { kind: 'dot' }>['variant'], label: string): SummaryStatus => ({
   kind: 'dot',
@@ -82,9 +85,9 @@ export function recoveryTile(
 ): SummaryTile {
   const title = '대금 회수 위험';
   if (recovery === null) {
-    return { title, status: dot('neutral', '판정 안 함'), value: NONE, note: `${context.previousRound} 회차가 없습니다` };
+    return { title, status: dot('neutral', '판정 안 함'), value: NONE, note: `${context.previousRound} 회차 없음 · 함께 등록하세요` };
   }
-  if (!recovery.ok) return { title, status: dot('error', '판정 불가'), value: NONE, note: SEE_BELOW };
+  if (!recovery.ok) return { title, status: dot('error', '판정 불가'), value: NONE, note: CHECK_SOURCE };
   return {
     title,
     status: { kind: 'grade', grade: recovery.value.grade },
@@ -95,7 +98,7 @@ export function recoveryTile(
 
 export function gapTile(gap: Dashboard['liquidityGap'], span: string): SummaryTile {
   const title = '유동성 Gap';
-  if (!gap.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
+  if (!gap.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: CHECK_SOURCE };
   return {
     title,
     status: { kind: 'grade', grade: gap.value.grade },
@@ -106,7 +109,7 @@ export function gapTile(gap: Dashboard['liquidityGap'], span: string): SummaryTi
 
 export function adequateCashTile(adequateCash: Dashboard['adequateCash'], span: string): SummaryTile {
   const title = '적정 시재';
-  if (!adequateCash.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
+  if (!adequateCash.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: CHECK_SOURCE };
   const { isAdequate, surplus } = adequateCash.value;
   return {
     title,
@@ -129,14 +132,16 @@ export function perceptionTile(
     const previous = perception?.ok ? ` · 이전 결과 기준월 ${perception.value.result.month}` : '';
     return { title, status: dot('neutral', '불러오는 중'), value: '…', note: `ECOS 조회 중${requested}${previous}` };
   }
-  if (!perception.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
+  if (!perception.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: RETRY_REQUEST };
   const result = perception.value.result;
   if (result.kind === 'unavailable') {
+    const first = result.missing[0];
+    const indicators = first === undefined ? '' : `(${indicatorLabel(first.key)}${result.missing.length > 1 ? ' 등' : ''})`;
     return {
       title,
       status: dot('warning', '산출불가'),
       value: NONE,
-      note: `기준월 ${result.month} · ${result.missing.length}개 지표 값 없음`,
+      note: `기준월 ${result.month} · ${result.missing.length}개 지표 값 없음${indicators} · 상세 사유 확인`,
     };
   }
   return {
@@ -151,10 +156,13 @@ export function perceptionTile(
 export function fundingRiskTile(response: FundingRiskResponse | null): SummaryTile {
   const title = '조달위험 인식 지수';
   if (response === null) return { title, status: dot('neutral', '불러오는 중'), value: '…', note: '채권정보센터 조회 중' };
-  if (!response.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: SEE_BELOW };
+  if (!response.ok) return { title, status: dot('error', '산출 불가'), value: NONE, note: RETRY_REQUEST };
   const result = response.value.result;
   if (result.kind === 'unavailable') {
-    return { title, status: dot('warning', '산출불가'), value: NONE, note: `${result.judgedMonth} 판단 · ${SEE_BELOW}` };
+    return {
+      title, status: dot('warning', '산출불가'), value: NONE,
+      note: `${result.judgedMonth} 판단 · ${result.observedMonth} 금리 자료 확인 · ${canRetry(response) ? '상세에서 다시 불러오기' : '상세 사유 확인'}`,
+    };
   }
   return {
     title,
