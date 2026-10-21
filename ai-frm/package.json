@@ -10,7 +10,8 @@
     "astryx": "node node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "tsc --noEmit && vitest run"
+    "verify": "tsc --noEmit && vitest run",
+    "check:golden-inputs": "node scripts/check-golden-inputs.mjs"
   },
   "dependencies": {
     "@astryxdesign/cli": "^0.5.4",
