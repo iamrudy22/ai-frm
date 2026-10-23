@@ -47,6 +47,20 @@ export function captureBondSource(source: BondYieldSource): {
   };
 }
 
+function replay<T>(observed: SourceObservation<T>): T {
+  if (observed.kind === 'returned') return observed.value;
+  if (observed.kind === 'threw') throw observed.errorKind === 'error' ? new Error(observed.message) : 'upstream non-error throw';
+  throw Error('UNCAPTURED_SOURCE');
+}
+
+/** A persisted observation is the sole input to a historical calculation. */
+export function replayEconomicSource(observed: SourceObservation<SourceResult>): EconomicIndicatorSource {
+  return { async fetchAll() { return replay(observed); } };
+}
+export function replayBondSource(observed: SourceObservation<YieldFetch>): BondYieldSource {
+  return { async dailyYields() { return replay(observed); } };
+}
+
 /** Only source credential forms are redacted at the HTTP boundary. */
 export function redactSourceCredentials(text: string): string {
   return text

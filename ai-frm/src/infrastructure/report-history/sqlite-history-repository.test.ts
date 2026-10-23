@@ -267,9 +267,11 @@ describe('SQLite 불변 월별 이력', () => {
   });
   it('batch 재개·요청 충돌·step 멱등·lease 회수의 fencing을 보장한다', async () => {
     const r = open(), f = await fixture(r);
-    const request = { scopeId: 'scope-A', startKey: 'start', fromCycle: month, toCycle: month, inputHash: 'input-first', roundEntriesJson: [], fixedNow: now };
+    const request = { scopeId: 'scope-A', startKey: 'start', fromCycle: month, toCycle: month, inputHash: 'input-first', roundEntriesJson: [], fixedNow: now, evaluationTimeZone: 'Asia/Seoul', evaluatedCalendar: { year: 2026, month: 10, day: 23 } };
     const { batchId } = await r.putBatch(request);
     expect(await r.putBatch(request)).toEqual({ batchId });
+    expect(await r.putBatch({ ...request, fixedNow: '2026-10-24T00:00:00.000Z', evaluatedCalendar: { year: 2026, month: 10, day: 24 } })).toEqual({ batchId });
+    expect((await r.getBatch('scope-A', batchId))?.fixedNow).toBe(now);
     await expect(r.putBatch({ ...request, inputHash: 'other' })).rejects.toThrow();
     const claim = { scopeId: 'scope-A', batchId, sourceKey: 'ecos', ownerId: 'one', now, leaseUntil: '2026-10-23T00:01:30.000Z' };
     const one = await r.claimCaptureSlot(claim);
@@ -300,7 +302,7 @@ describe('SQLite 불변 월별 이력', () => {
     const r = open();
     const f = await fixture(r);
     const old = yearMonth(2025, 1);
-    const { batchId } = await r.putBatch({ scopeId: 'scope-A', startKey: 'old', fromCycle: old, toCycle: old, inputHash: 'full-batch', roundEntriesJson: [], fixedNow: now });
+    const { batchId } = await r.putBatch({ scopeId: 'scope-A', startKey: 'old', fromCycle: old, toCycle: old, inputHash: 'full-batch', roundEntriesJson: [], fixedNow: now, evaluationTimeZone: 'Asia/Seoul', evaluatedCalendar: { year: 2026, month: 10, day: 23 } });
     const oldBasis: ReportBasis = { reportCycle: old, reportTitleMonth: yearMonth(2024, 12), constructionBaseMonth: yearMonth(2024, 11), fundingJudgedMonth: old, fundingObservedMonth: yearMonth(2024, 12), gapMonth: old };
     const construction = (await r.putCalculation({ ...f.common, indicator: 'construction', origin: 'reconstructed', effectiveMonth: oldBasis.constructionBaseMonth, batchId })).calculationId;
     const funding = (await r.putCalculation({ ...f.common, indicator: 'funding', origin: 'reconstructed', effectiveMonth: oldBasis.fundingObservedMonth, inputHash: 'judged-old', batchId })).calculationId;

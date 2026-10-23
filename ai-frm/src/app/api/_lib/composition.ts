@@ -12,8 +12,8 @@ import { EcosIndicatorSource } from '@/infrastructure/ecos/ecos-indicator-source
 import { KofiaYieldSource } from '@/infrastructure/kofia/kofia-yield-source';
 import type { HistoryDependencies } from '@/application/report-history/ports';
 import { SqliteHistoryRepository, hashHistoryValue, HISTORY_CALCULATION_VERSION } from '@/infrastructure/report-history/sqlite-history-repository';
-import { evidenceToJson } from '@/infrastructure/report-history/evidence-codec';
-import { captureEconomicSource, captureBondSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
+import { evidenceToJson, evidenceFromJson } from '@/infrastructure/report-history/evidence-codec';
+import { captureEconomicSource, captureBondSource, replayEconomicSource, replayBondSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
 
 /** 기준월을 바꿀 때마다 ECOS를 다시 부르지 않도록 서버 프로세스에 하나만 둔다. */
 const ECOS_CACHE_MS = 10 * 60 * 1000;
@@ -45,8 +45,9 @@ export async function historyProvider(
     scopeId: await repository.defaultScopeId(),
     deps: {
       repository, indicators, yields, clock, metadataClock: () => new Date(),
-      hash: hashHistoryValue, encode: evidenceToJson, calculationVersion: HISTORY_CALCULATION_VERSION,
+      hash: hashHistoryValue, encode: evidenceToJson, decode: evidenceFromJson, calculationVersion: HISTORY_CALCULATION_VERSION,
       captureIndicators: captureEconomicSource, captureYields: captureBondSource,
+      replayIndicators: replayEconomicSource, replayYields: replayBondSource,
       isUnsafe: containsSourceCredentials,
     },
   };

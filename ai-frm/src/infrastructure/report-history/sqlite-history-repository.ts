@@ -36,7 +36,7 @@ CREATE TABLE batch_capture_slot(scope_id TEXT NOT NULL,batch_id TEXT NOT NULL,so
 const IMMUTABLE = ['source_capture', 'report_input_snapshot', 'calculation_record', 'history_selection', 'report_document', 'report_candidate', 'monthly_confirmation', 'idempotent_command', 'backfill_step'];
 function instant(value: string): number { const n = Date.parse(value); if (!Number.isFinite(n))
   throw Error('INVALID_INSTANT'); return n; }
-function assertEvaluationCalendar(input: P.CalculationWrite): void {
+function assertEvaluationCalendar(input: Pick<P.CalculationWrite, 'evaluationTimeZone' | 'evaluatedAt' | 'evaluatedCalendar'>): void {
   const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory', { timeZone: input.evaluationTimeZone, year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date(input.evaluatedAt));
   const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));
   if (Number(fields.year) !== input.evaluatedCalendar.year || Number(fields.month) !== input.evaluatedCalendar.month || Number(fields.day) !== input.evaluatedCalendar.day)
@@ -316,9 +316,14 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     const cutoff = instant(query.asOf);
     if (query.from > query.to)
       throw Error('INVALID_RANGE');
-    if (query.selectedBackfillBatchId)
+    const adopted = new Set<string>();
+    if (query.selectedBackfillBatchId) {
       this.require('backfill_batch', query.scopeId, query.selectedBackfillBatchId);
-    return this.all<P.StoredCalculation>('calculation_record', query.scopeId).filter(c => c.indicator === query.indicator && c.effectiveMonth >= query.from && c.effectiveMonth <= query.to && c.calculationVersion === query.calculationVersion && instant(c.createdAt) <= cutoff && (c.origin === 'live' || c.batchId === query.selectedBackfillBatchId));
+      const steps = this.db.prepare('SELECT body FROM backfill_step WHERE scope_id=? AND batch_id=?').all(query.scopeId, query.selectedBackfillBatchId);
+      for (const row of steps)
+        for (const id of Object.values(decodeEvidence<P.BatchStepWrite>(String(row.body)).calculationIds)) adopted.add(id);
+    }
+    return this.all<P.StoredCalculation>('calculation_record', query.scopeId).filter(c => c.indicator === query.indicator && c.effectiveMonth >= query.from && c.effectiveMonth <= query.to && c.calculationVersion === query.calculationVersion && instant(c.createdAt) <= cutoff && (c.origin === 'live' || (c.batchId === query.selectedBackfillBatchId && adopted.has(c.calculationId))));
   }
   async createHistorySelection(query: P.HistorySelectionQuery): Promise<P.ExternalHistorySelection> {
     return this.transaction(() => {
@@ -387,7 +392,9 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     return this.transaction(() => {
       this.scope(input.scopeId);
       instant(input.fixedNow);
-      const pendingCycles = cycles(input.fromCycle, input.toCycle), requestHash = hashHistoryValue(input);
+      assertEvaluationCalendar({ evaluatedAt: input.fixedNow, evaluatedCalendar: input.evaluatedCalendar, evaluationTimeZone: input.evaluationTimeZone });
+      const pendingCycles = cycles(input.fromCycle, input.toCycle);
+      const requestHash = hashHistoryValue({ scopeId: input.scopeId, startKey: input.startKey, fromCycle: input.fromCycle, toCycle: input.toCycle, inputHash: input.inputHash, roundEntriesJson: input.roundEntriesJson });
       const existing = this.db.prepare('SELECT id,request_hash FROM backfill_batch WHERE scope_id=? AND start_key=?').get(input.scopeId, input.startKey);
       if (existing) {
         if (existing.request_hash !== requestHash)
@@ -401,7 +408,11 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   }
   async getBatch(scopeId: string, id: string): Promise<P.StoredBatch | null> { return this.read('backfill_batch', scopeId, id); }
   async listBatches(scopeId: string, status: 'active' | 'all', limit: number): Promise<readonly P.StoredBatch[]> { if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
-    throw Error('LIMIT_EXCEEDED'); return this.all<P.StoredBatch>('backfill_batch', scopeId).filter(b => status === 'all' || b.status !== 'completed').reverse().slice(0, limit); }
+    throw Error('LIMIT_EXCEEDED');
+    return this.db.prepare('SELECT body FROM backfill_batch WHERE scope_id=? ORDER BY rowid DESC').all(scopeId)
+      .map(row => decodeEvidence<P.StoredBatch>(String(row.body)))
+      .filter(b => status === 'all' || b.status !== 'completed').slice(0, limit);
+  }
   async commitBatchStep(input: P.BatchStepWrite): Promise<P.StoredBatch> {
     return this.transaction(() => {
       const batch = this.require<P.StoredBatch>('backfill_batch', input.scopeId, input.batchId);

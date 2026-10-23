@@ -145,6 +145,8 @@ export type BatchWrite = {
   readonly inputHash: string;
   readonly roundEntriesJson: JsonValue;
   readonly fixedNow: string;
+  readonly evaluationTimeZone: string;
+  readonly evaluatedCalendar: { readonly year: number; readonly month: number; readonly day: number };
 };
 export type StoredBatch = BatchWrite & {
   readonly batchId: string;
@@ -225,16 +227,19 @@ export interface HistoryRepository {
 
 /** Per-request capture dependencies; hashing and codecs stay outside the application layer. */
 export type HistoryDependencies = {
-  readonly repository: Pick<HistoryRepository, 'putEvidence' | 'putCalculation'>;
+  readonly repository: HistoryRepository;
   readonly indicators: EconomicIndicatorSource;
   readonly yields: BondYieldSource;
   readonly clock: () => Date;
   readonly metadataClock: () => Date;
   readonly hash: (value: unknown) => string;
   readonly encode: (value: unknown) => JsonValue;
+  readonly decode?: <T>(value: JsonValue) => T;
   readonly calculationVersion: string;
   readonly captureIndicators: (source: EconomicIndicatorSource) => CapturedSource<EconomicIndicatorSource, SourceResult>;
   readonly captureYields: (source: BondYieldSource) => CapturedSource<BondYieldSource, YieldFetch>;
+  readonly replayIndicators?: (observed: SourceObservation<SourceResult>) => EconomicIndicatorSource;
+  readonly replayYields?: (observed: SourceObservation<YieldFetch>) => BondYieldSource;
   readonly isUnsafe: (value: unknown) => boolean;
 };
 export type SourceObservation<T> =

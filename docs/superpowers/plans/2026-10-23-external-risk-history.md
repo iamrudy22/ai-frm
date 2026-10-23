@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** Task1(`14648d1`)·Task2 구현·검토·QA 완료, Task3 대기. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3 구현·검토·QA 완료, Task4 차트 이력 투영 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -238,11 +238,11 @@ interface HistoryRepository {
 - `CalculationWrite`: `scopeId/indicator/origin/derivation/effectiveMonth/requestContext/inputHash/calculationVersion/captureIds/resultJson/evaluatedAt/evaluationClockTrace/evaluatedCalendar/evaluationTimeZone/createdAt/batchId?`. effectiveMonth는 실제 차트 월(건설 result.month, 조달 result.observedMonth)이다. 조달 judgedMonth는 requestContext에 별도 보관한다. inputHash는 실제 계산 입력(건설 정규화 ledger, 조달 판단월 요청)의 해시이며 문서 전체 입력 해시와 같다고 가정하지 않는다. 기존 Outcome을 성공·산출불가·실패 상태 그대로 기록한다. `evaluationClockTrace:readonly string[]`는 기존 유스케이스가 호출한 순서대로 실제 Clock 반환 ISO 값을 기록한다(건설은 fetchedAt fallback 때문에 여러 번 호출할 수 있다). `evaluatedAt`은 그 첫 Clock의 ISO instant, `evaluatedCalendar`는 그때의 로컬 `{year,month,day}`, `evaluationTimeZone`은 서버의 IANA 시간대다. 수기 정정은 부모 calculationId를 연결하고 같은 evaluationClockTrace를 순서대로 재생해 재계산한다. 호출 횟수가 기록과 달라지면 버전 불일치로 중단하며 시각을 새로 생성하지 않는다. `origin`은 부모의 live/reconstructed를 유지하며 수기 정정을 live로 승격하지 않는다.
 - `CandidateWrite`: `scopeId/basis/inputSnapshotId/inputHash/calculationInputHashes:{construction:string;funding:string}/calculationVersion/authoredAt/preparedAt/calculationIds/historySelectionId/document:PreparedDocument/correctionPreviewId:string|null`. 후보 inputHash는 전체 StatementSnapshot 해시이고, calculationInputHashes는 각 지표의 실제 입력 해시다. 서버가 전체 입력에서 재구성한 건설 ledger 해시/조달 판단월 요청 해시를 대조하며 원천/평가 Clock은 별도 참조다. 조달 결과는 자금 금액에 의존하지 않으므로 같은 판단월의 입력 수정에도 재사용할 수 있다. document는 application의 opaque 값이며 domain이 `FinancialReport`를 import하지 않는다. 엑셀 후보는 일반 commitConfirmation으로 확정할 수 없고 commitCorrection만 사용한다.
 - `StoredEvidence`를 포함한 `Stored*`는 각 Write와 서버 발급 ID를 가진 불변 레코드다. getEvidence는 frozen source/엑셀 명세가 기존 원천을 읽는 서버 포트다. `StoredConfirmation`에는 revision·previousConfirmationId·confirmedAt·candidateId와 문서가 연결된다. `HistoryQuery`는 `scopeId/indicator/from/to/calculationVersion/asOf/selectedBackfillBatchId:string|null`이다.
-- `BatchWrite`는 `scopeId/startKey/fromCycle/toCycle/inputHash/roundEntriesJson/fixedNow`와 월별 `pending/completed` 목록이다. 동일 scope/startKey와 동일 요청 해시는 기존 batch ID를 반환하고 다른 요청 해시는 충돌이다. ECOS/KOFIA 캡처 ID는 별도 capture slot에 연결한다. `BatchStepWrite`는 `scopeId/batchId/reportCycle/basis:ReportBasis/calculationIds`이며 reportCycle=basis.reportCycle과 각 산출의 실제 월·지표/scope/batch를 검사하고 같은 step은 한 번만 완료된다. 기준월은 기존 유스케이스 결과로 조립하고 저장소가 별도 역산하지 않는다.
+- `BatchWrite`는 `scopeId/startKey/fromCycle/toCycle/inputHash/roundEntriesJson/fixedNow/evaluatedCalendar/evaluationTimeZone`와 월별 `pending/completed` 목록이다. 동일 scope/startKey와 동일 요청 해시는 기존 batch ID를 반환하고 다른 요청 해시는 충돌이다. 요청 해시는 고정 입력·범위만 포함하고 서버가 만든 fixedNow/평가 달력/시간대는 제외한다. 재시도는 원래 저장된 평가 문맥을 유지한다. ECOS/KOFIA 캡처 ID는 별도 capture slot에 연결한다. `BatchStepWrite`는 `scopeId/batchId/reportCycle/basis:ReportBasis/calculationIds`이며 reportCycle=basis.reportCycle과 각 산출의 실제 월·지표/scope/batch를 검사하고 같은 step은 한 번만 완료된다. 기준월은 기존 유스케이스 결과로 조립하고 저장소가 별도 역산하지 않는다.
 - `CaptureClaim`은 `scopeId/batchId/sourceKey/ownerId/now/leaseUntil`이다. sourceKey는 `ecos` 또는 `kofia:YYYY/MM`. claim 결과는 ready(captureId), claimed(fence:number), busy다. `CaptureCompletion`은 slot key+ownerId+fence+EvidenceWrite이며, 현재 fence 소유자만 증거 저장과 slot 연결을 한 트랜잭션으로 완료할 수 있다. lease는90초이고 만료 시 다음 요청이 더 큰 fence로 회수한다. 늦은 응답은 새 slot을 덮지 못한다.
 - 필드 타입은 다음으로 고정한다. ID·해시·버전·ISO 시각은 string, 월은 YearMonth, payload/result/requestContext/roundEntriesJson은 JsonValue, schemaVersion은 1, captureIds/historyCalculationIds는 readonly string 배열, calculationIds는 `{construction: string; funding: string}`이다. `sourceKind`는 `'ecos'|'kofia'`, 결과 유효성/등급은 기존 Outcome 안에서 보존한다.
 - `ConfirmationSummary`는 `confirmationId/reportCycle/revision/confirmedAt/candidateId/correctionReason?`를 갖는다. `StoredConfirmation`은 이 값과 scopeId·previousConfirmationId(null 허용)·basis·canonicalCurrentCalculationIds·historySelectionId·document를 갖는다. `StoredBatch`는 BatchWrite와 batchId·completedCycles·pendingCycles·상태(`pending-source|running|completed`)를 갖는다. 후보는 준비 완료 데이터만 `putCandidate`하며 준비 불가 사유는 저장 성공 후보로 표현하지 않는다.
-- `BackfillInput`은 `scopeId/anchorCycle/fromCycle/toCycle/rounds: readonly RoundEntry[]/inputGeneration`이다. from≤to≤anchor 및18회차 이하를 검증한다. `BackfillPlan`은 대상 cycle 배열과 각 cycle의 필요/부족 회차·원본 열 사유를 갖는다. 외부 지표 실제 가용성은 실행 전 확인됐다고 표시하지 않는다.
+- `BackfillInput`은 `scopeId/anchorCycle/fromCycle/toCycle/rounds: readonly RoundEntry[]/inputGeneration`이다. anchor는 서버가 정규화 ledger의 최신 업로드 회차에서 확인하며 오늘로 치환하지 않는다. 회차가 없으면 NO_REPORT_CYCLE로 준비 불가다. from≤to≤anchor 및18회차 이하를 검증한다. `BackfillPlan`은 대상 cycle 배열과 각 cycle의 필요/부족 회차·원본 열 사유를 갖는다. 외부 지표 실제 가용성은 실행 전 확인됐다고 표시하지 않는다.
 - `PreparedCandidate`는 `candidateId/documentHash/document: PreparedDocument/basis/inputGeneration`이다. `PrepareCandidateInput`은 `scopeId/basis/statements: readonly StatementSnapshotDto[]/sourceMetadata:JsonValue/constructionCalculationId/fundingCalculationId/historySelectionId/authoredAt/inputGeneration`이다. `StatementSnapshotDto`는 `asOf:{year,month,day}`, `monthLabels`, `baseMonthIndex`, `planYearEndIndex`, `amounts`(기존 ItemSeries의 수/Unreadable JSON)를 갖는다. 파일명은 별도 출처 메타이며 입력 수치 해시와 구분한다.
 - `HistoryDependencies`는 repository·기존 두 source 포트·Clock(`now():Date`)·ID 발급(`nextId():string`)·해시(`hash(JsonValue):string`)·버전 값을 갖는다. `ReportDocumentFactory`는 `(input: RestoredReportInput, selection: ExternalHistorySelection) => PreparedDocument`이다. `RestoredReportInput`은 복원 회차·기존 Dashboard·두 산출의 기존 Outcome·gapMonth·authoredAt이고, app/API 구현만 이를 기존 `FinancialReportInput`/DTO로 변환한다.
 - `ExternalHistorySelection`은 historySelectionId·scopeId·calculationVersion·지표별 실제 차트 anchor(건설 기준월/조달 관측월)·cutoff·selectedBackfillBatchId·월별 head revision·선택된 StoredCalculation 배열·해당 historyCalculationIds를 갖는다. 단일 선택 batch가 scope/version/범위를 만족하는지 검사하며 각 실제 anchor−17~anchor의18개월만 담는다. dependency head 토큰도 실제 참조 범위로 제한한다. version/schema는 서버가 정한다. 최초 식별자는 `risk-policy-2026-09-28@e3a8f9e`, `report@e3a8f9e`, schemaVersion1로 고정하고 이전 버전으로 결과를 재계산/덮어쓰지 않는다.
@@ -303,11 +303,12 @@ interface HistoryRepository {
 ### 3.3 중단 가능한 보완 배치
 
 - 외부 요청 없는 준비 점검에서 회차별 성공 가능/부족 회차/원본 열 부재를 보여 준다. 실행 요청은 최대 18회차로 제한한다.
-- 배치를 먼저 로컬에 생성하고 ECOS slot을 claim해 9종 응답을 고정한다. 월별 건설 계산에는 저장된 slot의 frozen source를 넣어 기존 `assessPerception()`을 그대로 호출한다.
+- 배치를 먼저 로컬에 생성하고 ECOS slot을 claim해 9종 응답을 고정한다. 시작 평가 시각·달력·시간대를 함께 고정하고 다른 시간대에서 재개하면 조회 전에422로 중단한다. lease/fence의 만료 판단에는 고정 평가시각 대신 실제 현재 운영 시계를 사용한다. 월별 건설 계산에는 저장된 slot의 frozen source를 넣어 기존 `assessPerception()`을 그대로 호출한다.
 - KOFIA도 필요한 관측월별 slot을 claim해 캡처한다. 영구 저장된 캡처는 재시도/재개에서 재조회하지 않는다. 응답 수신 후 저장 전 프로세스가 종료되면 네트워크 요청은 재시도될 수 있으며 새 수신 시각을 기록한다. 물리적 exactly-once 외부 호출을 약속하지 않는다.
 - slot claim/저장에는 §2.2의 lease/fence를 사용한다. 같은 slot의 캡처 선택은 하나만 채택하고, 완료된 step도 하나만 커밋한다. 동시 작업이 같은 고정 입력으로 중복 계산하더라도 채택 결과를 추가 revision으로 만들지 않는다. 전체 배치가 동일 시각의 원천이라고 주장하지 않는다.
 - HTTP 한 요청에서 무제한 백그라운드 Promise를 실행하지 않는다. `start` 후 `step` 요청 하나가 한 보고 회차를 처리하고, 페이지가 다음 step을 요청한다. 브라우저/서버를 닫으면 pending으로 남기고 같은 batch ID로 재개한다. 완료된 step/성공 캡처를 다시 조회하지 않는다.
 - start 요청에는 UUID startKey를 유지해 응답 유실 재시도도 같은 batch ID를 받는다. 시작 응답 전에 탭을 닫았어도 서버의 최근 active batch 목록(최대20개)에서 찾아 재개한다. 브라우저 저장소를 이력 원본으로 삼지 않는다.
+- slot busy/회수·fence 상실/로컬 저장 실패는 원천의 조회 실패가 아니다. 기존 fetchSafely가 이를 불가 결과로 바꾸더라도 별도 제어 상태로 감지하여 산출/step 완료로 채택하지 않는다. busy는202/Retry-After1초로 재시도하고 저장 실패는503이다. 실제 원천 오류/빈 응답은 캡처한 결과로 구별해 채택할 수 있다.
 - 아직 캡처하지 않은 KOFIA 월은 재개 시 최초 캡처할 수 있다. 이미 실패로 캡처한 월을 새 자료로 다시 보완하려면 새 배치를 만든다. 따라서 배치 전체 공통 원천시점을 보증하지 않는다.
 - 지표/월별 부분 실패는 결과로 저장하고 다른 월을 계속 처리한다. 디스크/트랜잭션 실패는 처리 완료로 표시하지 않고 재시도할 수 있게 한다.
 
@@ -397,13 +398,13 @@ interface HistoryRepository {
 **Files:** historical-risk-backfill 서비스/테스트, backfill route/handlers.
 **Interfaces:** `planBackfill(input: BackfillInput): BackfillPlan`, `startBackfill(deps: HistoryDependencies, input: BackfillInput & {startKey:string}): Promise<StoredBatch>`, `runBackfillStep(deps: HistoryDependencies, scopeId: string, batchId: string): Promise<StoredBatch>`. span은 최대18, step은 한 회차.
 
-- [ ] 실패 테스트: 같은 고정 source/ledger/now의 월별 기존 함수 결과와 batch 결과가 지수·등급·세부 원값까지 동일. 정상 실행에서 ECOS 배치당1회·KOFIA 관측월당1회, 영속 캡처 후 재개에서는 해당 원천 재조회0회. 저장 전 crash는 재시도 허용/새 시각 기록.
-- [ ] slot 동시 claim·lease 만료 후 회수·과거 fence의 늦은 응답 거부·증거 저장/slot 연결 원자성·완료 step 중복 방지를 두 repository 연결로 검증한다.
-- [ ] start 응답 유실 후 같은 startKey로 재시도하면 같은 batch ID, 다른 payload/같은 키는 충돌. 시작 직후 탭 종료 후 active 목록에서 같은 배치를 찾아 재개.
-- [ ] b−1/b+2 회차 부족, 연말 전년도 실적 열 부재, 전년동월/전월 원값 부재, 기준값0, 미래 관측월, 마지막 평가일 평균 결측을 기존 사유대로 기록하는 RED를 먼저 확인.
-- [ ] source가 다음 호출에서 수정값을 반환해도 현재 batch의 캡처는 불변. 새 batch만 새 revision 원천을 사용. 일부 월 실패·서버 중단·step 응답 유실 후 재시도에도 중복/반쪽 완료 없음.
-- [ ] `npx vitest run src/application/report-history/historical-risk-backfill.test.ts src/infrastructure/report-history src/app/api/_lib/report-history-handlers.test.ts` GREEN, 전체 verify·관련 lint·독립 리뷰.
-- [ ] 합성 부족 회차/연말/18개월·재개 QA 후 `feat(history): backfill past risks from frozen sources` 커밋·진행 기록. 실제 ECOS/KOFIA는 사용자가 실행한 보완 명령에서만 호출한다.
+- [x] 실패 테스트: 같은 고정 source/ledger/now의 월별 기존 함수 결과와 batch 결과가 지수·등급·세부 원값까지 동일. 정상 실행에서 ECOS 배치당1회·KOFIA 관측월당1회, 영속 캡처 후 재개에서는 해당 원천 재조회0회. 저장 전 crash는 재시도 허용/새 시각 기록.
+- [x] slot 동시 claim·lease 만료 후 회수·과거 fence의 늦은 응답 거부·증거 저장/slot 연결 원자성·완료 step 중복 방지를 두 repository 연결로 검증한다.
+- [x] start 응답 유실 후 같은 startKey로 재시도하면 같은 batch ID, 다른 payload/같은 키는 충돌. 시작 직후 탭 종료 후 active 목록에서 같은 배치를 찾아 재개.
+- [x] b−1/b+2 회차 부족, 연말 전년도 실적 열 부재, 전년동월/전월 원값 부재, 기준값0, 미래 관측월, 마지막 평가일 평균 결측을 기존 사유대로 기록하는 RED를 먼저 확인.
+- [x] source가 다음 호출에서 수정값을 반환해도 현재 batch의 캡처는 불변. 새 batch만 새 revision 원천을 사용. 일부 월 실패·서버 중단·step 응답 유실 후 재시도에도 중복/반쪽 완료 없음.
+- [x] `npx vitest run src/application/report-history/historical-risk-backfill.test.ts src/infrastructure/report-history src/app/api/_lib/report-history-handlers.test.ts` GREEN, 전체 verify·관련 lint·독립 리뷰.
+- [x] 합성 부족 회차/연말/18개월·재개 QA 후 `feat(history): backfill past risks from frozen sources` 커밋·진행 기록. 실제 ECOS/KOFIA는 사용자가 실행한 보완 명령에서만 호출한다.
 
 ### Task 4: 기존 차트에 이력 점 연결·보완 상태 UI
 
