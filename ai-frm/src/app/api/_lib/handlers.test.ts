@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { handleFundingRisk, handlePerception } from '@/app/api/_lib/handlers';
 import type { BondYieldSource, EconomicIndicatorSource, YieldFetch } from '@/application/ports';
+import type { HistoryDependencies, HistoryRepository } from '@/application/report-history/ports';
+import { captureBondSource, captureEconomicSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
+import { SqliteHistoryRepository, hashHistoryValue, HISTORY_CALCULATION_VERSION } from '@/infrastructure/report-history/sqlite-history-repository';
+import { evidenceToJson, evidenceFromJson } from '@/infrastructure/report-history/evidence-codec';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const noKey: EconomicIndicatorSource = {
   fetchAll: async () => {
@@ -137,5 +144,113 @@ describe('POST /api/funding-risk', () => {
 
   it.each([{ judgedMonth: '202608' }, { judgedMonth: 8 }, '{ 깨진'])('본문이 틀리면 400이다 — %o', async (payload) => {
     expect((await callFunding(payload)).status).toBe(400);
+  });
+});
+
+describe('history-enabled handlers', () => {
+  const fixed = () => new Date('2026-09-28T03:00:00Z');
+  function history(indicators: EconomicIndicatorSource, yields: BondYieldSource) {
+    const evidence: unknown[] = [], calculations: unknown[] = [];
+    const repository = {
+      putEvidence: async (value: unknown) => { evidence.push(value); return { captureId: `e${evidence.length}` }; },
+      putCalculation: async (value: unknown) => { calculations.push(value); return { calculationId: `c${calculations.length}` }; },
+    } as unknown as HistoryRepository;
+    const provide = async (clock: () => Date) => ({
+      scopeId: 'scope',
+      deps: {
+        repository, indicators, yields, clock, metadataClock: fixed,
+        hash: value => JSON.stringify(value), encode: value => value as never,
+        calculationVersion: 'test', captureIndicators: captureEconomicSource,
+        captureYields: captureBondSource, isUnsafe: containsSourceCredentials,
+      } satisfies HistoryDependencies,
+    });
+    return { provide, evidence, calculations };
+  }
+
+  it('adds only history to the original response and validates before initializing storage', async () => {
+    const yields: BondYieldSource = { dailyYields: async () => ({ days: [], fetchedAt: fixed() }) };
+    const h = history(noKey, yields);
+    const payload = { judgedMonth: '2026/08' };
+    const baseline = await (await handleFundingRisk(post(payload), yields, fixed)).json();
+    const captured = await (await handleFundingRisk(post(payload), yields, fixed, h.provide)).json();
+    const { history: receipt, ...old } = captured;
+    expect(old).toEqual(baseline);
+    expect(receipt).toMatchObject({ captureStatus: 'saved', calculationId: 'c1' });
+    let initialized = 0;
+    const bad = await handleFundingRisk(post({ judgedMonth: '2026/13' }), yields, fixed, async clock => {
+      initialized++;
+      return h.provide(clock);
+    });
+    expect(bad.status).toBe(400);
+    expect(initialized).toBe(0);
+    expect((await bad.json()).history).toBeUndefined();
+  });
+
+  it('redacts a credential-bearing source URL from HTTP and refuses its persistence', async () => {
+    const secret = 'SYNTHETIC_SECRET_123';
+    const indicators: EconomicIndicatorSource = { fetchAll: async () => { throw Error(`ECOS https://ecos.bok.or.kr/api/StatisticSearch/${secret}/json/kr/1/1?apiKey=${secret}&token=${secret}`); } };
+    const yields: BondYieldSource = { dailyYields: async () => ({ days: [], fetchedAt: fixed() }) };
+    const h = history(indicators, yields);
+    const res = await handlePerception(post({ reportMonth: '2026/08', rounds: [] }), indicators, fixed, h.provide);
+    const body = await res.text();
+    expect(body).not.toContain(secret);
+    expect(body).toContain('[redacted source URL]');
+    expect(JSON.parse(body).history).toEqual({ captureStatus: 'failed', code: 'STORAGE_UNAVAILABLE' });
+    expect(h.evidence).toHaveLength(0);
+    expect(h.calculations).toHaveLength(0);
+  });
+
+  it('preserves a calculated response when the lazy storage provider fails', async () => {
+    const yields: BondYieldSource = { dailyYields: async () => ({ days: [], fetchedAt: fixed() }) };
+    const baseline = await (await handleFundingRisk(post({ judgedMonth: '2026/08' }), yields, fixed)).json();
+    const captured = await (await handleFundingRisk(post({ judgedMonth: '2026/08' }), yields, fixed, async () => { throw Error('disk down'); })).json();
+    const { history: receipt, ...old } = captured;
+    expect(old).toEqual(baseline);
+    expect(receipt).toEqual({ captureStatus: 'failed', code: 'STORAGE_UNAVAILABLE' });
+  });
+
+  it('persists a synthetic HTTP calculation and the exact fetchedAt through SQLite', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'aifrm-history-task2-'));
+    const repository = new SqliteHistoryRepository(join(dir, 'history.sqlite'));
+    try {
+      const fetchedAt = new Date('2026-08-01T12:34:56Z');
+      const yields: BondYieldSource = { dailyYields: async () => ({ days: [], fetchedAt }) };
+      const provider = async (clock: () => Date) => ({
+        scopeId: 'synthetic',
+        deps: {
+          repository, indicators: noKey, yields, clock, metadataClock: fixed,
+          hash: hashHistoryValue, encode: evidenceToJson,
+          calculationVersion: HISTORY_CALCULATION_VERSION,
+          captureIndicators: captureEconomicSource, captureYields: captureBondSource,
+          isUnsafe: containsSourceCredentials,
+        } satisfies HistoryDependencies,
+      });
+      const payload = { judgedMonth: '2026/08' };
+      const baseline = await (await handleFundingRisk(post(payload), yields, fixed)).json();
+      const captured = await (await handleFundingRisk(post(payload), yields, fixed, provider)).json();
+      const { history: receipt, ...old } = captured;
+      expect(old).toEqual(baseline);
+      expect(receipt.captureStatus).toBe('saved');
+      const calculation = await repository.getCalculation('synthetic', receipt.calculationId);
+      expect(calculation).toMatchObject({ effectiveMonth: '2026/07', captureIds: [expect.any(String)], inputHash: hashHistoryValue({ judgedMonth: '2026/08' }) });
+      const evidence = await repository.getEvidence('synthetic', calculation!.captureIds[0]);
+      const original = evidenceFromJson<{ kind: string; value: YieldFetch }>(evidence!.payloadJson);
+      expect('days' in original.value).toBe(true);
+      if (!('days' in original.value)) throw Error('expected successful synthetic yield');
+      expect(original.value.fetchedAt).toEqual(fetchedAt);
+      expect(original.value.days).toEqual([]);
+      const defaultRequest = await (await handleFundingRisk(post({}), yields, fixed, provider)).json();
+      expect(defaultRequest.history.captureStatus).toBe('saved');
+      const perceptionBaseline = await (await handlePerception(post({ reportMonth: '2026/08', rounds: [] }), noKey, fixed)).json();
+      const perception = await (await handlePerception(post({ reportMonth: '2026/08', rounds: [] }), noKey, fixed, provider)).json();
+      const { history: constructionReceipt, ...constructionOld } = perception;
+      expect(constructionOld).toEqual(perceptionBaseline);
+      expect(constructionReceipt.captureStatus).toBe('saved');
+      const construction = await repository.getCalculation('synthetic', constructionReceipt.calculationId);
+      expect(construction).toMatchObject({ effectiveMonth: '2026/06', requestContext: evidenceToJson({ request: { reportMonth: '2026/08' }, input: [], sourceState: 'threw' }) });
+    } finally {
+      repository.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

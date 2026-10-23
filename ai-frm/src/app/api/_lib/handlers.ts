@@ -10,6 +10,10 @@
 
 import { assessPerception, type PerceptionRequest } from '@/application/construction-perception';
 import { assessFundingRiskReport } from '@/application/funding-risk';
+import { captureConstruction, captureFunding } from '@/application/report-history/report-history';
+import type { HistoryDependencies } from '@/application/report-history/ports';
+import type { HistoryReceipt } from '@/domain/report-history/report-history';
+import { redactSourceCredentials } from '@/infrastructure/report-history/captured-sources';
 import type { BondYieldSource, EconomicIndicatorSource } from '@/application/ports';
 import { ledgerOf, type ForecastLedger } from '@/domain/cashflow/forecast-ledger';
 import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
@@ -21,7 +25,18 @@ import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
  * rounds는 화면에서 올린 회차들의 기재분이다. 서버는 저장하지 않고 이 요청에만
  * 쓴다(2026-09-28). 자금수지표 원본은 오지 않는다.
  */
-export async function handlePerception(request: Request, source: EconomicIndicatorSource): Promise<Response> {
+type HistoryProvider = (clock: () => Date) => Promise<{ readonly scopeId: string; readonly deps: HistoryDependencies }>;
+const failedReceipt: HistoryReceipt = { captureStatus: 'failed', code: 'STORAGE_UNAVAILABLE' };
+
+function response(body: unknown, status: number): Response {
+  // JSON serialization retains the old Date → ISO and optional-field behavior.
+  const serialized = JSON.stringify(body, (_key, value) => typeof value === 'string' ? redactSourceCredentials(value) : value);
+  return Response.json(JSON.parse(serialized), { status });
+}
+
+export async function handlePerception(
+  request: Request, source: EconomicIndicatorSource, now?: () => Date, history?: HistoryProvider,
+): Promise<Response> {
   let perceptionRequest: PerceptionRequest;
   let ledger: ForecastLedger;
   try {
@@ -32,11 +47,23 @@ export async function handlePerception(request: Request, source: EconomicIndicat
     };
     ledger = ledgerOf((body.rounds ?? []) as unknown[]);
   } catch (e) {
-    return Response.json({ ok: false, reason: e instanceof Error ? e.message : '본문이 올바르지 않습니다.' }, { status: 400 });
+    return response({ ok: false, reason: e instanceof Error ? e.message : '본문이 올바르지 않습니다.' }, 400);
   }
 
-  const out = await assessPerception(source, ledger, perceptionRequest);
-  return Response.json(out, { status: out.ok ? 200 : 500 });
+  const clock = now ?? (() => new Date());
+  if (history) {
+    let initialized: Awaited<ReturnType<HistoryProvider>>;
+    try {
+      initialized = await history(clock);
+    } catch {
+      const out = await assessPerception(source, ledger, perceptionRequest, clock);
+      return response({ ...out, history: failedReceipt }, out.ok ? 200 : 500);
+    }
+    const captured = await captureConstruction(initialized.deps, initialized.scopeId, perceptionRequest, ledger);
+    return response({ ...captured.outcome, history: captured.history }, captured.outcome.ok ? 200 : 500);
+  }
+  const out = await assessPerception(source, ledger, perceptionRequest, clock);
+  return response(out, out.ok ? 200 : 500);
 }
 
 /**
@@ -48,16 +75,29 @@ export async function handleFundingRisk(
   request: Request,
   yields: BondYieldSource,
   now?: () => Date,
+  history?: HistoryProvider,
 ): Promise<Response> {
   let judgedMonth: YearMonth | undefined;
   try {
     judgedMonth = monthField(await readBody(request), 'judgedMonth');
   } catch (e) {
-    return Response.json({ ok: false, reason: e instanceof Error ? e.message : '본문이 올바르지 않습니다.' }, { status: 400 });
+    return response({ ok: false, reason: e instanceof Error ? e.message : '본문이 올바르지 않습니다.' }, 400);
   }
 
-  const out = await assessFundingRiskReport(yields, { judgedMonth }, now);
-  return Response.json(out, { status: out.ok ? 200 : 500 });
+  const clock = now ?? (() => new Date());
+  if (history) {
+    let initialized: Awaited<ReturnType<HistoryProvider>>;
+    try {
+      initialized = await history(clock);
+    } catch {
+      const out = await assessFundingRiskReport(yields, { judgedMonth }, clock);
+      return response({ ...out, history: failedReceipt }, out.ok ? 200 : 500);
+    }
+    const captured = await captureFunding(initialized.deps, initialized.scopeId, { judgedMonth });
+    return response({ ...captured.outcome, history: captured.history }, captured.outcome.ok ? 200 : 500);
+  }
+  const out = await assessFundingRiskReport(yields, { judgedMonth }, clock);
+  return response(out, out.ok ? 200 : 500);
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {

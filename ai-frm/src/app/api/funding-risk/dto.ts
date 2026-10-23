@@ -7,7 +7,8 @@
 
 import type { FundingRiskReport } from '@/application/funding-risk';
 import type { Outcome } from '@/application/outcome';
+import type { HistoryReceipt } from '@/domain/report-history/report-history';
 
 export type FundingRiskReportDto = Omit<FundingRiskReport, 'fetchedAt'> & { readonly fetchedAt: string | null };
 
-export type FundingRiskResponse = Outcome<FundingRiskReportDto>;
+export type FundingRiskResponse = Outcome<FundingRiskReportDto> & { readonly history?: HistoryReceipt };

@@ -1,5 +1,6 @@
 import type { ItemName, Unreadable } from '../../domain/cashflow/statement';
 import type { YearMonth } from '../../domain/shared/year-month';
+import type { BondYieldSource, EconomicIndicatorSource, SourceResult, YieldFetch } from '../ports';
 import type { HistoryIndicator, CalculationOrigin, Derivation, JsonValue, ReportBasis, PreparedDocument, ConfirmationCommand, ConfirmationResult } from '../../domain/report-history/report-history';
 export type * from '../../domain/report-history/report-history';
 export type StatementSnapshotDto = {
@@ -221,3 +222,24 @@ export interface HistoryRepository {
     kind: 'stale';
   }>;
 }
+
+/** Per-request capture dependencies; hashing and codecs stay outside the application layer. */
+export type HistoryDependencies = {
+  readonly repository: Pick<HistoryRepository, 'putEvidence' | 'putCalculation'>;
+  readonly indicators: EconomicIndicatorSource;
+  readonly yields: BondYieldSource;
+  readonly clock: () => Date;
+  readonly metadataClock: () => Date;
+  readonly hash: (value: unknown) => string;
+  readonly encode: (value: unknown) => JsonValue;
+  readonly calculationVersion: string;
+  readonly captureIndicators: (source: EconomicIndicatorSource) => CapturedSource<EconomicIndicatorSource, SourceResult>;
+  readonly captureYields: (source: BondYieldSource) => CapturedSource<BondYieldSource, YieldFetch>;
+  readonly isUnsafe: (value: unknown) => boolean;
+};
+export type SourceObservation<T> =
+  | { readonly kind: 'not-requested' }
+  | { readonly kind: 'returned'; readonly value: T }
+  | { readonly kind: 'threw'; readonly errorKind: 'error'; readonly message: string }
+  | { readonly kind: 'threw'; readonly errorKind: 'non-error' };
+export type CapturedSource<S, T> = { readonly source: S; readonly observation: () => SourceObservation<T> };

@@ -1,10 +1,11 @@
 /** POST { baseMonth?, reportMonth?, rounds } — 건설경기 인식 지수(기준월 한 달)와 진단. */
 import { handlePerception } from '@/app/api/_lib/handlers';
-import { indicatorSource } from '@/app/api/_lib/composition';
+import { indicatorSource, yieldSource, historyProvider } from '@/app/api/_lib/composition';
 
 // 요청마다 산출한다. ECOS 응답은 조립 지점의 10분 캐시가 재사용한다. 빌드 때 굳지 않게 명시한다.
 export const dynamic = 'force-dynamic';
 
 export function POST(request: Request): Promise<Response> {
-  return handlePerception(request, indicatorSource());
+  const source = indicatorSource();
+  return handlePerception(request, source, undefined, clock => historyProvider(source, yieldSource(), clock));
 }

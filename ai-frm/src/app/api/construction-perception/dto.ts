@@ -7,9 +7,10 @@
 
 import type { PerceptionDiagnostics, PerceptionReport } from '@/application/construction-perception';
 import type { Outcome } from '@/application/outcome';
+import type { HistoryReceipt } from '@/domain/report-history/report-history';
 
 export type PerceptionReportDto = Omit<PerceptionReport, 'diagnostics'> & {
   readonly diagnostics: Omit<PerceptionDiagnostics, 'fetchedAt'> & { readonly fetchedAt: string };
 };
 
-export type PerceptionResponse = Outcome<PerceptionReportDto>;
+export type PerceptionResponse = Outcome<PerceptionReportDto> & { readonly history?: HistoryReceipt };

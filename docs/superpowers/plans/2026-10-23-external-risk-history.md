@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** 사용자 구현 승인 후 Task1 구현·검토·QA 완료, Task2 대기. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2 구현·검토·QA 완료, Task3 대기. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -233,7 +233,7 @@ interface HistoryRepository {
 }
 ```
 
-- `EvidenceWrite`: `scopeId/sourceKind/contentHash/payloadJson/schemaVersion/receivedAt/derivation`. ECOS 9종 Map은 월순 배열로, KOFIA는 평가일순 배열로 직렬화한다. 지표별 fetchedAt·단위·결측 사유를 payload에 남기며 인증정보/키 포함 URL은 넣지 않는다. 수기 파생본도 원본 fetchedAt/receivedAt을 유지하고 새 correctedAt/부모 captureId를 별도로 기록한다.
+- `EvidenceWrite`: `scopeId/sourceKind/contentHash/payloadJson/schemaVersion/receivedAt/derivation`. ECOS 9종 Map과 KOFIA 평가일 목록은 원천 포트가 반환한 월 키/순서를 손실 없이 직렬화한다. 캡처를 위해 원본 순서·정밀도를 바꾸지 않는다. 지표별 fetchedAt·단위·결측 사유를 payload에 남기며 인증정보/키 포함 URL은 넣지 않는다. 수기 파생본도 원본 fetchedAt/receivedAt을 유지하고 새 correctedAt/부모 captureId를 별도로 기록한다.
 - `InputSnapshotWrite`: `scopeId/statements:readonly StatementSnapshotDto[]/sourceMetadata:JsonValue/inputHash/derivation/createdAt`. 출처 파일명은 수치 해시와 분리한다. 새 수정본은 부모 inputSnapshotId를 연결하고 원래 기준일/월 구조를 바꾸지 않는다. CandidateWrite의 해시는 이 불변 스냅샷과 일치해야 한다.
 - `CalculationWrite`: `scopeId/indicator/origin/derivation/effectiveMonth/requestContext/inputHash/calculationVersion/captureIds/resultJson/evaluatedAt/evaluationClockTrace/evaluatedCalendar/evaluationTimeZone/createdAt/batchId?`. effectiveMonth는 실제 차트 월(건설 result.month, 조달 result.observedMonth)이다. 조달 judgedMonth는 requestContext에 별도 보관한다. inputHash는 실제 계산 입력(건설 정규화 ledger, 조달 판단월 요청)의 해시이며 문서 전체 입력 해시와 같다고 가정하지 않는다. 기존 Outcome을 성공·산출불가·실패 상태 그대로 기록한다. `evaluationClockTrace:readonly string[]`는 기존 유스케이스가 호출한 순서대로 실제 Clock 반환 ISO 값을 기록한다(건설은 fetchedAt fallback 때문에 여러 번 호출할 수 있다). `evaluatedAt`은 그 첫 Clock의 ISO instant, `evaluatedCalendar`는 그때의 로컬 `{year,month,day}`, `evaluationTimeZone`은 서버의 IANA 시간대다. 수기 정정은 부모 calculationId를 연결하고 같은 evaluationClockTrace를 순서대로 재생해 재계산한다. 호출 횟수가 기록과 달라지면 버전 불일치로 중단하며 시각을 새로 생성하지 않는다. `origin`은 부모의 live/reconstructed를 유지하며 수기 정정을 live로 승격하지 않는다.
 - `CandidateWrite`: `scopeId/basis/inputSnapshotId/inputHash/calculationInputHashes:{construction:string;funding:string}/calculationVersion/authoredAt/preparedAt/calculationIds/historySelectionId/document:PreparedDocument/correctionPreviewId:string|null`. 후보 inputHash는 전체 StatementSnapshot 해시이고, calculationInputHashes는 각 지표의 실제 입력 해시다. 서버가 전체 입력에서 재구성한 건설 ledger 해시/조달 판단월 요청 해시를 대조하며 원천/평가 Clock은 별도 참조다. 조달 결과는 자금 금액에 의존하지 않으므로 같은 판단월의 입력 수정에도 재사용할 수 있다. document는 application의 opaque 값이며 domain이 `FinancialReport`를 import하지 않는다. 엑셀 후보는 일반 commitConfirmation으로 확정할 수 없고 commitCorrection만 사용한다.
@@ -385,12 +385,12 @@ interface HistoryRepository {
 ### Task 2: 기존 외부 계산의 원천·실행 receipt 자동 기록
 
 **Files:** captured-sources, application report-history 서비스, 기존 API handlers/composition/route/DTO와 관련 테스트.
-**Interfaces:** `captureConstruction(deps: HistoryDependencies, scopeId: string, request: PerceptionRequest, ledger: ForecastLedger): Promise<CapturedOutcome<Outcome<PerceptionReport>>>`, `captureFunding(deps: HistoryDependencies, scopeId: string, request: FundingRiskRequest): Promise<CapturedOutcome<Outcome<FundingRiskReport>>>`. HTTP 조립 시 기존 Outcome를 그대로 펼치고 history만 추가한다. 실패 metadata에는 저장 오류 코드만 포함하며 산출 본문을 바꾸지 않는다.
+**Interfaces:** `captureConstruction(deps: HistoryDependencies, scopeId: string, request: PerceptionRequest, ledger: ForecastLedger): Promise<CapturedOutcome<Outcome<PerceptionReport>>>`, `captureFunding(deps: HistoryDependencies, scopeId: string, request: FundingRiskRequest): Promise<CapturedOutcome<Outcome<FundingRiskReport>>>`. HTTP 조립 시 기존 Outcome를 그대로 펼치고 history만 추가한다. 실패 metadata에는 저장 오류 코드만 포함하며 정상 산출 본문을 바꾸지 않는다. 인증정보가 포함된 원천 오류만 HTTP 경계에서 키/키 포함 URL을 가리는 예외를 적용한다. raw Outcome의 기존 계산 함수는 그대로이며 비밀값이 있는 캡처/결과는 보관하지 않는다.
 
-- [ ] 실패 테스트: 기록 사용 전후 기존 단월 결과를 deepEqual. 계산에 사용한 ECOS 9종/금리 응답과 fetchedAt를 캡처하며 API 키/키 포함 URL은 JSON·오류·로그에 없음.
-- [ ] 월 테스트: 합성 R=2026/08은 건설06·조달 판단08/관측07. 실패 Outcome에도 검증된 요청 맥락/ID가 남음. 읽지 못한 입력은 정상 receipt로 저장하지 않음.
-- [ ] 저장 장애 시 원래 산출 성공/산출불가 상태는 그대로이고 `captureStatus='failed'`만 반환하는 RED를 확인 후 구현.
-- [ ] 기존 handler·construction/funding·경계 테스트와 전체 verify 통과. 저장소를 비활성/실패시킨 실제 합성 API QA 후 독립 리뷰·`feat(history): capture external calculation evidence` 커밋·진행 기록.
+- [x] 실패 테스트: 기록 사용 전후 기존 단월 결과를 deepEqual. 계산에 사용한 ECOS 9종/금리 응답과 fetchedAt를 캡처하며 API 키/키 포함 URL은 JSON·오류·로그에 없음.
+- [x] 월 테스트: 합성 R=2026/08은 건설06·조달 판단08/관측07. 실패 Outcome에도 검증된 요청 맥락/ID가 남음. 읽지 못한 입력은 정상 receipt로 저장하지 않음.
+- [x] 저장 장애 시 원래 산출 성공/산출불가 상태는 그대로이고 `captureStatus='failed'`만 반환하는 RED를 확인 후 구현.
+- [x] 기존 handler·construction/funding·경계 테스트와 전체 verify 통과. 저장소를 비활성/실패시킨 실제 합성 API QA 후 독립 리뷰·`feat(history): capture external calculation evidence` 커밋·진행 기록.
 
 ### Task 3: 과거 자료 준비 점검·보완·중단 후 재개
 

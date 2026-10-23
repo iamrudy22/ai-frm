@@ -10,10 +10,15 @@ import type { BondYieldSource, EconomicIndicatorSource } from '@/application/por
 import { CachedIndicatorSource } from '@/infrastructure/ecos/cached-indicator-source';
 import { EcosIndicatorSource } from '@/infrastructure/ecos/ecos-indicator-source';
 import { KofiaYieldSource } from '@/infrastructure/kofia/kofia-yield-source';
+import type { HistoryDependencies } from '@/application/report-history/ports';
+import { SqliteHistoryRepository, hashHistoryValue, HISTORY_CALCULATION_VERSION } from '@/infrastructure/report-history/sqlite-history-repository';
+import { evidenceToJson } from '@/infrastructure/report-history/evidence-codec';
+import { captureEconomicSource, captureBondSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
 
 /** 기준월을 바꿀 때마다 ECOS를 다시 부르지 않도록 서버 프로세스에 하나만 둔다. */
 const ECOS_CACHE_MS = 10 * 60 * 1000;
 let cachedSource: EconomicIndicatorSource | null = null;
+let historyRepository: SqliteHistoryRepository | null = null;
 
 export function indicatorSource(): EconomicIndicatorSource {
   cachedSource ??= new CachedIndicatorSource(new EcosIndicatorSource(process.env.ECOS_API_KEY), ECOS_CACHE_MS);
@@ -26,4 +31,23 @@ export function indicatorSource(): EconomicIndicatorSource {
  */
 export function yieldSource(): BondYieldSource {
   return new KofiaYieldSource();
+}
+
+/** Called only after the handler has validated JSON, month fields and round entries. */
+export async function historyProvider(
+  indicators: EconomicIndicatorSource,
+  yields: BondYieldSource,
+  clock: () => Date,
+): Promise<{ readonly scopeId: string; readonly deps: HistoryDependencies }> {
+  historyRepository ??= new SqliteHistoryRepository();
+  const repository = historyRepository;
+  return {
+    scopeId: await repository.defaultScopeId(),
+    deps: {
+      repository, indicators, yields, clock, metadataClock: () => new Date(),
+      hash: hashHistoryValue, encode: evidenceToJson, calculationVersion: HISTORY_CALCULATION_VERSION,
+      captureIndicators: captureEconomicSource, captureYields: captureBondSource,
+      isUnsafe: containsSourceCredentials,
+    },
+  };
 }
