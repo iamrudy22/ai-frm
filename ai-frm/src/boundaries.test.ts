@@ -112,7 +112,8 @@ function violations(files: readonly SourceFile[]): string[] {
   return found;
 }
 
-const SERVER_ONLY = ['infrastructure/ecos/', 'infrastructure/kofia/'];
+const SERVER_ONLY = ['infrastructure/ecos/', 'infrastructure/kofia/', 'infrastructure/report-history/'];
+const SERVER_BUILTINS = /^(?:node:)?(?:sqlite|fs(?:\/.*)?|crypto)$/;
 const COMPOSITION_ROOT = 'app/api/';
 
 /** 규칙 6. 서버 전용 모듈을 라우트 밖에서 import하면 잡는다. 제 폴더 안은 허용한다. */
@@ -123,7 +124,12 @@ function serverOnlyViolations(files: readonly SourceFile[]): string[] {
     const own = SERVER_ONLY.find((folder) => path.startsWith(folder));
     for (const specifier of specifiersOf(source)) {
       const target = resolveInternal(path, specifier);
-      if (target === null) continue;
+      if (target === null) {
+        if (SERVER_BUILTINS.test(specifier) && !path.startsWith('infrastructure/') && !/\.test\.tsx?$/.test(path)) {
+          found.push(`${path} → ${specifier}: 서버 기능은 도메인·유스케이스·클라이언트에서 사용하지 않는다`);
+        }
+        continue;
+      }
       const folder = SERVER_ONLY.find((f) => target.startsWith(f));
       if (folder !== undefined && folder !== own) {
         found.push(`${path} → ${specifier}: 서버 전용 모듈은 라우트(app/api/)만 쓴다`);
@@ -304,6 +310,24 @@ describe('서버 전용 모듈 검사기 (규칙 6)', () => {
       file('infrastructure/xlsx/statement-reader.ts', `import { X } from '../ecos/ecos-indicator-source';`),
     ]);
     expect(v).toHaveLength(2);
+  });
+
+  it('이력 SQLite 어댑터를 화면·유스케이스·배럴에서 가져오지 못한다', () => {
+    expect(serverOnlyViolations([
+      file('app/aifrm/page.tsx', `import { SqliteHistoryRepository } from '@/infrastructure/report-history/sqlite-history-repository';`),
+      file('application/report-history/prepare.ts', `import { SqliteHistoryRepository } from '../../infrastructure/report-history/sqlite-history-repository';`),
+      file('shared/history.ts', `export { X } from '@/infrastructure/report-history/evidence-codec';`),
+    ])).toHaveLength(3);
+  });
+
+  it('sqlite·파일·crypto 서버 기능은 domain/client에 새지 않는다', () => {
+    expect(serverOnlyViolations([
+      file('domain/report-history/history.ts', `import { DatabaseSync } from 'node:sqlite';`),
+      file('application/report-history/prepare.ts', `import { readFile } from 'node:fs/promises';`),
+      file('app/aifrm/client.tsx', `'use client'; import { createHash } from 'node:crypto';`),
+      file('shared/client-helper.ts', `import { readFileSync } from 'fs';`),
+      file('app/aifrm/page.tsx', `import('node:sqlite');`),
+    ])).toHaveLength(5);
   });
 
   it('라우트(app/api/)와 제 폴더 안은 허용한다', () => {
