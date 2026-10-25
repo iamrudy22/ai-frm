@@ -2,12 +2,11 @@ import { DatabaseSync, backup as onlineBackup } from 'node:sqlite';
 import { mkdirSync, chmodSync, existsSync, statSync, openSync, closeSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { confirmDecision } from '../../domain/report-history/report-history';
+import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
 import type * as P from '../../application/report-history/ports';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
-export const HISTORY_CALCULATION_VERSION = 'risk-policy-2026-09-28@e3a8f9e';
-export const HISTORY_TEMPLATE_VERSION = 'report@e3a8f9e';
+export { HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 export function hashHistoryValue(value: unknown): string { return createHash('sha256').update(encodeEvidence(value)).digest('hex'); }
 export type SqliteHistoryOptions = {
   readonly readOnly?: boolean;
@@ -329,7 +328,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     return this.transaction(() => {
       this.scope(query.scopeId);
       const cutoff = instant(query.asOf);
-      if (confirmDecision(query.basis, 0, 0).kind !== 'create')
+      if (!validHistorySelectionBasis(query.basis))
         throw Error('INVALID_BASIS');
       if (query.calculationVersion !== HISTORY_CALCULATION_VERSION)
         throw Error('UNSUPPORTED_CALCULATION_VERSION');

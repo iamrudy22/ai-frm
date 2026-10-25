@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3 구현·검토·QA 완료, Task4 차트 이력 투영 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3 구현·검토·QA 완료, Task4 차트 이력 투영·검토·QA 완료, Task5 보고서 확정 구현 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -409,15 +409,15 @@ interface HistoryRepository {
 ### Task 4: 기존 차트에 이력 점 연결·보완 상태 UI
 
 **Files:** 새 projection/view/controls, page 연결, SSR 테스트. 보호 템플릿 파일은 수정하지 않는다.
-**Interfaces:** `withExternalRiskHistory(report: FinancialReport, history: ExternalHistorySelection): FinancialReport`는 construction/funding의 `points/historyCoverage/historyNote`만 바꾼다. selection에는 cutoff·scope·계산 버전·선택 ID가 들어간다.
+**Interfaces:** `withExternalRiskHistory(report: FinancialReport, history: ExternalHistoryView): FinancialReport`는 construction/funding의 `points/historyCoverage/historyNote`만 바꾼다. view는 서버가 불변 selection의 tagged Outcome을 해독한 일반 차트 DTO다. cutoff·scope·계산 버전·선택 ID를 포함하며 클라이언트가 server-only codec을 import하지 않는다. 후보 준비는 서버의 원래 selection ID를 신뢰한다. 조회용 selection은 유효한 커스텀 기준월도 허용하고 canonical 월별 확정 검증은 유지한다.
 
-- [ ] 실패 테스트: 건설06/조달07의 서로 다른 anchor, 미래 점 제외,18달력월·연도 경계·누락월 단절·0/음수 보존. 자체 현재 지표만 확정 우선/확정 불가 월은 불가 유지/확정 없는 달만 선택 batch 보완값 사용. 확정 문서에 복사된 reconstructed 과거점을 소급 확정값으로 승격하지 않음.
-- [ ] 선택 이후 다른 batch/head가 생겨도 같은 historySelectionId는 같은 산출 ID/차트를 반환. 다른 scope/version/basis의 selection은 후보 준비에서 거부하며 최신 batch로 교체하지 않음.
-- [ ] 건설/조달의 서로 다른 anchor를 HistorySelectionQuery로 전달하면 같은 일관 읽기와 하나의 historySelectionId로 고정됨을 검증한다.
-- [ ] 현재 실패+과거 정상 시 본문·현재 상태/사유는 불변. 같은 report를 input-mutating하지 않고 기존 다른3개 지표·문구·산식·값·작성일 deepEqual. 서로 다른 scope/단위/버전 거부.
-- [ ] Controls에는 보완 범위/진행/부족 회차·보완 포함 상태만 제공. 초기에는 불필요한 설명을 접고 용지 밖에 배치하며 인쇄에서 제외한다. 실제 Astryx 문서를 조회하고 기존 포커스를 유지한다.
-- [ ] projection RED→GREEN, 기존 report-model/chart-view/preview 정밀도 테스트 통과. 합성18개월 실제 화면에서 라벨·범례·3개 용지·차트5개를 QA하고 템플릿/CSS/이미지 diff0 확인.
-- [ ] 독립 리뷰 후 `feat(history): project external histories into existing charts` 커밋·진행 기록.
+- [x] 실패 테스트: 건설06/조달07의 서로 다른 anchor, 미래 점 제외,18달력월·연도 경계·누락월 단절·0/음수 보존. 자체 현재 지표만 확정 우선/확정 불가 월은 불가 유지/확정 없는 달만 선택 batch 보완값 사용. 확정 문서에 복사된 reconstructed 과거점을 소급 확정값으로 승격하지 않음.
+- [x] 선택 이후 다른 batch/head가 생겨도 같은 historySelectionId는 같은 산출 ID/차트를 반환. 다른 scope/version/basis의 selection은 후보 준비에서 거부하며 최신 batch로 교체하지 않음.
+- [x] 건설/조달의 서로 다른 anchor를 HistorySelectionQuery로 전달하면 같은 일관 읽기와 하나의 historySelectionId로 고정됨을 검증한다.
+- [x] 현재 실패+과거 정상 시 본문·현재 상태/사유는 불변. 같은 report를 input-mutating하지 않고 기존 다른3개 지표·문구·산식·값·작성일 deepEqual. 서로 다른 scope/단위/버전 거부.
+- [x] Controls에는 보완 범위/진행/부족 회차·보완 포함 상태만 제공. 초기에는 불필요한 설명을 접고 용지 밖에 배치하며 인쇄에서 제외한다. 실제 Astryx 문서를 조회하고 기존 포커스를 유지한다.
+- [x] projection RED→GREEN, 기존 report-model/chart-view/preview 정밀도 테스트 통과. 합성18개월 실제 화면에서 라벨·범례·3개 용지·차트5개를 QA하고 템플릿/CSS/이미지 diff0 확인.
+- [x] 독립 리뷰 후 `feat(history): project external histories into existing charts` 커밋·진행 기록.
 
 ### Task 5: 보고서 확정 자동 보관·정정·확정본 재열람
 

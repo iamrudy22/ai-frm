@@ -7,18 +7,23 @@ import { redactSourceCredentials } from '@/infrastructure/report-history/capture
 type Provider = () => Promise<{ readonly scopeId: string; readonly deps: HistoryDependencies }>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const headers = { 'Cache-Control': 'no-store' };
-function json(body: unknown, status = 200, extra?: HeadersInit): Response {
+export function json(body: unknown, status = 200, extra?: HeadersInit): Response {
   const safe = JSON.parse(JSON.stringify(body, (_key, value) => typeof value === 'string' ? redactSourceCredentials(value) : value));
   return Response.json(safe, { status, headers: { ...headers, ...extra } });
 }
-function localOrigin(request: Request): boolean {
+export function localOrigin(request: Request): boolean {
   const url = new URL(request.url);
   if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return false;
+  const host = request.headers.get('host');
+  if (host && !/^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?$/i.test(host)) return false;
   const origin = request.headers.get('origin');
-  try { return !origin || new URL(origin).origin === url.origin; }
+  try {
+    const authority = host ? new URL(`${url.protocol}//${host}`) : url;
+    return !origin || new URL(origin).origin === authority.origin;
+  }
   catch { return false; }
 }
-async function bodyOf(request: Request): Promise<Record<string, unknown>> {
+export async function bodyOf(request: Request): Promise<Record<string, unknown>> {
   if (Number(request.headers.get('content-length') ?? 0) > 1_000_000) throw Error('BODY_TOO_LARGE');
   const reader = request.body?.getReader();
   if (!reader) throw Error('INVALID_BODY');
@@ -82,6 +87,7 @@ export async function handleBackfillGet(request: Request, provider: Provider): P
     const { scopeId, deps } = await provider();
     const url = new URL(request.url);
     if (url.searchParams.get('active') === '1') return json({ ok: true, batches: await deps.repository.listBatches(scopeId, 'active', 20) });
+    if (url.searchParams.get('all') === '1') return json({ ok: true, batches: await deps.repository.listBatches(scopeId, 'all', 20) });
     const batchId = idOf(url.searchParams.get('batchId'));
     const batch = await deps.repository.getBatch(scopeId, batchId);
     if (!batch) throw Error('BATCH_NOT_FOUND');

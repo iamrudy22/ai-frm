@@ -69,6 +69,15 @@ describe('SQLite 불변 월별 이력', () => {
     expect((await r.getCalculation('scope-A', derived.calculationId))?.derivation).toMatchObject({ parentId: f.construction });
     await expect(r.putCalculation({ ...f.common, indicator: 'construction', origin: 'reconstructed', derivation: { kind: 'manual-correction', parentId: f.construction, importId: 'i', patchHash: 'p', correctedAt: now } })).rejects.toThrow();
   });
+  it('이력 조회는 사용자 지정 건설 기준월과 Gap 월을 보존하되 확정 정책은 그대로 유지한다', async () => {
+    const r = open();
+    await fixture(r);
+    const custom = { ...basis, constructionBaseMonth: yearMonth(2026, 6), gapMonth: yearMonth(2026, 8) };
+    const selection = await r.createHistorySelection({ scopeId: 'scope-A', basis: custom, calculationVersion: version, asOf: now, selectedBackfillBatchId: null });
+    expect(selection.anchors).toEqual({ construction: custom.constructionBaseMonth, funding: basis.fundingObservedMonth });
+    expect(selection.historyCalculationIds).toEqual([]);
+    await expect(r.putCandidate({ ...(await fixture(r, 'scope-A', 'another')).candidate, basis: custom })).rejects.toThrow('INVALID_BASIS');
+  });
   it('정정 입력은 부모 Statement 순서·기준일·월 구조를 보존하고 금액만 바꿀 수 있다', async () => {
     const r = open();
     const first: StatementSnapshotDto = { asOf: { year: 2026, month: 8, day: 31 }, monthLabels: ['7월', '8월'], baseMonthIndex: 1, planYearEndIndex: 1, amounts: { 기초시재: [0, 1], 수입계: [2, 3], 수입: { unreadable: '합성 결측' }, 분양회수: [6, 7], 기타수입: [8, 9], 지출: [10, 11] } };

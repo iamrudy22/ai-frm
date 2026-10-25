@@ -19,6 +19,11 @@ import { captureEconomicSource, captureBondSource, replayEconomicSource, replayB
 const ECOS_CACHE_MS = 10 * 60 * 1000;
 let cachedSource: EconomicIndicatorSource | null = null;
 let historyRepository: SqliteHistoryRepository | null = null;
+export async function historyReadProvider() {
+  historyRepository ??= new SqliteHistoryRepository();
+  const repository = historyRepository;
+  return { scopeId: await repository.defaultScopeId(), repository, decode: evidenceFromJson, now: () => new Date() };
+}
 
 export function indicatorSource(): EconomicIndicatorSource {
   cachedSource ??= new CachedIndicatorSource(new EcosIndicatorSource(process.env.ECOS_API_KEY), ECOS_CACHE_MS);

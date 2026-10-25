@@ -34,6 +34,7 @@ import * as liquidityGapPolicy from '@/domain/risk/liquidity-gap/policy';
 import * as paymentRecoveryPolicy from '@/domain/risk/payment-recovery/policy';
 import { toPercent } from '@/domain/shared/amount';
 import { addMonths, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
+import { roundEntryOf } from '@/domain/cashflow/round-entry';
 import { readStatement } from '@/infrastructure/xlsx/statement-reader';
 import { ConstructionPerceptionCard, usePerception, type Perception } from './construction-perception-card';
 import { FundingRiskCard, useFundingRisk, type FundingRiskState } from './funding-risk-card';
@@ -58,6 +59,9 @@ import { GRADE_COLOR, money, percent } from './format';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
+import { withExternalRiskHistory } from './report-history-projection';
+import { useReportHistory } from './use-report-history';
+import { ReportHistoryControls } from './report-history-controls';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -182,7 +186,22 @@ export default function AifrmDashboardPage() {
     });
   }, [reportOpenedAt, loaded, dashboard, gapMonth, perception.response, perception.isLoading, fundingRisk.response]);
 
-  if (report !== null) {
+  const historyInput = useMemo(() => {
+    const rounds = loaded?.rounds ?? [];
+    const entries = [] as ReturnType<typeof roundEntryOf>[];
+    for (const round of rounds) {
+      try { entries.push(roundEntryOf(round.statement)); } catch { /* unreadable rounds remain explicit readiness shortages */ }
+    }
+    return { entries, unreadable: rounds.length - entries.length };
+  }, [loaded]);
+  const constructionAnchor = loaded === null ? null : perception.selectedMonth ?? addMonths(loaded.latest.round, -2);
+  const history = useReportHistory({ reportCycle: loaded?.latest.round ?? null, constructionAnchor, gapMonth, rounds: loaded === null ? null : historyInput.entries,
+    unreadableRounds: historyInput.unreadable, reportOpen: reportOpenedAt !== null });
+  const projectedReport = useMemo(() => report && history.view && constructionAnchor && loaded
+    ? withExternalRiskHistory(report, history.view, { construction: constructionAnchor, funding: addMonths(loaded.latest.round, -1) })
+    : report, [report, history.view, constructionAnchor, loaded]);
+
+  if (projectedReport !== null) {
     return (
       <DocumentThemeProvider>
         <Layout
@@ -191,7 +210,10 @@ export default function AifrmDashboardPage() {
           padding={6}
           content={
             <LayoutContent isScrollable={false}>
-              <FinancialReportPreview report={report} onBack={() => setReportOpenedAt(null)} />
+              <VStack gap={3}>
+                <ReportHistoryControls history={history} />
+                <FinancialReportPreview report={projectedReport} onBack={() => setReportOpenedAt(null)} />
+              </VStack>
             </LayoutContent>
           }
         />
@@ -207,6 +229,7 @@ export default function AifrmDashboardPage() {
         <LayoutContent>
           <VStack gap={6}>
             <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
+            <ReportHistoryControls history={history} />
 
             <UploadPanel
               files={files}

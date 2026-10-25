@@ -20,6 +20,21 @@ describe('backfill HTTP boundary', () => {
     expect((await handleBackfillPost(post(body, { origin: 'https://other.test' }), provider)).status).toBe(403);
     expect((await handleBackfillPost(post(body, { 'content-length': '1000001' }), provider)).status).toBe(413);
   });
+  it('uses the loopback Host authority when Next normalizes the request URL', async () => {
+    const normalizedUrl = 'http://localhost:3002/api/report-history/backfill';
+    const request = (host: string | null, origin: string | null) => new Request(normalizedUrl, {
+      method: 'POST', headers: { 'content-type': 'application/json', ...(host ? { host } : {}), ...(origin ? { origin } : {}) }, body: JSON.stringify(body),
+    });
+    expect((await handleBackfillPost(request('127.0.0.1:3002', 'http://127.0.0.1:3002'), provider)).status).toBe(200);
+    expect((await handleBackfillPost(request(null, 'http://localhost:3002'), provider)).status).toBe(200);
+    expect((await handleBackfillPost(request('127.0.0.1:3002', null), provider)).status).toBe(200);
+    for (const [host, origin] of [
+      ['evil.test:3002', 'http://evil.test:3002'],
+      ['127.0.0.1:3002', 'http://evil.test:3002'],
+      ['127.0.0.1:3002', 'http://127.0.0.1:3003'],
+      ['127.0.0.1:3002', 'http://localhost:3002'],
+    ]) expect((await handleBackfillPost(request(host, origin), provider)).status).toBe(403);
+  });
   it('classifies malformed months and rounds as input errors and an overlong span as too large', async () => {
     expect((await handleBackfillPost(post({ ...body, fromCycle: 'bad' }), provider)).status).toBe(400);
     expect((await handleBackfillPost(post({ ...body, rounds: [{ ...round, plans: [] }] }), provider)).status).toBe(400);
@@ -39,5 +54,24 @@ describe('backfill HTTP boundary', () => {
     const active = await handleBackfillGet(new Request(`${url}?active=1`), ready);
     expect((await active.json()).batches).toHaveLength(1);
     expect((await handleBackfillGet(new Request(`${url}?batchId=${batchId}`), ready)).status).toBe(200);
+  });
+  it('recovers completed batches on a fresh all-list request while preserving the active-only contract', async () => {
+    const fixed = new Date('2026-10-23T00:00:00.000Z');
+    const base = { scopeId: 'default', batchId: '22222222-2222-4222-8222-222222222222', startKey: '11111111-1111-4111-8111-111111111111', fromCycle: parseYearMonth('2026/08'), toCycle: parseYearMonth('2026/08'), inputHash: 'x', roundEntriesJson: [], fixedNow: fixed.toISOString(), evaluationTimeZone: 'Asia/Seoul', evaluatedCalendar: { year: 2026, month: 10, day: 23 }, completedCycles: [parseYearMonth('2026/08')], pendingCycles: [], status: 'completed' } satisfies StoredBatch;
+    const completed = base;
+    const running = { ...base, batchId: '33333333-3333-4333-8333-333333333333', completedCycles: [], pendingCycles: [parseYearMonth('2026/08')], status: 'pending-source' } satisfies StoredBatch;
+    const listed: string[] = [];
+    const deps = { repository: { listBatches: async (scope: string, status: string, limit: number) => {
+      expect(scope).toBe('default'); expect(limit).toBe(20); listed.push(status);
+      return status === 'all' ? [completed, running] : [running];
+    } } } as unknown as HistoryDependencies;
+    const ready = async () => ({ scopeId: 'default', deps });
+    const restored = await handleBackfillGet(new Request(`${url}?all=1`), ready);
+    expect(restored.status).toBe(200);
+    expect(restored.headers.get('cache-control')).toBe('no-store');
+    expect((await restored.json()).batches.map((batch: StoredBatch) => batch.status)).toEqual(['completed', 'pending-source']);
+    const active = await handleBackfillGet(new Request(`${url}?active=1`), ready);
+    expect((await active.json()).batches.map((batch: StoredBatch) => batch.status)).toEqual(['pending-source']);
+    expect(listed).toEqual(['all', 'active']);
   });
 });

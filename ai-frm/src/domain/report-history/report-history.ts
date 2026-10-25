@@ -1,4 +1,6 @@
 import { addMonths, parseYearMonth, type YearMonth } from '../shared/year-month';
+export const HISTORY_CALCULATION_VERSION = 'risk-policy-2026-09-28@e3a8f9e';
+export const HISTORY_TEMPLATE_VERSION = 'report@e3a8f9e';
 export type HistoryIndicator = 'construction' | 'funding';
 export type CalculationOrigin = 'live' | 'reconstructed';
 export type Derivation = {
@@ -21,6 +23,15 @@ export type ReportBasis = {
   readonly fundingObservedMonth: YearMonth;
   readonly gapMonth: YearMonth;
 };
+/** Read-only chart selection permits a chosen construction or Gap month; confirmation remains canonical. */
+export function validHistorySelectionBasis(basis: ReportBasis): boolean {
+  try {
+    for (const month of Object.values(basis)) parseYearMonth(month);
+    return basis.reportTitleMonth === addMonths(basis.reportCycle, -1) &&
+      basis.fundingJudgedMonth === basis.reportCycle &&
+      basis.fundingObservedMonth === addMonths(basis.reportCycle, -1);
+  } catch { return false; }
+}
 export type PreparedDocument = {
   readonly schemaVersion: 1;
   readonly templateVersion: string;
