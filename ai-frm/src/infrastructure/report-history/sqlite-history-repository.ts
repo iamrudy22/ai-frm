@@ -1,4 +1,4 @@
-import { DatabaseSync, backup as onlineBackup } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync, existsSync, statSync, openSync, closeSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -6,6 +6,7 @@ import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSIO
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
 import type * as P from '../../application/report-history/ports';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
+import { backupWithWake } from './sqlite-backup-wake.mjs';
 export { HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 export function hashHistoryValue(value: unknown): string { return createHash('sha256').update(encodeEvidence(value)).digest('hex'); }
 export type SqliteHistoryOptions = {
@@ -33,6 +34,15 @@ CREATE TABLE backfill_step(scope_id TEXT NOT NULL,batch_id TEXT NOT NULL,report_
 CREATE TABLE batch_capture_slot(scope_id TEXT NOT NULL,batch_id TEXT NOT NULL,source_key TEXT NOT NULL,owner_id TEXT NOT NULL,fence INTEGER NOT NULL,lease_until TEXT NOT NULL,capture_id TEXT,PRIMARY KEY(scope_id,batch_id,source_key),FOREIGN KEY(scope_id,batch_id) REFERENCES backfill_batch(scope_id,id),FOREIGN KEY(scope_id,capture_id) REFERENCES source_capture(scope_id,id));
 `;
 const IMMUTABLE = ['source_capture', 'report_input_snapshot', 'calculation_record', 'history_selection', 'report_document', 'report_candidate', 'monthly_confirmation', 'idempotent_command', 'backfill_step'];
+const SCHEMA_2 = `
+CREATE TABLE workbook_export(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,base_confirmation_id TEXT NOT NULL,input_id TEXT NOT NULL,construction_id TEXT NOT NULL,funding_id TEXT NOT NULL,selection_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),FOREIGN KEY(scope_id,base_confirmation_id) REFERENCES monthly_confirmation(scope_id,id),FOREIGN KEY(scope_id,input_id) REFERENCES report_input_snapshot(scope_id,id),FOREIGN KEY(scope_id,construction_id) REFERENCES calculation_record(scope_id,id),FOREIGN KEY(scope_id,funding_id) REFERENCES calculation_record(scope_id,id),FOREIGN KEY(scope_id,selection_id) REFERENCES history_selection(scope_id,id));
+CREATE TABLE workbook_import(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,export_id TEXT NOT NULL,patch_hash TEXT,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),FOREIGN KEY(scope_id,export_id) REFERENCES workbook_export(scope_id,id),UNIQUE(scope_id,export_id,patch_hash));
+CREATE TABLE correction_preview(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,export_id TEXT NOT NULL,import_id TEXT NOT NULL,candidate_id TEXT NOT NULL,base_confirmation_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),UNIQUE(scope_id,export_id,import_id),UNIQUE(scope_id,candidate_id),FOREIGN KEY(scope_id,export_id) REFERENCES workbook_export(scope_id,id),FOREIGN KEY(scope_id,import_id) REFERENCES workbook_import(scope_id,id),FOREIGN KEY(scope_id,candidate_id) REFERENCES report_candidate(scope_id,id) DEFERRABLE INITIALLY DEFERRED,FOREIGN KEY(scope_id,base_confirmation_id) REFERENCES monthly_confirmation(scope_id,id));
+CREATE TABLE report_candidate_v2(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,body TEXT NOT NULL,input_id TEXT NOT NULL,construction_id TEXT NOT NULL,funding_id TEXT NOT NULL,selection_id TEXT NOT NULL,document_id TEXT NOT NULL,correction_preview_id TEXT,PRIMARY KEY(scope_id,id),FOREIGN KEY(scope_id,input_id) REFERENCES report_input_snapshot(scope_id,id),FOREIGN KEY(scope_id,construction_id) REFERENCES calculation_record(scope_id,id),FOREIGN KEY(scope_id,funding_id) REFERENCES calculation_record(scope_id,id),FOREIGN KEY(scope_id,selection_id) REFERENCES history_selection(scope_id,id),FOREIGN KEY(scope_id,document_id) REFERENCES report_document(scope_id,id),FOREIGN KEY(scope_id,correction_preview_id) REFERENCES correction_preview(scope_id,id) DEFERRABLE INITIALLY DEFERRED);
+INSERT INTO report_candidate_v2(scope_id,id,body,input_id,construction_id,funding_id,selection_id,document_id,correction_preview_id) SELECT scope_id,id,body,input_id,construction_id,funding_id,selection_id,document_id,NULL FROM report_candidate;
+DROP TABLE report_candidate;
+ALTER TABLE report_candidate_v2 RENAME TO report_candidate;
+`;
 function instant(value: string): number { const n = Date.parse(value); if (!Number.isFinite(n))
   throw Error('INVALID_INSTANT'); return n; }
 function assertEvaluationCalendar(input: Pick<P.CalculationWrite, 'evaluationTimeZone' | 'evaluatedAt' | 'evaluatedCalendar'>): void {
@@ -86,10 +96,10 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     try {
       this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
       const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 1)
+      if (version > 2)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (options.readOnly) {
-        if (version !== 1)
+        if (version !== 1 && version !== 2)
           throw Error('UNSUPPORTED_SCHEMA_VERSION');
       }
       else {
@@ -108,6 +118,20 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
             this.db.prepare('INSERT INTO workspace_scope VALUES(?,1)').run(this.nextId());
             this.db.exec('PRAGMA user_version=1');
           });
+        if (version <= 1) {
+          this.db.exec('PRAGMA foreign_keys=OFF');
+          try {
+            this.transaction(() => {
+              this.db.exec(SCHEMA_2);
+              for (const table of ['workbook_export', 'workbook_import', 'correction_preview', 'report_candidate'])
+                for (const op of ['UPDATE', 'DELETE'])
+                  this.db.exec(`CREATE TRIGGER immutable_${table}_${op.toLowerCase()}${table === 'report_candidate' ? '_v2' : ''} BEFORE ${op} ON ${table} BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;`);
+              this.db.prepare('INSERT INTO schema_migration VALUES(2,?)').run(this.now());
+              this.db.exec('PRAGMA user_version=2');
+            });
+          }
+          finally { this.db.exec('PRAGMA foreign_keys=ON'); }
+        }
         chmodSync(this.databasePath, 0o600);
       }
       if (this.db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok')
@@ -115,6 +139,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (this.db.prepare('PRAGMA foreign_key_check').all().length)
         throw Error('INVALID_HISTORY_REFERENCES');
       if (this.db.prepare('SELECT version FROM schema_migration WHERE version=1').get()?.version !== 1)
+        throw Error('UNSUPPORTED_SCHEMA_VERSION');
+      if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 2 && this.db.prepare('SELECT version FROM schema_migration WHERE version=2').get()?.version !== 2)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
     }
     catch (error) {
@@ -269,7 +295,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       const documentId = identical ? String(identical.id) : this.nextId();
       if (!identical)
         this.db.prepare('INSERT INTO report_document VALUES(?,?,?,?)').run(input.scopeId, documentId, documentHash, documentBody);
-      this.db.prepare('INSERT INTO report_candidate VALUES(?,?,?,?,?,?,?,?)').run(input.scopeId, candidateId, encodeEvidence({ ...input, candidateId, documentHash }), input.inputSnapshotId, input.calculationIds.construction, input.calculationIds.funding, input.historySelectionId, documentId);
+      this.db.prepare('INSERT INTO report_candidate(scope_id,id,body,input_id,construction_id,funding_id,selection_id,document_id,correction_preview_id) VALUES(?,?,?,?,?,?,?,?,?)').run(input.scopeId, candidateId, encodeEvidence({ ...input, candidateId, documentHash }), input.inputSnapshotId, input.calculationIds.construction, input.calculationIds.funding, input.historySelectionId, documentId, input.correctionPreviewId);
       return { candidateId, documentHash };
     });
   }
@@ -308,6 +334,30 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     });
   }
   async getConfirmation(scopeId: string, id: string): Promise<P.StoredConfirmation | null> { return this.read('monthly_confirmation', scopeId, id); }
+  async putWorkbookExport(input: P.WorkbookExportWrite): Promise<P.StoredWorkbookExport> {
+    return this.transaction(() => {
+      if (input.workbookFormatVersion !== 1 || !input.exportId || !Number.isSafeInteger(input.baseRevision) || input.baseRevision < 1 || !Array.isArray(input.rows) || input.rows.length > 10_000 || input.structure?.sheets?.length !== 6)
+        throw Error('UNSUPPORTED_VERSION');
+      const base = this.require<P.StoredConfirmation>('monthly_confirmation', input.scopeId, input.baseConfirmationId);
+      const candidate = this.require<P.StoredCandidate>('report_candidate', input.scopeId, base.candidateId);
+      this.require<P.StoredInputSnapshot>('report_input_snapshot', input.scopeId, input.inputSnapshotId);
+      this.require<P.StoredCalculation>('calculation_record', input.scopeId, input.calculationIds.construction);
+      this.require<P.StoredCalculation>('calculation_record', input.scopeId, input.calculationIds.funding);
+      this.require<P.ExternalHistorySelection>('history_selection', input.scopeId, input.historySelectionId);
+      if (base.revision !== input.baseRevision || base.document.contentHash !== input.baseDocumentHash ||
+        candidate.inputSnapshotId !== input.inputSnapshotId || candidate.inputHash !== input.inputHash ||
+        candidate.calculationIds.construction !== input.calculationIds.construction || candidate.calculationIds.funding !== input.calculationIds.funding ||
+        base.historySelectionId !== input.historySelectionId || !equal(base.basis, input.basis) ||
+        base.document.templateVersion !== input.templateVersion || candidate.calculationVersion !== input.calculationVersion)
+        throw Error('INVALID_EXPORT_LINEAGE');
+      if (this.read('workbook_export', input.scopeId, input.exportId)) throw Error('DUPLICATE_EXPORT_ID');
+      instant(input.createdAt);
+      this.db.prepare('INSERT INTO workbook_export VALUES(?,?,?,?,?,?,?,?)').run(input.scopeId, input.exportId, input.baseConfirmationId,
+        input.inputSnapshotId, input.calculationIds.construction, input.calculationIds.funding, input.historySelectionId, encodeEvidence(input));
+      return input;
+    });
+  }
+  async getWorkbookExport(scopeId: string, id: string): Promise<P.StoredWorkbookExport | null> { return this.read('workbook_export', scopeId, id); }
   async listConfirmations(scopeId: string, cycle?: YearMonth): Promise<readonly P.ConfirmationSummary[]> { return this.all<P.StoredConfirmation>('monthly_confirmation', scopeId).filter(c => !cycle || c.reportCycle === cycle).map(c => ({ confirmationId: c.confirmationId, reportCycle: c.reportCycle, revision: c.revision, confirmedAt: c.confirmedAt, candidateId: c.candidateId, ...(c.correctionReason ? { correctionReason: c.correctionReason } : {}) })); }
   async listCalculations(query: P.HistoryQuery): Promise<readonly P.StoredCalculation[]> {
     parseYearMonth(query.from);
@@ -475,7 +525,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   /** Trusted server code only: no caller-controlled destination. Use online backup, never copy a live WAL database. */
   async backup(): Promise<string> { if (this.options.readOnly)
     throw Error('READ_ONLY_HISTORY'); const folder = join(dirname(this.databasePath), 'backups'); mkdirSync(folder, { recursive: true, mode: 0o700 }); chmodSync(folder, 0o700); const stamp = new Date(this.now()).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); const destination = join(folder, `report-history-${stamp}-${this.nextId()}.sqlite`); closeSync(openSync(destination, 'wx', 0o600)); try {
-    await onlineBackup(this.db, destination);
+    await backupWithWake(this.db, destination);
   }
   catch (error) {
     rmSync(destination, { force: true });

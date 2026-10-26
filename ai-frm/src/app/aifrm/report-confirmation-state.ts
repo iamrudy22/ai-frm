@@ -11,6 +11,10 @@ export type AcceptedCandidate = {
 
 export type ConfirmationAttempt = { readonly key: string; readonly candidateId: string; readonly expectedRevision: number;
   readonly idempotencyKey: string; readonly correctionReason?: string };
+export type ExportRequest = { readonly confirmationId: string; readonly generation: number };
+export function exportRequestMatches(current: ExportRequest | null, requested: ExportRequest): boolean {
+  return current?.confirmationId === requested.confirmationId && current.generation === requested.generation;
+}
 
 export function confirmationAttemptForClick(previous: ConfirmationAttempt | null, key: string, candidateId: string,
   expectedRevision: number, idempotencyKey: string, correctionReason: string): ConfirmationAttempt {

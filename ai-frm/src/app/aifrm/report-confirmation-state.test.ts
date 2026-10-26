@@ -54,3 +54,12 @@ it('drops a definite 422 command so a corrected reason is submitted, but preserv
   expect(corrected.correctionReason).toBe('수정한 사유');
   expect(attemptAfterFailureResponse(corrected, 503)).toBe(corrected);
 });
+
+it('늦은 A 내보내기 응답·다운로드 오류를 B 선택이나 새 A 선택에 붙이지 않는다', async () => {
+  const state = await import('./report-confirmation-state') as unknown as { exportRequestMatches?: (current: { confirmationId: string; generation: number } | null,
+    requested: { confirmationId: string; generation: number }) => boolean };
+  const A = { confirmationId: 'A', generation: 1 }, B = { confirmationId: 'B', generation: 2 }, newA = { confirmationId: 'A', generation: 3 };
+  expect(state.exportRequestMatches?.(B, A)).toBe(false);
+  expect(state.exportRequestMatches?.(newA, A)).toBe(false);
+  expect(state.exportRequestMatches?.(A, A)).toBe(true);
+});

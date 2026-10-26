@@ -75,3 +75,27 @@ describe('backfill HTTP boundary', () => {
     expect(listed).toEqual(['all', 'active']);
   });
 });
+
+it('exchange export uses the local origin and returns a saved download URL', async () => {
+  const { handleExchangePost, handleExchangeGet } = await import('./report-history-exchange-handlers');
+  const exportId = '22222222-2222-4222-8222-222222222222';
+  const confirmationId = '11111111-1111-4111-8111-111111111111';
+  const manifest = { scopeId: 'scope-A', exportId, workbookFormatVersion: 1, baseConfirmationId: confirmationId, baseRevision: 2,
+    baseDocumentHash: 'hash', basis: { reportCycle: '2026/08', reportTitleMonth: '2026/07' }, inputSnapshotId: 'input-1', inputHash: 'input-hash',
+    calculationIds: { construction: 'c', funding: 'f' }, historySelectionId: 'selection-1', calculationVersion: 'risk-policy-2026-09-28@e3a8f9e',
+    templateVersion: 'report@e3a8f9e', createdAt: '2026-10-23T00:00:00.000Z', rows: [], history: [], result: [] };
+  let providerCalls = 0;
+  const ready = async () => { providerCalls++; return { scopeId: 'scope-A', deps: { repository: { getWorkbookExport: async () => manifest },
+    calculationVersion: 'risk-policy-2026-09-28@e3a8f9e', workbookCodec: { encode: () => new Uint8Array([1, 2, 3]) } } } as never; };
+  const foreign = new Request('http://localhost:3000/api/report-history/exchange', { method: 'POST', headers: { origin: 'https://other.test' }, body: JSON.stringify({ action: 'export', confirmationId }) });
+  expect((await handleExchangePost(foreign, ready)).status).toBe(403);
+  expect(providerCalls).toBe(0);
+  expect((await handleExchangePost(post({ action: 'export', confirmationId: 'bad' }), ready)).status).toBe(400);
+  expect(providerCalls).toBe(0);
+  const downloaded = await handleExchangeGet(new Request(`http://localhost:3000/api/report-history/exchange?exportId=${exportId}`), ready);
+  expect(downloaded.status).toBe(200);
+  expect(downloaded.headers.get('content-type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  expect(downloaded.headers.get('content-disposition')).toContain('aifrm-history-202607-r2-22222222.xlsx');
+  expect(downloaded.headers.get('cache-control')).toBe('no-store');
+  expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+});

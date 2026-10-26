@@ -66,8 +66,8 @@ import { snapshotStatement, type PreparedCandidate } from '@/application/report-
 import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import type { FinancialReport } from './report-model';
-import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, fetchArchivedDocument, revisionForCycle,
-  type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
+import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, exportRequestMatches, fetchArchivedDocument, revisionForCycle,
+  type AcceptedCandidate, type ConfirmationAttempt, type ExportRequest } from './report-confirmation-state';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -109,6 +109,12 @@ export default function AifrmDashboardPage() {
   const [confirmationsLoaded, setConfirmationsLoaded] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
+  const [selectedExportRequest, setSelectedExportRequest] = useState<ExportRequest | null>(null);
+  const selectedExportConfirmationId = selectedExportRequest?.confirmationId ?? null;
+  const [savedExport, setSavedExport] = useState<{ exportId: string; request: ExportRequest } | null>(null);
+  const exportRequestRef = useRef<ExportRequest | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [correctionReason, setCorrectionReason] = useState('');
   const [candidateState, setCandidateState] = useState<AcceptedCandidate | null>(null);
   const [candidatePreparingKey, setCandidatePreparingKey] = useState<string | null>(null);
@@ -359,6 +365,40 @@ export default function AifrmDashboardPage() {
     finally { confirmationBusyRef.current = false; setConfirmationBusy(false); }
   };
 
+  const downloadExport = async (exportId: string, request: ExportRequest) => {
+    if (!exportRequestMatches(exportRequestRef.current, request)) return;
+    setExportBusy(true); setExportError(null);
+    try {
+      const response = await fetch(`/api/report-history/exchange?exportId=${encodeURIComponent(exportId)}`, { cache: 'no-store' });
+      if (!response.ok) throw Error('DOWNLOAD_FAILED');
+      const blob = await response.blob();
+      if (!exportRequestMatches(exportRequestRef.current, request)) return;
+      const name = /filename="([^"]+\.xlsx)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? `aifrm-history-${exportId.slice(0, 8)}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = url; link.download = name;
+        document.body.appendChild(link); link.click(); link.remove();
+      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch { if (exportRequestMatches(exportRequestRef.current, request)) setExportError('파일을 내려받지 못했습니다. 저장된 내보내기 ID로 다시 다운로드하세요.'); }
+    finally { if (exportRequestMatches(exportRequestRef.current, request)) setExportBusy(false); }
+  };
+  const exportSelected = async () => {
+    const request = exportRequestRef.current;
+    if (!request || !exportRequestMatches(request, { confirmationId: selectedExportConfirmationId ?? '', generation: request.generation }) || exportBusy) return;
+    setExportBusy(true); setExportError(null); setSavedExport(null);
+    try {
+      const response = await fetch('/api/report-history/exchange', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'export', confirmationId: request.confirmationId }) });
+      const body = await response.json();
+      if (!response.ok || typeof body.exportId !== 'string') throw Error('EXPORT_FAILED');
+      if (!exportRequestMatches(exportRequestRef.current, request)) return;
+      setSavedExport({ exportId: body.exportId, request });
+      await downloadExport(body.exportId, request);
+    } catch { if (exportRequestMatches(exportRequestRef.current, request)) setExportError('내보내기 명세를 저장하지 못했습니다. 이력을 다시 확인한 뒤 재시도하세요.'); }
+    finally { if (exportRequestMatches(exportRequestRef.current, request)) setExportBusy(false); }
+  };
+
   const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="월별 확정 이력" className="report-controls" gap={2} align="start">
     <Heading level={3}>월별 확정 이력</Heading>
     <Button label="확정 이력 다시 조회" variant="ghost" size="sm" onClick={() => void loadConfirmations()} />
@@ -366,7 +406,16 @@ export default function AifrmDashboardPage() {
     {confirmations.map(item => <HStack gap={2} vAlign="center" wrap="wrap" key={item.confirmationId}>
       <Text>{item.reportCycle} · 확정 {item.revision}차 · {new Date(item.confirmedAt).toLocaleString('ko-KR')}</Text>
       <Button label="확정본 열기" variant="secondary" size="sm" onClick={() => void openConfirmation(item.confirmationId)} />
+      <Button label={`${item.reportCycle} ${item.revision}차 엑셀 내보내기 대상으로 선택`} variant="ghost" size="sm"
+        onClick={() => { const request = { confirmationId: item.confirmationId, generation: (exportRequestRef.current?.generation ?? 0) + 1 }; exportRequestRef.current = request; setSelectedExportRequest(request); setSavedExport(null); setExportError(null); setExportBusy(false); }} />
     </HStack>)}
+    {selectedExportConfirmationId && <HStack gap={2} wrap="wrap" align="center">
+      <Text type="supporting">선택한 확정본: {confirmations.find(item => item.confirmationId === selectedExportConfirmationId)?.reportCycle ?? '이력 다시 조회 필요'} · {confirmations.find(item => item.confirmationId === selectedExportConfirmationId)?.revision ?? '?'}차</Text>
+      <Button label="정정용 엑셀 내보내기" variant="secondary" size="sm" isLoading={exportBusy} isDisabled={exportBusy || !confirmations.some(item => item.confirmationId === selectedExportConfirmationId)} onClick={() => void exportSelected()} />
+      {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Button label="저장된 엑셀 다시 다운로드" variant="ghost" size="sm" isDisabled={exportBusy} onClick={() => void downloadExport(savedExport.exportId, savedExport.request)} />}
+    </HStack>}
+    {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Text type="supporting">내보내기 ID {savedExport.exportId} · 엑셀 저장만으로 확정본은 변경되지 않습니다.</Text>}
+    {exportError && <Banner status="warning" title="엑셀 내보내기 안내" description={exportError} />}
     {inReport && archived === null && <VStack gap={2} align="start">
       {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}
       <Button label={confirmationBusy ? '확정 중' : candidatePreparing ? '후보 준비 중' : currentRevision !== null && currentRevision > 0 ? '정정 확정' : '보고서 확정'} variant="secondary"

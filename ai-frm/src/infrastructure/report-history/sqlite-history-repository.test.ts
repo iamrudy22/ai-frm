@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, statSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { decodeEvidence } from './evidence-codec';
 import { SqliteHistoryRepository } from './sqlite-history-repository';
+import { historyWorkbookCodec } from './history-workbook';
 import type { ReportBasis, CalculationWrite, EvidenceWrite, CandidateWrite, StatementSnapshotDto, ConfirmationResult } from '../../application/report-history/ports';
 import { yearMonth } from '../../domain/shared/year-month';
 const dirs: string[] = [];
@@ -38,6 +40,29 @@ async function fixture(r: SqliteHistoryRepository, scopeId = 'scope-A', tag = 'f
   return { candidateId, candidate, captureId, inputSnapshotId, construction, funding, common, evidence };
 }
 describe('SQLite 불변 월별 이력', () => {
+  it('migration2는 명세를 scope별 불변 저장한다', async () => {
+    const r = open();
+    const scopeId = await r.defaultScopeId();
+    const database = new DatabaseSync(r.databasePath, { readOnly: true });
+    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
+    database.close();
+    const draft = { scopeId, exportId: 'export-1', workbookFormatVersion: 1 as const, baseConfirmationId: 'base-1', baseRevision: 1,
+      baseDocumentHash: 'hash', basis, inputSnapshotId: 'input-1', inputHash: 'input-hash', calculationIds: { construction: 'c', funding: 'f' },
+      historySelectionId: 'selection-1', calculationVersion: version, templateVersion: 'report@e3a8f9e', createdAt: now, rows: [], history: [], result: { synthetic: true } };
+    const manifest = { ...draft, structure: historyWorkbookCodec.structure(draft) };
+    await expect(r.putWorkbookExport(manifest)).rejects.toThrow('NOT_FOUND_OR_WRONG_SCOPE');
+    const f = await fixture(r, scopeId);
+    const confirmed = await r.commitConfirmation(scopeId, { candidateId: f.candidateId, expectedRevision: 0, idempotencyKey: 'export-fixture' });
+    if (confirmed.kind !== 'confirmed') throw Error('fixture confirmation failed');
+    const valid = { ...manifest, baseConfirmationId: confirmed.confirmationId, baseRevision: confirmed.revision,
+      baseDocumentHash: f.candidate.document.contentHash, inputSnapshotId: f.inputSnapshotId, inputHash: f.candidate.inputHash,
+      calculationIds: f.candidate.calculationIds, historySelectionId: f.candidate.historySelectionId };
+    expect(await r.putWorkbookExport(valid)).toEqual(valid);
+    expect(await r.getWorkbookExport('other-scope', valid.exportId)).toBeNull();
+    const raw = new DatabaseSync(r.databasePath);
+    expect(() => raw.prepare('UPDATE workbook_export SET body=? WHERE id=?').run('tampered', valid.exportId)).toThrow('IMMUTABLE_HISTORY');
+    raw.close();
+  }, 15_000);
   it('revision1·멱등·다른 후보 충돌·사유/CAS·과거 재시도로 head를 되돌리지 않음', async () => {
     const r = open(), f = await fixture(r), cmd = { candidateId: f.candidateId, expectedRevision: 0, idempotencyKey: 'key' };
     const first = await r.commitConfirmation('scope-A', cmd);
@@ -218,12 +243,19 @@ describe('SQLite 불변 월별 이력', () => {
     const r = open(), f = await fixture(r), first = await r.commitConfirmation('scope-A', { candidateId: f.candidateId, expectedRevision: 0, idempotencyKey: 'x' });
     if (first.kind !== 'confirmed')
       throw Error('not confirmed');
+    const exportDraft = { scopeId: 'scope-A', exportId: 'backup-export-1', workbookFormatVersion: 1 as const,
+      baseConfirmationId: first.confirmationId, baseRevision: first.revision, baseDocumentHash: f.candidate.document.contentHash,
+      basis, inputSnapshotId: f.inputSnapshotId, inputHash: f.candidate.inputHash, calculationIds: f.candidate.calculationIds,
+      historySelectionId: f.candidate.historySelectionId, calculationVersion: version, templateVersion: f.candidate.document.templateVersion,
+      createdAt: now, rows: [], history: [], result: { synthetic: true } };
+    const exportManifest = { ...exportDraft, structure: historyWorkbookCodec.structure(exportDraft) };
+    await r.putWorkbookExport(exportManifest);
     const backup = await r.backup();
     expect(statSync(backup).mode & 0o777).toBe(0o600);
     expect(statSync(r.databasePath).mode & 0o777).toBe(0o600);
     r.close();
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1],{readOnly:true});const result={integrity:db.prepare('PRAGMA integrity_check').get().integrity_check,body:db.prepare('SELECT body FROM report_document').get().body};console.log(JSON.stringify(result));db.close();`, r.databasePath], { encoding: 'utf8' });
-    expect(child.status).toBe(0);
+    expect(child.status, child.stderr).toBe(0);
     const childResult = JSON.parse(child.stdout);
     expect(childResult.integrity).toBe('ok');
     expect(decodeEvidence(childResult.body)).toEqual(f.candidate.document);
@@ -234,8 +266,47 @@ describe('SQLite 불변 월별 이력', () => {
     const restarted = open(r.databasePath), restored = open(restorePath);
     expect((await restarted.getConfirmation('scope-A', first.confirmationId))?.document).toEqual(f.candidate.document);
     expect(await restored.getConfirmation('scope-A', first.confirmationId)).toEqual(await restarted.getConfirmation('scope-A', first.confirmationId));
+    expect(await restored.getWorkbookExport('scope-A', exportManifest.exportId)).toEqual(exportManifest);
     expect(await restored.defaultScopeId()).toBe(await restarted.defaultScopeId());
   });
+  it('백업 완료가 마지막 active 요청이어도 자식 프로세스가 정상 종료한다', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'aifrm-last-backup-'));
+    dirs.push(folder);
+    const source = join(folder, 'source.sqlite'), destination = join(folder, 'backup.sqlite');
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { DatabaseSync } from 'node:sqlite';
+      const { backupWithWake } = await import(process.argv[3]);
+      const seed = new DatabaseSync(process.argv[1]);
+      seed.exec("PRAGMA journal_mode=WAL; CREATE TABLE sample(value TEXT); INSERT INTO sample VALUES ('saved')");
+      seed.close();
+      const db = new DatabaseSync(process.argv[1], { readOnly: true });
+      const guard = setTimeout(() => { console.log('TIMEOUT_RED'); process.exit(2); }, 1500);
+      backupWithWake(db, process.argv[2]).then(() => {
+        db.close(); clearTimeout(guard); console.log('BACKUP_COMPLETE');
+      }).catch(error => { clearTimeout(guard); console.error(error); process.exitCode = 1; });
+    `, source, destination, pathToFileURL(join(process.cwd(), 'src/infrastructure/report-history/sqlite-backup-wake.mjs')).href], { encoding: 'utf8', timeout: 3000 });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain('BACKUP_COMPLETE');
+    const restored = new DatabaseSync(destination, { readOnly: true });
+    expect(restored.prepare('SELECT value FROM sample').get()?.value).toBe('saved');
+    restored.close();
+  }, 5000);
+  it('백업 실패 후에도 wake timer를 남기지 않는다', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'aifrm-failed-backup-'));
+    dirs.push(folder);
+    const source = join(folder, 'source.sqlite'), destination = join(folder, 'absent', 'backup.sqlite');
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { DatabaseSync } from 'node:sqlite';
+      const { backupWithWake } = await import(process.argv[3]);
+      const db = new DatabaseSync(process.argv[1]);
+      db.exec('CREATE TABLE sample(value TEXT)');
+      try { await backupWithWake(db, process.argv[2]); process.exitCode = 2; }
+      catch { console.log('BACKUP_REJECTED'); }
+      finally { db.close(); }
+    `, source, destination, pathToFileURL(join(process.cwd(), 'src/infrastructure/report-history/sqlite-backup-wake.mjs')).href], { encoding: 'utf8', timeout: 3000 });
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain('BACKUP_REJECTED');
+  }, 5000);
   it('저장된 원본을 재작성/삭제하지 못하고 동일 내용 수신 기록은 각각 남는다', async () => {
     const r = open(), f = await fixture(r);
     const again = await r.putEvidence(f.evidence);

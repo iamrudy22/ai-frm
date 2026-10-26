@@ -187,6 +187,57 @@ export type CaptureCompletion = Pick<CaptureClaim, 'scopeId' | 'batchId' | 'sour
   readonly fence: number;
   readonly evidence: EvidenceWrite;
 };
+export type EditAction = 'keep' | 'set' | 'set-missing';
+export type ExportRow = {
+  readonly rowId: string;
+  readonly sheet: '경제지표_정정' | '자금자료_정정' | '조달금리_정정';
+  readonly sourceRecordId: string;
+  readonly sourceKind: 'ecos' | 'statement' | 'kofia';
+  readonly fieldPath: string;
+  readonly identityJson: JsonValue;
+  readonly unit: string;
+  readonly originalValue: number | null;
+  readonly allowedActions: readonly EditAction[];
+  readonly protectedCells: JsonValue;
+};
+export type WorkbookColumn = { readonly label: string; readonly mode: 'protected' | 'editable' };
+export type WorkbookSheetStructure = {
+  readonly name: '안내' | '확정이력' | ExportRow['sheet'] | '_교환정보';
+  readonly columns: readonly WorkbookColumn[];
+  readonly rows: readonly (readonly string[])[];
+  readonly protectSheet: boolean;
+  readonly keyColumn: number | null;
+};
+export type WorkbookStructure = { readonly sheets: readonly WorkbookSheetStructure[] };
+export type WorkbookExportWrite = {
+  readonly scopeId: string;
+  readonly exportId: string;
+  readonly workbookFormatVersion: 1;
+  readonly baseConfirmationId: string;
+  readonly baseRevision: number;
+  readonly baseDocumentHash: string;
+  readonly basis: ReportBasis;
+  readonly inputSnapshotId: string;
+  readonly inputHash: string;
+  readonly calculationIds: { readonly construction: string; readonly funding: string };
+  readonly historySelectionId: string;
+  readonly calculationVersion: string;
+  readonly templateVersion: string;
+  readonly createdAt: string;
+  readonly rows: readonly ExportRow[];
+  readonly history: readonly JsonValue[];
+  readonly result: JsonValue;
+  readonly structure: WorkbookStructure;
+};
+export type StoredWorkbookExport = WorkbookExportWrite;
+export type WorkbookCellError = { readonly sheet: string | null; readonly row: number | null; readonly column: string | null; readonly code: string; readonly message: string };
+export type DecodedCorrection = { readonly patch: readonly { readonly rowId: string; readonly action: 'set' | 'set-missing'; readonly value: number | null; readonly reason: string; readonly evidenceNote: string }[]; readonly errors: readonly WorkbookCellError[] };
+export type HistoryWorkbookCodec = {
+  structure(manifest: Omit<WorkbookExportWrite, 'structure'>): WorkbookStructure;
+  encode(manifest: StoredWorkbookExport): Uint8Array;
+  readExportId(bytes: Uint8Array): string;
+  decode(bytes: Uint8Array, manifest: StoredWorkbookExport): DecodedCorrection;
+};
 export interface HistoryRepository {
   defaultScopeId(): Promise<string>;
   putEvidence(input: EvidenceWrite): Promise<{
@@ -225,6 +276,8 @@ export interface HistoryRepository {
   } | {
     kind: 'stale';
   }>;
+  putWorkbookExport(input: WorkbookExportWrite): Promise<StoredWorkbookExport>;
+  getWorkbookExport(scopeId: string, id: string): Promise<StoredWorkbookExport | null>;
 }
 
 /** Per-request capture dependencies; hashing and codecs stay outside the application layer. */
@@ -243,6 +296,11 @@ export type HistoryDependencies = {
   readonly replayIndicators?: (observed: SourceObservation<SourceResult>) => EconomicIndicatorSource;
   readonly replayYields?: (observed: SourceObservation<YieldFetch>) => BondYieldSource;
   readonly isUnsafe: (value: unknown) => boolean;
+};
+export type ReportCorrectionDependencies = HistoryDependencies & {
+  readonly workbookCodec: Pick<HistoryWorkbookCodec, 'structure' | 'encode' | 'readExportId'>;
+  readonly nextId: () => string;
+  readonly ecosCatalog: readonly { readonly key: string; readonly stat: string; readonly items: readonly string[] }[];
 };
 export type SourceObservation<T> =
   | { readonly kind: 'not-requested' }

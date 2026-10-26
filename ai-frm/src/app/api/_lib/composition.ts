@@ -10,10 +10,13 @@ import type { BondYieldSource, EconomicIndicatorSource } from '@/application/por
 import { CachedIndicatorSource } from '@/infrastructure/ecos/cached-indicator-source';
 import { EcosIndicatorSource } from '@/infrastructure/ecos/ecos-indicator-source';
 import { KofiaYieldSource } from '@/infrastructure/kofia/kofia-yield-source';
-import type { HistoryDependencies } from '@/application/report-history/ports';
+import type { HistoryDependencies, ReportCorrectionDependencies } from '@/application/report-history/ports';
 import { SqliteHistoryRepository, hashHistoryValue, HISTORY_CALCULATION_VERSION } from '@/infrastructure/report-history/sqlite-history-repository';
 import { evidenceToJson, evidenceFromJson } from '@/infrastructure/report-history/evidence-codec';
 import { captureEconomicSource, captureBondSource, replayEconomicSource, replayBondSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
+import { ECOS_SERIES } from '@/infrastructure/ecos/ecos-indicator-source';
+import { historyWorkbookCodec } from '@/infrastructure/report-history/history-workbook';
+import { randomUUID } from 'node:crypto';
 
 /** 기준월을 바꿀 때마다 ECOS를 다시 부르지 않도록 서버 프로세스에 하나만 둔다. */
 const ECOS_CACHE_MS = 10 * 60 * 1000;
@@ -23,6 +26,12 @@ export async function historyReadProvider() {
   historyRepository ??= new SqliteHistoryRepository();
   const repository = historyRepository;
   return { scopeId: await repository.defaultScopeId(), repository, decode: evidenceFromJson, now: () => new Date() };
+}
+export async function historyExportProvider(): Promise<{ readonly scopeId: string; readonly deps: ReportCorrectionDependencies }> {
+  // A source call during export is a bug; no live adapter or credential is constructed.
+  const unavailable = async (): Promise<never> => { throw Error('EXPORT_MUST_USE_FROZEN_SOURCES'); };
+  const { scopeId, deps } = await historyProvider({ fetchAll: unavailable }, { dailyYields: unavailable }, () => new Date());
+  return { scopeId, deps: { ...deps, nextId: randomUUID, ecosCatalog: ECOS_SERIES, workbookCodec: historyWorkbookCodec } };
 }
 
 export function indicatorSource(): EconomicIndicatorSource {

@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3 구현·검토·QA 완료, Task4 차트 이력 투영·검토·QA 완료, Task5 보고서 확정 구현 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`) 구현·독립 검토·QA·커밋 완료. Task6 정정용 엑셀 내보내기 구현·검토·QA 완료. Task7 수정본 검증·미리보기 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -438,13 +438,13 @@ interface HistoryRepository {
 **Files:** §4의 새 report-correction 서비스·history-workbook codec/테스트·exchange route와 기존 ports/repository/handlers/view/controls·README. repository migration2로 교환 기록을 추가한다.
 **Interfaces:** `exportCorrectionWorkbook(deps:ReportCorrectionDependencies, scopeId:string, confirmationId:string):Promise<StoredWorkbookExport>`, `downloadCorrectionWorkbook(deps:ReportCorrectionDependencies, scopeId:string, exportId:string):Promise<Uint8Array>`. `HistoryWorkbookCodec.encode/readExportId/decode`는 §2.2 계약을 따른다. Task6은 encode와 제한된 식별을 구현하고 수정안 적용/확정 버튼은 아직 제공하지 않는다.
 
-- [ ] `export_preserves_input_and_source_lineage`: 합성 확정본에서6개 시트·고정 rowId/단위/월·정규화 자금 전체 계열·ECOS 필요한 셀·KOFIA 공표 평균과 읽기 전용 결과/평가사 값이 정확히 나온다는 실패 테스트를 작성한다. 미지원 버전·입력 snapshot 부재·다른 scope ID는 파일 대신 오류다.
-- [ ] `export_preserves_number_roundtrip`: 0/음수/소수 및 `1.0000000000000002`가 기준값 텍스트로 나오고 지수/등급/차이/산식에 실행 수식이 없음을 검증한다. 사용자 메모가 `=...`, `+...`로 시작해도 문자열 셀로 내보내 수식으로 실행되지 않는다.
-- [ ] `npx vitest run src/infrastructure/report-history/history-workbook.test.ts src/application/report-history/report-correction.test.ts src/app/api/_lib/report-history-handlers.test.ts` 실행해 RED를 확인한다.
-- [ ] 서버 명세를 먼저 저장한 뒤 그 명세에서 파일을 만든다. 예외/응답 유실 후 exportId로 동일 내용 재다운로드, 다른 scope의 명세 조회 불가, 외부 API 호출0을 구현한다. 시트 보호는 편집 안내로만 적용하며 기존 statement-reader와 새 dependency는 변경하지 않는다.
-- [ ] 같은 명령으로 GREEN, migration1 기존 DB→migration2 후 기존 문서/해시 불변·신규DB 순차 migration·백업에 명세 포함·서버 전용 경계 테스트를 통과시킨다.
-- [ ] 합성 파일을 실제 Excel 또는 LibreOffice에서 열어6개 시트·읽을 수 있는 행/열 제목·수정 입력 칸 구분·기준값 정밀도·조회 이력을 QA한다. 사용 가능한 편집기가 없으면 실제 왕복 검수를 미완료로 기록한다. 앱 UI는 실제 Astryx 이력 목록의 선택/내보내기만 추가하고 용지 안을 바꾸지 않는다.
-- [ ] 독립 리뷰 후 `feat(history): export revision-bound correction workbooks` 커밋·기존 컨텍스트 기록. 내보내기 파일을 Git에 넣지 않는다.
+- [x] `export_preserves_input_and_source_lineage`: 합성 확정본에서6개 시트·고정 rowId/단위/월·정규화 자금 전체 계열·ECOS 필요한 셀·KOFIA 공표 평균과 읽기 전용 결과/평가사 값이 정확히 나온다는 실패 테스트를 작성한다. 미지원 버전·입력 snapshot 부재·다른 scope ID는 파일 대신 오류다.
+- [x] `export_preserves_number_roundtrip`: 0/음수/소수 및 `1.0000000000000002`가 기준값 텍스트로 나오고 지수/등급/차이/산식에 실행 수식이 없음을 검증한다. 사용자 메모가 `=...`, `+...`로 시작해도 문자열 셀로 내보내 수식으로 실행되지 않는다.
+- [x] `npx vitest run src/infrastructure/report-history/history-workbook.test.ts src/application/report-history/report-correction.test.ts src/app/api/_lib/report-history-handlers.test.ts` 실행해 RED를 확인한다.
+- [x] 서버 명세를 먼저 저장한 뒤 그 명세에서 파일을 만든다. 예외/응답 유실 후 exportId로 동일 내용 재다운로드, 다른 scope의 명세 조회 불가, 외부 API 호출0을 구현한다. 시트 보호는 편집 안내로만 적용하며 기존 statement-reader와 새 dependency는 변경하지 않는다.
+- [x] 같은 명령으로 GREEN, migration1 기존 DB→migration2 후 기존 문서/해시 불변·신규DB 순차 migration·백업에 명세 포함·서버 전용 경계 테스트를 통과시킨다.
+- [x] 합성 파일을 실제 Excel 또는 LibreOffice에서 열어6개 시트·읽을 수 있는 행/열 제목·수정 입력 칸 구분·기준값 정밀도·조회 이력을 QA한다. 사용 가능한 편집기가 없으면 실제 왕복 검수를 미완료로 기록한다. 앱 UI는 실제 Astryx 이력 목록의 선택/내보내기만 추가하고 용지 안을 바꾸지 않는다.
+- [x] 독립 리뷰 후 `feat(history): export revision-bound correction workbooks` 커밋·기존 컨텍스트 기록. 내보내기 파일을 Git에 넣지 않는다.
 
 ### Task 7: 수정본 가져오기·기존 함수 재계산·차이 미리보기
 
