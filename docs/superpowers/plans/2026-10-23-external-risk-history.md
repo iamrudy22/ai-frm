@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`) 구현·독립 검토·QA·커밋 완료. Task6 정정용 엑셀 내보내기 구현·검토·QA 완료. Task7 수정본 검증·미리보기 진행 예정. 최신 커밋/검증과 재개 지점은 UI 진행 기록을 따른다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 완료 단계와 검증은 아래 체크 및 최신 UI 진행 기록을 따른다. 실제 업무 파일을 읽지 않고 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`) 완료. Task7 수정본 검증·재계산·불변 미리보기 구현과 독립 재검토 Approved, 최종879개 테스트·전체 lint 및 재시작 공개 API QA를 완료했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 검수는 미완료로 구분하며 Task9 인수 기록에서 이어 관리한다. 다음은 Task8 명시적 정정 확정이다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 실제 업무 파일 대신 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -452,14 +452,16 @@ interface HistoryRepository {
 **Interfaces:** `validateCorrectionWorkbook(deps:ReportCorrectionDependencies, scopeId:string, bytes:Uint8Array):Promise<ImportResult>`, `getCorrectionPreview(repository:HistoryRepository, scopeId:string, previewId:string):Promise<StoredCorrectionPreview|null>`. 외부 API와 확정 명령을 호출하지 않으며 성공 결과는 stageCorrection으로 게시한다.
 
 - [ ] `import_unchanged_is_noop`: 앱 내보내기 그대로/Excel 저장 후 무수정 파일·행 순서/서식만 변경한 파일은 no-change이며 입력/원천/산출/문서/확정 head 수가 늘지 않는다. 같은 수를 set해도 no-change, blank는0이 아니고 set 0은 실제0, keep+수정 값은 오류다.
-- [ ] `import_rejects_untrusted_structure`: 변조 exportId·버전·단위/월/평가일·보호 결과·수식/공유수식·캐시 수식값·빈/중복/추가/누락 rowId·잘못된 표식·다른 scope를 거부한다. 셀 오류 위치와 원인만 보여 주고 수식/원문을 실행·로그 출력하지 않는다. 한 행 오류면 모든 수정 반영0이다.
-- [ ] `import_bounds_before_parse`: 5MiB 압축/25MiB 실제 해제/128 ZIP 항목/6시트/10000행/200000셀/2000자 경계와 초과, 확장자 위장·ZIP64·암호화·외부 참조·매크로·날짜/%/Boolean/오류 타입·숫자 overflow/underflow를 검증한다. bounded ZIP 처리 후 SheetJS를 호출하며 사전검사 실패 시 파서 호출0을 단언한다.
-- [ ] `recalculate_from_complete_input`: 자금 금액 하나 수정 시 전체 입력을 createStatement/roundEntryOf로 복원해 기존 dashboard+건설/조달 결과와 deepEqual. Unreadable 항목 전체 복구는 허용하되 일부만 복구/없는 전년도 열 추가는 거부한다. KOFIA 평균3.674와 평가사 평균이 달라도 공표값3.674를 그대로 사용하고 마지막 평가일 null은 기존대로 불가다.
-- [ ] `correction_preserves_vintage_and_history`: API 호출0, origin 유지·derivation=manual-correction·부모ID/import/사유·원래 fetchedAt/evaluatedAt 보존을 검증한다. 월말 원래 계산→다음 달 가져오기에도 무관한 외부 결과/불가 사유는 deepEqual이며 미래 guard의 frozen source 호출0이다. KST 월초 캡처→UTC 서버 정정은422·새 파생/확정0, 원래 KST로 재시작하면 기존 Clock trace로 동일 결과가 재현됨을 검증한다. fetchedAt가 없는 원천의 두 번째 Clock 호출/fallback 시각도 그대로 왕복 보존한다. 현재 지표만 새 값, 과거 차트 ID·기준 문서/작성일/hash·다른 보고서 head 불변. 원자료만 바뀌어 등급/지수 동일해도 차이를 보여 준다. ECOS 월 m의 전월/전년 비교·회차 q의 계획/실적 대응 영향은 기존 함수 결과로 검증하고 다른 vintage는 수정하지 않는다.
-- [ ] 위3개 대상 테스트 명령으로 RED를 확인한다. 명세 기반 path별 patch·재계산·이전 이력 투영·전후 차이·영향 목록·원자 stageCorrection을 구현한다. ZIP/숫자 파싱은 infrastructure, 명세·흐름은 application, 원장 CAS는 repository가 담당한다.
-- [ ] GREEN 후 stage 저장 중 실패·동시 동일 export/patch·서식만 다른 재업로드·서버 재시작 후 preview 재열람을 검증한다. 재계산 완료→stage 직전 다른 연결로 base/dependency head를 바꾸면409·파생 레코드0을 확인한다. 외부 put*를 순차 호출해 미리 ID/레코드를 만드는 구현은 금지한다. 부분 파생본/preview 또는 head 변경0, 같은 수정안/유효한 head는 같은 preview이며 입력값을 클라이언트 계산에 의존하지 않는다.
+- [x] `import_rejects_untrusted_structure`: 변조 exportId·버전·단위/월/평가일·보호 결과·수식/공유수식·캐시 수식값·빈/중복/추가/누락 rowId·잘못된 표식·다른 scope를 거부한다. 셀 오류 위치와 원인만 보여 주고 수식/원문을 실행·로그 출력하지 않는다. 한 행 오류면 모든 수정 반영0이다.
+- [x] `import_bounds_before_parse`: 5MiB 압축/25MiB 실제 해제/128 ZIP 항목/6시트/10000행/200000셀/2000자 경계와 초과, 확장자 위장·ZIP64·암호화·외부 참조·매크로·날짜/%/Boolean/오류 타입·숫자 overflow/underflow를 검증한다. bounded ZIP 처리 후 SheetJS를 호출하며 사전검사 실패 시 파서 호출0을 단언한다.
+- [x] `recalculate_from_complete_input`: 자금 금액 하나 수정 시 전체 입력을 createStatement/roundEntryOf로 복원해 기존 dashboard+건설/조달 결과와 deepEqual. Unreadable 항목 전체 복구는 허용하되 일부만 복구/없는 전년도 열 추가는 거부한다. KOFIA 평균3.674와 평가사 평균이 달라도 공표값3.674를 그대로 사용하고 마지막 평가일 null은 기존대로 불가다.
+- [x] `correction_preserves_vintage_and_history`: API 호출0, origin 유지·derivation=manual-correction·부모ID/import/사유·원래 fetchedAt/evaluatedAt 보존을 검증한다. 월말 원래 계산→다음 달 가져오기에도 무관한 외부 결과/불가 사유는 deepEqual이며 미래 guard의 frozen source 호출0이다. KST 월초 캡처→UTC 서버 정정은422·새 파생/확정0, 원래 KST로 재시작하면 기존 Clock trace로 동일 결과가 재현됨을 검증한다. fetchedAt가 없는 원천의 두 번째 Clock 호출/fallback 시각도 그대로 왕복 보존한다. 현재 지표만 새 값, 과거 차트 ID·기준 문서/작성일/hash·다른 보고서 head 불변. 원자료만 바뀌어 등급/지수 동일해도 차이를 보여 준다. ECOS 월 m의 전월/전년 비교·회차 q의 계획/실적 대응 영향은 기존 함수 결과로 검증하고 다른 vintage는 수정하지 않는다.
+- [x] 위3개 대상 테스트 명령으로 RED를 확인한다. 명세 기반 path별 patch·재계산·이전 이력 투영·전후 차이·영향 목록·원자 stageCorrection을 구현한다. ZIP/숫자 파싱은 infrastructure, 명세·흐름은 application, 원장 CAS는 repository가 담당한다.
+- [x] GREEN 후 stage 저장 중 실패·동시 동일 export/patch·서식만 다른 재업로드·서버 재시작 후 preview 재열람을 검증한다. 재계산 완료→stage 직전 다른 연결로 base/dependency head를 바꾸면409·파생 레코드0을 확인한다. 외부 put*를 순차 호출해 미리 ID/레코드를 만드는 구현은 금지한다. 부분 파생본/preview 또는 head 변경0, 같은 수정안/유효한 head는 같은 preview이며 입력값을 클라이언트 계산에 의존하지 않는다.
 - [ ] 합성 엑셀의 정상 수정/0/잘못된 단위/수식/결측처리를 가져와 셀별 오류·수정전/후 값·등급·산출불가·타 보고서 영향·정정 사유를 키보드로 확인한다. 오류 후 재선택/재검증 포커스를 유지하고 검증 완료를 ‘확정됨’으로 표시하지 않는다.
-- [ ] 독립 리뷰 후 `feat(history): validate and preview Excel corrections` 커밋·컨텍스트 기록. 이 단계까지 확정 head는 바뀌지 않는다.
+- [x] 독립 리뷰 후 `feat(history): validate and preview Excel corrections` 커밋·컨텍스트 기록. 이 단계까지 확정 head는 바뀌지 않는다.
+
+검수 기록: 위 두 수동 항목은 일부 미완료여서 체크를 남긴다. codec/SheetJS 무수정·행/서식 변경 no-change와 7종 합성 파일의 공개 HTTP 가져오기, 0/공표평균/문자열 사유·보호셀·수식·미등록 export 거부는 확인했다. 정상 ID→Tab→Enter 재열람, 없는 ID 오류 시 이전 표 제거·포커스 유지·재복구도 실제 화면에서 확인했다. Excel은 라이선스 read-only로 저장 불가, Numbers 저장은 ZIP64라 명세대로 거부했다. 기본 파일 선택기·실제 PDF/200% 검수는 도구 접근/사용자 브라우저 활동으로 중단했으며 성공으로 간주하지 않는다. 구현·자동/HTTP QA·독립 검토는 완료했고 이 수동 한계는 Task9 기록으로 이관한다. 기존 확정 head 변경은0이다.
 
 ### Task 8: 명시적 정정 확정·충돌 처리·이전 버전 조회
 

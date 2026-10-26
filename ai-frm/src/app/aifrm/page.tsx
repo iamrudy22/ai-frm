@@ -61,7 +61,7 @@ import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
 import { withExternalRiskHistory } from './report-history-projection';
 import { useReportHistory } from './use-report-history';
-import { ReportControlSurface, ReportHistoryControls } from './report-history-controls';
+import { ReportControlSurface, ReportHistoryControls, WorkbookCorrectionControls } from './report-history-controls';
 import { snapshotStatement, type PreparedCandidate } from '@/application/report-history/report-candidate';
 import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -415,6 +415,7 @@ export default function AifrmDashboardPage() {
       {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Button label="저장된 엑셀 다시 다운로드" variant="ghost" size="sm" isDisabled={exportBusy} onClick={() => void downloadExport(savedExport.exportId, savedExport.request)} />}
     </HStack>}
     {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Text type="supporting">내보내기 ID {savedExport.exportId} · 엑셀 저장만으로 확정본은 변경되지 않습니다.</Text>}
+    <WorkbookCorrectionControls />
     {exportError && <Banner status="warning" title="엑셀 내보내기 안내" description={exportError} />}
     {inReport && archived === null && <VStack gap={2} align="start">
       {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}

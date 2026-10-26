@@ -238,8 +238,24 @@ export type HistoryWorkbookCodec = {
   readExportId(bytes: Uint8Array): string;
   decode(bytes: Uint8Array, manifest: StoredWorkbookExport): DecodedCorrection;
 };
+export type CorrectionPatch = DecodedCorrection['patch'];
+export type HistoryOperationErrorCode = 'STALE_BASE' | 'STALE_DEPENDENCY' | 'STORAGE_UNAVAILABLE' | 'LIMIT_EXCEEDED' | 'NOT_FOUND' | 'UNSUPPORTED_VERSION' | 'EVALUATION_ZONE_MISMATCH';
+export class HistoryOperationError extends Error {
+  constructor(readonly code: HistoryOperationErrorCode) { super(code); this.name = 'HistoryOperationError'; }
+}
+export type WorkbookImportWrite = { readonly scopeId: string; readonly importId: string; readonly exportId: string; readonly fileHash: string; readonly patchHash: string | null; readonly patch: CorrectionPatch; readonly status: 'invalid' | 'no-change' | 'validated'; readonly errors: readonly WorkbookCellError[]; readonly receivedAt: string };
+export type StoredWorkbookImport = WorkbookImportWrite;
+export type CorrectionPreviewWrite = { readonly scopeId: string; readonly previewId: string; readonly previewHash: string; readonly importId: string; readonly exportId: string; readonly baseConfirmationId: string; readonly baseRevision: number; readonly inputSnapshotId: string; readonly candidateId: string; readonly dependencyHeads: readonly RevisionToken[]; readonly rawDiff: JsonValue; readonly resultDiff: JsonValue; readonly affectedReports: JsonValue; readonly createdAt: string };
+export type StoredCorrectionPreview = CorrectionPreviewWrite;
+export type CorrectionStageWrite = { readonly scopeId: string; readonly expectedBase: RevisionToken; readonly dependencyHeads: readonly RevisionToken[]; readonly evidence: readonly StoredEvidence[]; readonly inputs: readonly StoredInputSnapshot[]; readonly calculations: readonly StoredCalculation[]; readonly candidate: CandidateWrite & { readonly candidateId: string }; readonly import: WorkbookImportWrite; readonly preview: CorrectionPreviewWrite };
+export type ImportResult = { readonly kind: 'invalid'; readonly importId: string | null; readonly errors: readonly WorkbookCellError[] } | { readonly kind: 'no-change'; readonly importId: string; readonly baseConfirmationId: string } | { readonly kind: 'preview'; readonly previewId: string; readonly previewHash: string };
 export interface HistoryRepository {
   defaultScopeId(): Promise<string>;
+  currentHeads(scopeId: string, cycles: readonly YearMonth[]): Promise<readonly RevisionToken[]>;
+  putWorkbookImport(input: WorkbookImportWrite): Promise<StoredWorkbookImport>;
+  getWorkbookImport(scopeId: string, id: string): Promise<StoredWorkbookImport | null>;
+  getCorrectionPreview(scopeId: string, id: string): Promise<StoredCorrectionPreview | null>;
+  stageCorrection(input: CorrectionStageWrite): Promise<StoredCorrectionPreview>;
   putEvidence(input: EvidenceWrite): Promise<{
     captureId: string;
   }>;
@@ -298,7 +314,8 @@ export type HistoryDependencies = {
   readonly isUnsafe: (value: unknown) => boolean;
 };
 export type ReportCorrectionDependencies = HistoryDependencies & {
-  readonly workbookCodec: Pick<HistoryWorkbookCodec, 'structure' | 'encode' | 'readExportId'>;
+  readonly workbookCodec: HistoryWorkbookCodec;
+  readonly documentFactory: import('./report-candidate').ReportDocumentFactory;
   readonly nextId: () => string;
   readonly ecosCatalog: readonly { readonly key: string; readonly stat: string; readonly items: readonly string[] }[];
 };

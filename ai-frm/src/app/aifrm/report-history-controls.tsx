@@ -1,6 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { FileInput } from '@astryxdesign/core/FileInput';
+import { Table, proportional } from '@astryxdesign/core/Table';
+import { TextInput } from '@astryxdesign/core/TextInput';
 import { Button } from '@astryxdesign/core/Button';
 import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -50,5 +53,122 @@ export function ReportHistoryControls({ history }: { readonly history: Controlle
         {history.selectedBatchId && <Button label="선택한 보완 제외" size="sm" variant="ghost" onClick={() => history.applyBatch(null)} />}
       </VStack>
     </Collapsible>
+  </VStack>;
+}
+
+type Preview = import('@/application/report-history/ports').StoredCorrectionPreview;
+type ImportResult = import('@/application/report-history/ports').ImportResult;
+type RecordValue = Record<string, unknown>;
+const records = (value: unknown): RecordValue[] => Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
+const metricName: Record<string, string> = { recovery: '대금 회수 위험', liquidity: '유동성 Gap', cash: '적정 시재', construction: '건설경기 인식 지수', funding: '조달위험 인식 지수' };
+const displayValue = (value: unknown): string => value === null ? '결측' : typeof value === 'number' ? value.toString() : typeof value === 'string' ? value : '';
+function identityLabel(value: unknown): string {
+  const row = value as RecordValue;
+  if (!row) return '';
+  const bond = row.bond === 'publicAaa' ? '공사채 AAA 1년' : row.bond === 'treasury' ? '국고채 1년' : '';
+  return [row.item ?? row.indicator ?? bond, row.month ?? row.date].filter(Boolean).join(' · ');
+}
+const columns = (items: readonly [string, string][]) => items.map(([key, header]) => ({ key, header, width: proportional(1) }));
+export function CorrectionPreviewDetails({ preview }: { readonly preview: Preview }) {
+  const raw: RecordValue[] = records(preview.rawDiff).map(row => ({ ...row, label: identityLabel(row.identity), before: displayValue(row.before), after: displayValue(row.after) }));
+  const results: RecordValue[] = records(preview.resultDiff).map(row => ({ ...row, label: metricName[String(row.indicator)] ?? String(row.indicator), before: displayValue(row.beforeDisplay), after: displayValue(row.afterDisplay), change: row.changed ? '산출값 변화 있음' : '산출값 변화 없음' }));
+  const impacts: RecordValue[] = records(preview.affectedReports).map(row => ({ ...row, label: metricName[String(row.indicator)] ?? String(row.indicator), status: row.status === 'recalculated' ? (row.changed ? '재계산 시 변화 있음' : '재계산 시 변화 없음') : '영향 가능 · 재계산 불가' }));
+  return <VStack gap={2} aria-label="정정 차이 미리보기">
+    <Text role="status">검증 완료 · 미확정 · 기준 {preview.baseRevision}차</Text>
+    <Heading level={4}>원자료 변경</Heading>
+    <Table data={raw} idKey="rowId" density="compact" dividers="grid" columns={columns([['label', '항목·월'], ['before', '수정 전'], ['after', '수정 후'], ['unit', '단위'], ['reason', '정정 사유'], ['evidenceNote', '근거 메모']])} />
+    <Heading level={4}>산출값·등급·산출불가 비교</Heading>
+    <Table data={results} idKey="indicator" density="compact" columns={columns([['label', '지표'], ['before', '수정 전'], ['after', '수정 후'], ['change', '변화']])} />
+    <Heading level={4}>다른 보고서 영향</Heading>
+    {impacts.length ? <Table data={impacts} density="compact" columns={columns([['reportCycle', '보고 회차'], ['revision', '차수'], ['label', '지표'], ['status', '영향'], ['reason', '안내']])} /> : <Text type="supporting">같은 원천·입력을 공유하는 다른 확정본의 영향이 없습니다.</Text>}
+    <Text type="supporting">미리보기 ID {preview.previewId} · 기존 확정본과 다른 보고서는 변경되지 않았습니다.</Text>
+  </VStack>;
+}
+export function WorkbookCorrectionControls() {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false), [message, setMessage] = useState('정정용 엑셀의 수정본을 선택하세요.');
+  const [result, setResult] = useState<ImportResult | null>(null), [preview, setPreview] = useState<Preview | null>(null);
+  const [previewId, setPreviewId] = useState('');
+  const generation = useRef(0), operation = useRef<AbortController | null>(null);
+  useEffect(() => () => operation.current?.abort(), []);
+  const change = (value: File | File[] | null) => {
+    operation.current?.abort();
+    generation.current++;
+    setBusy(false);
+    setFile(Array.isArray(value) ? value[0] ?? null : value);
+    setResult(null);
+    setPreview(null);
+    setMessage('수정본 검증을 눌러 변경 내용을 확인하세요.');
+  };
+  const explain = (status: number, code: string) => status === 409 ? '기준 확정본이나 참조 이력이 바뀌었습니다. 새로 엑셀을 내보내 수정안을 옮긴 뒤 검증하세요.' : code === 'EVALUATION_ZONE_MISMATCH' ? '원래 평가 시간대에서 서버를 실행한 뒤 검증하세요.' : status === 413 ? '파일은 5MiB 이하이며 시트·행·셀 한도를 지켜야 합니다.' : status === 503 ? '저장소에 연결하지 못했습니다. 잠시 후 재검증하세요.' : '파일 또는 미리보기 정보를 확인하세요.';
+  const load = async (id: string, signal: AbortSignal) => {
+    const response = await fetch(`/api/report-history/exchange?previewId=${encodeURIComponent(id)}`, { cache: 'no-store', signal });
+    const body = await response.json();
+    if (!response.ok) throw Error(explain(response.status, body.code));
+    return body.preview as Preview;
+  };
+  const validate = async () => {
+    if (!file || busy) return;
+    const token = ++generation.current, controller = new AbortController();
+    operation.current?.abort();
+    operation.current = controller;
+    setBusy(true);
+    setResult(null);
+    setPreview(null);
+    setMessage('수정본 검증 중');
+    try {
+      const form = new FormData();
+      form.set('command', 'validate');
+      form.set('file', file);
+      const response = await fetch('/api/report-history/exchange', { method: 'POST', body: form, signal: controller.signal });
+      const body = await response.json();
+      if (token !== generation.current) return;
+      if (!response.ok && body.result?.kind !== 'invalid') throw Error(explain(response.status, body.code));
+      const validated = body.result as ImportResult;
+      setResult(validated);
+      if (validated.kind === 'invalid') setMessage('검증 오류 · 표시된 셀을 고친 파일을 다시 선택해 검증하세요.');
+      else if (validated.kind === 'no-change') setMessage('변경 없음 · 기존 원자료와 확정본을 유지합니다.');
+      else {
+        setPreviewId(validated.previewId);
+        const saved = await load(validated.previewId, controller.signal);
+        if (token === generation.current) {
+          setPreview(saved);
+          setMessage('검증 완료 · 차이 미리보기');
+        }
+      }
+    } catch (error) { if (token === generation.current && !controller.signal.aborted) setMessage(error instanceof Error ? error.message : '검증하지 못했습니다.'); }
+    finally { if (token === generation.current) setBusy(false); }
+  };
+  const reopen = async () => {
+    if (busy || !previewId.trim()) return;
+    const token = ++generation.current, controller = new AbortController();
+    operation.current?.abort();
+    operation.current = controller;
+    setBusy(true);
+    setPreview(null);
+    setResult(null);
+    setMessage('미리보기 불러오는 중');
+    try {
+      const saved = await load(previewId.trim(), controller.signal);
+      if (token === generation.current) {
+        setPreview(saved);
+        setResult(null);
+        setMessage('저장된 미리보기 · 미확정');
+      }
+    }
+    catch (error) { if (token === generation.current && !controller.signal.aborted) setMessage(error instanceof Error ? error.message : '미리보기를 열지 못했습니다.'); }
+    finally { if (token === generation.current) setBusy(false); }
+  };
+  return <VStack as="section" gap={2} className="report-controls" aria-label="엑셀 수정본 검증">
+    <Heading level={3}>수정본 가져오기</Heading>
+    <FileInput label="정정용 엑셀 수정본" placeholder="엑셀 수정본을 놓거나 클릭하여 선택" value={file} onChange={change} accept=".xlsx" maxSize={5 * 1024 * 1024} description="앱에서 내보낸 .xlsx · 최대 5MiB · 수정 동작·수정 값·사유·근거 메모만 편집" mode="dropzone" />
+    <Button label={busy ? '검증 중' : '수정본 검증'} isDisabled={!file} aria-disabled={busy} aria-busy={busy} variant="secondary" onClick={() => void validate()} />
+    <Text role="status" aria-live="polite">{message}</Text>
+    {result?.kind === 'invalid' && <Table data={result.errors.map((error, index) => ({ id: String(index), location: [error.sheet, error.column && error.row ? `${error.column}${error.row}` : error.column].filter(Boolean).join(' · ') || '파일', message: error.message }))} idKey="id" density="compact" columns={columns([['location', '오류 위치'], ['message', '원인']])} />}
+    {preview && <CorrectionPreviewDetails preview={preview} />}
+    <Collapsible trigger="저장된 미리보기 다시 열기" defaultIsOpen={false}><VStack gap={2}>
+      <TextInput label="미리보기 ID" value={previewId} onChange={setPreviewId} />
+      <Button label="미리보기 열기" variant="ghost" isDisabled={!previewId.trim()} aria-disabled={busy} aria-busy={busy} onClick={() => void reopen()} />
+    </VStack></Collapsible>
   </VStack>;
 }

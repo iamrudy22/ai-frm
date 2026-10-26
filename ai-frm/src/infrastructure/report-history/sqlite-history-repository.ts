@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
+import { HistoryOperationError } from '../../application/report-history/ports';
 import type * as P from '../../application/report-history/ports';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
 import { backupWithWake } from './sqlite-backup-wake.mjs';
@@ -170,13 +171,15 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     throw Error('NOT_FOUND_OR_WRONG_SCOPE'); return value; }
   private parent(table: string, scopeId: string, derivation: P.Derivation): void { if (derivation.kind === 'manual-correction') {
     this.require(table, scopeId, derivation.parentId);
+    const imported = this.require<P.StoredWorkbookImport>('workbook_import', scopeId, derivation.importId);
+    if (imported.status !== 'validated' || imported.patchHash !== derivation.patchHash) throw Error('INVALID_DERIVATION_IMPORT');
     instant(derivation.correctedAt);
     if (!derivation.importId || !derivation.patchHash)
       throw Error('INVALID_DERIVATION');
   } }
   async defaultScopeId(): Promise<string> { const row = this.db.prepare('SELECT scope_id FROM workspace_scope WHERE is_default=1').get(); if (!row)
     throw Error('MISSING_DEFAULT_SCOPE'); return String(row.scope_id); }
-  private saveEvidence(input: P.EvidenceWrite): {
+  private saveEvidence(input: P.EvidenceWrite, captureId = this.nextId()): {
     captureId: string;
   } {
     if (input.schemaVersion !== 1 || !['ecos', 'kofia'].includes(input.sourceKind))
@@ -189,7 +192,6 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (parent.sourceKind !== input.sourceKind || parent.receivedAt !== input.receivedAt)
         throw Error('EVIDENCE_PROVENANCE_MISMATCH');
     }
-    const captureId = this.nextId();
     const record: P.StoredEvidence = { ...input, captureId };
     this.db.prepare('INSERT INTO source_capture VALUES(?,?,?,?,?)').run(input.scopeId, captureId, encodeEvidence(record), input.contentHash, input.derivation.kind === 'manual-correction' ? input.derivation.parentId : null);
     return { captureId };
@@ -198,10 +200,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     captureId: string;
   }> { return this.transaction(() => this.saveEvidence(input)); }
   async getEvidence(scopeId: string, id: string): Promise<P.StoredEvidence | null> { return this.read('source_capture', scopeId, id); }
-  async putInputSnapshot(input: P.InputSnapshotWrite): Promise<{
-    inputSnapshotId: string;
-  }> {
-    return this.transaction(() => {
+  async putInputSnapshot(input: P.InputSnapshotWrite): Promise<{ inputSnapshotId: string }> { return this.transaction(() => this.saveInputSnapshot(input)); }
+  private saveInputSnapshot(input: P.InputSnapshotWrite, inputSnapshotId = this.nextId()): { inputSnapshotId: string } {
       instant(input.createdAt);
       this.scope(input.scopeId);
       this.parent('report_input_snapshot', input.scopeId, input.derivation);
@@ -218,16 +218,12 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         if (!input.statements.every((statement, index) => correctionAmountsMatch(parent.statements[index], statement)))
           throw Error('INPUT_AMOUNT_STRUCTURE_MISMATCH');
       }
-      const inputSnapshotId = this.nextId();
       this.db.prepare('INSERT INTO report_input_snapshot VALUES(?,?,?,?)').run(input.scopeId, inputSnapshotId, encodeEvidence({ ...input, inputSnapshotId }), input.derivation.kind === 'manual-correction' ? input.derivation.parentId : null);
       return { inputSnapshotId };
-    });
   }
   async getInputSnapshot(scopeId: string, id: string): Promise<P.StoredInputSnapshot | null> { return this.read('report_input_snapshot', scopeId, id); }
-  async putCalculation(input: P.CalculationWrite): Promise<{
-    calculationId: string;
-  }> {
-    return this.transaction(() => {
+  async putCalculation(input: P.CalculationWrite): Promise<{ calculationId: string }> { return this.transaction(() => this.saveCalculation(input)); }
+  private saveCalculation(input: P.CalculationWrite, calculationId = this.nextId()): { calculationId: string } {
       this.scope(input.scopeId);
       parseYearMonth(input.effectiveMonth);
       instant(input.createdAt);
@@ -254,15 +250,12 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         if (input.origin !== 'reconstructed')
           throw Error('BATCH_CONTEXT_MISMATCH');
       }
-      const calculationId = this.nextId();
       this.db.prepare('INSERT INTO calculation_record VALUES(?,?,?,?,?)').run(input.scopeId, calculationId, encodeEvidence({ ...input, calculationId }), input.derivation.kind === 'manual-correction' ? input.derivation.parentId : null, input.batchId ?? null);
       return { calculationId };
-    });
   }
   async getCalculation(scopeId: string, id: string): Promise<P.StoredCalculation | null> { return this.read('calculation_record', scopeId, id); }
   private validateCandidate(input: P.CandidateWrite): void {
-    if (input.correctionPreviewId !== null)
-      throw Error('CORRECTION_PREVIEW_NOT_SUPPORTED_IN_SCHEMA_1');
+    if (input.correctionPreviewId !== null) this.require('correction_preview', input.scopeId, input.correctionPreviewId);
     if (confirmDecision(input.basis, 0, 0).kind !== 'create')
       throw Error('INVALID_BASIS');
     instant(input.authoredAt);
@@ -284,20 +277,16 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       throw Error('INVALID_DOCUMENT');
     encodeEvidence(input.document);
   }
-  async putCandidate(input: P.CandidateWrite): Promise<{
-    candidateId: string;
-    documentHash: string;
-  }> {
-    return this.transaction(() => {
+  async putCandidate(input: P.CandidateWrite): Promise<{ candidateId: string; documentHash: string }> { return this.transaction(() => this.saveCandidate(input)); }
+  private saveCandidate(input: P.CandidateWrite, candidateId = this.nextId()): { candidateId: string; documentHash: string } {
       this.validateCandidate(input);
-      const candidateId = this.nextId(), documentHash = input.document.contentHash, documentBody = encodeEvidence(input.document);
+      const documentHash = input.document.contentHash, documentBody = encodeEvidence(input.document);
       const identical = this.db.prepare('SELECT id FROM report_document WHERE scope_id=? AND content_hash=? AND body=?').get(input.scopeId, documentHash, documentBody);
       const documentId = identical ? String(identical.id) : this.nextId();
       if (!identical)
         this.db.prepare('INSERT INTO report_document VALUES(?,?,?,?)').run(input.scopeId, documentId, documentHash, documentBody);
       this.db.prepare('INSERT INTO report_candidate(scope_id,id,body,input_id,construction_id,funding_id,selection_id,document_id,correction_preview_id) VALUES(?,?,?,?,?,?,?,?,?)').run(input.scopeId, candidateId, encodeEvidence({ ...input, candidateId, documentHash }), input.inputSnapshotId, input.calculationIds.construction, input.calculationIds.funding, input.historySelectionId, documentId, input.correctionPreviewId);
       return { candidateId, documentHash };
-    });
   }
   async getCandidate(scopeId: string, id: string): Promise<P.StoredCandidate | null> { return this.read('report_candidate', scopeId, id); }
   async commitConfirmation(scopeId: string, cmd: P.ConfirmationCommand): Promise<P.ConfirmationResult> {
@@ -320,6 +309,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, cmd.candidateId, existing.id as string);
         return { kind: 'already-confirmed', confirmationId: String(existing.id), revision: Number(existing.revision) };
       }
+      if (candidate.correctionPreviewId !== null) return { kind: 'not-ready', reason: 'CORRECTION_PREVIEW_REQUIRED' };
       const head = this.db.prepare('SELECT confirmation_id,revision FROM monthly_head WHERE scope_id=? AND report_cycle=?').get(scopeId, candidate.basis.reportCycle);
       const decision = confirmDecision(candidate.basis, Number(head?.revision ?? 0), cmd.expectedRevision, cmd.correctionReason);
       if (decision.kind !== 'create')
@@ -358,6 +348,61 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     });
   }
   async getWorkbookExport(scopeId: string, id: string): Promise<P.StoredWorkbookExport | null> { return this.read('workbook_export', scopeId, id); }
+  private head(scopeId: string, reportCycle: YearMonth): P.RevisionToken {
+    const row = this.db.prepare('SELECT confirmation_id,revision FROM monthly_head WHERE scope_id=? AND report_cycle=?').get(scopeId,reportCycle);
+    return { reportCycle, confirmationId: row ? String(row.confirmation_id) : null, revision: Number(row?.revision ?? 0) };
+  }
+  async currentHeads(scopeId: string, cycles: readonly YearMonth[]): Promise<readonly P.RevisionToken[]> {
+    if (cycles.length > 40) throw Error('INVALID_DEPENDENCIES');
+    cycles.forEach(parseYearMonth);
+    return this.transaction(() => [...new Set(cycles)].sort().map(cycle => this.head(scopeId,cycle)));
+  }
+  private checkHeads(scopeId: string, base: P.RevisionToken, dependencies: readonly P.RevisionToken[]): void {
+    if (!equal(this.head(scopeId,base.reportCycle),base)) throw new HistoryOperationError('STALE_BASE');
+    if (dependencies.some(token => !equal(this.head(scopeId,token.reportCycle),token))) throw new HistoryOperationError('STALE_DEPENDENCY');
+  }
+  private saveImport(input: P.WorkbookImportWrite): P.StoredWorkbookImport {
+    this.require('workbook_export',input.scopeId,input.exportId); instant(input.receivedAt);
+    if (!input.importId || !['invalid','no-change','validated'].includes(input.status) || (input.status === 'invalid' && (input.patchHash !== null || input.patch.length)) || (input.status === 'validated' && (!input.patchHash || !input.patch.length || input.errors.length))) throw Error('INVALID_IMPORT');
+    this.db.prepare('INSERT INTO workbook_import VALUES(?,?,?,?,?)').run(input.scopeId,input.importId,input.exportId,input.patchHash,encodeEvidence(input));
+    return input;
+  }
+  async putWorkbookImport(input: P.WorkbookImportWrite): Promise<P.StoredWorkbookImport> {
+    if (input.status === 'validated') throw Error('ATOMIC_STAGE_REQUIRED');
+    return this.transaction(() => this.saveImport(input));
+  }
+  async getWorkbookImport(scopeId: string, id: string): Promise<P.StoredWorkbookImport | null> { return this.read('workbook_import',scopeId,id); }
+  async getCorrectionPreview(scopeId: string, id: string): Promise<P.StoredCorrectionPreview | null> { return this.read('correction_preview',scopeId,id); }
+  async stageCorrection(input: P.CorrectionStageWrite): Promise<P.StoredCorrectionPreview> {
+    try { return this.transaction(() => {
+      const {scopeId,preview,candidate} = input;
+      const manifest = this.require<P.StoredWorkbookExport>('workbook_export',scopeId,input.import.exportId);
+      const old = this.db.prepare('SELECT p.body FROM correction_preview p JOIN workbook_import i ON p.scope_id=i.scope_id AND p.import_id=i.id WHERE p.scope_id=? AND i.export_id=? AND i.patch_hash=?').get(scopeId,input.import.exportId,input.import.patchHash);
+      if (old) {
+        const existing = decodeEvidence<P.StoredCorrectionPreview>(String(old.body));
+        this.checkHeads(scopeId,{reportCycle:manifest.basis.reportCycle,confirmationId:existing.baseConfirmationId,revision:existing.baseRevision},existing.dependencyHeads);
+        return existing;
+      }
+      this.checkHeads(scopeId,input.expectedBase,input.dependencyHeads);
+      if (input.expectedBase.confirmationId !== manifest.baseConfirmationId || input.expectedBase.revision !== manifest.baseRevision || input.expectedBase.reportCycle !== manifest.basis.reportCycle ||
+        [input.import,preview,candidate,...input.evidence,...input.inputs,...input.calculations].some(record=>record.scopeId!==scopeId) ||
+        input.import.status !== 'validated' || preview.importId !== input.import.importId || preview.exportId !== manifest.exportId || preview.baseConfirmationId !== manifest.baseConfirmationId || preview.baseRevision !== manifest.baseRevision ||
+        preview.candidateId !== candidate.candidateId || candidate.correctionPreviewId !== preview.previewId || preview.inputSnapshotId !== candidate.inputSnapshotId || !equal(preview.dependencyHeads,input.dependencyHeads) || !equal(candidate.basis,manifest.basis) || candidate.historySelectionId !== manifest.historySelectionId) throw Error('INVALID_STAGE');
+      this.saveImport(input.import);
+      for (const record of [...input.evidence,...input.inputs,...input.calculations]) {
+        if (record.derivation.kind !== 'manual-correction' || record.derivation.importId !== input.import.importId || record.derivation.patchHash !== input.import.patchHash) throw Error('INVALID_DERIVATION');
+      }
+      for (const record of input.evidence) this.saveEvidence(record,record.captureId);
+      for (const record of input.inputs) this.saveInputSnapshot(record,record.inputSnapshotId);
+      for (const record of input.calculations) this.saveCalculation(record,record.calculationId);
+      this.db.prepare('INSERT INTO correction_preview VALUES(?,?,?,?,?,?,?)').run(scopeId,preview.previewId,preview.exportId,preview.importId,preview.candidateId,preview.baseConfirmationId,encodeEvidence(preview));
+      this.saveCandidate(candidate,candidate.candidateId);
+      return preview;
+    }); } catch (error) {
+      if (error instanceof HistoryOperationError) throw error;
+      throw new HistoryOperationError('STORAGE_UNAVAILABLE');
+    }
+  }
   async listConfirmations(scopeId: string, cycle?: YearMonth): Promise<readonly P.ConfirmationSummary[]> { return this.all<P.StoredConfirmation>('monthly_confirmation', scopeId).filter(c => !cycle || c.reportCycle === cycle).map(c => ({ confirmationId: c.confirmationId, reportCycle: c.reportCycle, revision: c.revision, confirmedAt: c.confirmedAt, candidateId: c.candidateId, ...(c.correctionReason ? { correctionReason: c.correctionReason } : {}) })); }
   async listCalculations(query: P.HistoryQuery): Promise<readonly P.StoredCalculation[]> {
     parseYearMonth(query.from);

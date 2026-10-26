@@ -6,8 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
-import { decodeEvidence } from './evidence-codec';
-import { SqliteHistoryRepository } from './sqlite-history-repository';
+import { decodeEvidence, encodeEvidence, evidenceToJson } from './evidence-codec';
+import { SqliteHistoryRepository, hashHistoryValue } from './sqlite-history-repository';
 import { historyWorkbookCodec } from './history-workbook';
 import type { ReportBasis, CalculationWrite, EvidenceWrite, CandidateWrite, StatementSnapshotDto, ConfirmationResult } from '../../application/report-history/ports';
 import { yearMonth } from '../../domain/shared/year-month';
@@ -31,13 +31,22 @@ async function fixture(r: SqliteHistoryRepository, scopeId = 'scope-A', tag = 'f
   const evidence: EvidenceWrite = { scopeId, sourceKind: 'ecos', contentHash: 'source-' + tag, payloadJson: { value: 0, unit: '지수', failure: { error: '합성 실패' } }, schemaVersion: 1, receivedAt: now, derivation: { kind: 'captured' } };
   const { captureId } = await r.putEvidence(evidence);
   const { inputSnapshotId } = await r.putInputSnapshot({ scopeId, statements: [], sourceMetadata: { file: 'synthetic' }, inputHash: 'input-' + tag, derivation: { kind: 'captured' }, createdAt: now });
-  const common: Omit<CalculationWrite, 'indicator'> = { scopeId, origin: 'live', derivation: { kind: 'captured' }, effectiveMonth: candidateBasis.constructionBaseMonth, requestContext: { basis: candidateBasis.reportCycle }, inputHash: 'ledger-' + tag, calculationVersion: version, captureIds: [captureId], resultJson: { kind: 'failed', reason: '합성 결과' }, evaluatedAt: now, evaluationClockTrace: [now, '2026-10-23T00:00:00.001Z'], evaluatedCalendar: { year: 2026, month: 10, day: 23 }, evaluationTimeZone: 'Asia/Seoul', createdAt: now };
+  const common: Omit<CalculationWrite, 'indicator'> = { scopeId, origin: 'live', derivation: { kind: 'captured' }, effectiveMonth: candidateBasis.constructionBaseMonth, requestContext: { basis: candidateBasis.reportCycle }, inputHash: 'ledger-' + tag, calculationVersion: version, captureIds: [captureId], resultJson: evidenceToJson({ ok:false, reason:'합성 결과' }), evaluatedAt: now, evaluationClockTrace: [now, '2026-10-23T00:00:00.001Z'], evaluatedCalendar: { year: 2026, month: 10, day: 23 }, evaluationTimeZone: 'Asia/Seoul', createdAt: now };
   const construction = (await r.putCalculation({ ...common, indicator: 'construction' })).calculationId;
   const funding = (await r.putCalculation({ ...common, indicator: 'funding', effectiveMonth: candidateBasis.fundingObservedMonth, inputHash: 'judged-' + tag })).calculationId;
   const selection = await r.createHistorySelection({ scopeId, basis: candidateBasis, calculationVersion: version, asOf: now, selectedBackfillBatchId: null });
   const candidate: CandidateWrite = { scopeId, basis: candidateBasis, inputSnapshotId, inputHash: 'input-' + tag, calculationInputHashes: { construction: 'ledger-' + tag, funding: 'judged-' + tag }, calculationVersion: version, authoredAt: now, preparedAt: now, calculationIds: { construction, funding }, historySelectionId: selection.historySelectionId, document: { schemaVersion: 1, templateVersion: 'report@e3a8f9e', contentHash: 'doc-' + tag, json: { synthetic: tag, value: 0.1234567890123456 }, historyCalculationIds: selection.historyCalculationIds }, correctionPreviewId: null };
   const { candidateId } = await r.putCandidate(candidate);
   return { candidateId, candidate, captureId, inputSnapshotId, construction, funding, common, evidence };
+}
+async function seedDerivationImport(r: SqliteHistoryRepository, f: Awaited<ReturnType<typeof fixture>>, importId: string, patchHash: string) {
+  const scopeId=f.candidate.scopeId;
+  const confirmed=await r.commitConfirmation(scopeId,{candidateId:f.candidateId,expectedRevision:0,idempotencyKey:'seed-'+importId});
+  if(confirmed.kind!=='confirmed'&&confirmed.kind!=='already-confirmed')throw Error('seed failed');
+  const draft={scopeId,exportId:'export-'+importId,workbookFormatVersion:1 as const,baseConfirmationId:confirmed.confirmationId,baseRevision:confirmed.revision,baseDocumentHash:f.candidate.document.contentHash,basis:f.candidate.basis,inputSnapshotId:f.inputSnapshotId,inputHash:f.candidate.inputHash,calculationIds:f.candidate.calculationIds,historySelectionId:f.candidate.historySelectionId,calculationVersion:version,templateVersion:'report@e3a8f9e',createdAt:now,rows:[],history:[],result:[]};
+  await r.putWorkbookExport({...draft,structure:historyWorkbookCodec.structure(draft)});
+  const imported={scopeId,importId,exportId:draft.exportId,fileHash:'synthetic',patchHash,patch:[{rowId:'synthetic',action:'set',value:1,reason:'합성 정정',evidenceNote:''}],status:'validated',errors:[],receivedAt:now};
+  const db=new DatabaseSync(r.databasePath);db.prepare('INSERT INTO workbook_import VALUES(?,?,?,?,?)').run(scopeId,importId,draft.exportId,patchHash,encodeEvidence(imported));db.close();
 }
 describe('SQLite 불변 월별 이력', () => {
   it('migration2는 명세를 scope별 불변 저장한다', async () => {
@@ -90,6 +99,7 @@ describe('SQLite 불변 월별 이력', () => {
     await expect(r.createHistorySelection({ scopeId: 'scope-A', basis: noncanonicalBasis, calculationVersion: version, asOf: now, selectedBackfillBatchId: null })).rejects.toThrow('INVALID_BASIS');
     await expect(r.putCandidate({ ...f.candidate, calculationInputHashes: { ...f.candidate.calculationInputHashes, funding: 'wrong' } })).rejects.toThrow('CALCULATION_CONTEXT_MISMATCH');
     await expect(r.putCandidate({ ...f.candidate, correctionPreviewId: 'future-preview' })).rejects.toThrow();
+    await seedDerivationImport(r,f,'synthetic-import','patch');
     const derived = await r.putCalculation({ ...f.common, indicator: 'construction', origin: 'live', derivation: { kind: 'manual-correction', parentId: f.construction, importId: 'synthetic-import', patchHash: 'patch', correctedAt: now } });
     expect((await r.getCalculation('scope-A', derived.calculationId))?.derivation).toMatchObject({ parentId: f.construction });
     await expect(r.putCalculation({ ...f.common, indicator: 'construction', origin: 'reconstructed', derivation: { kind: 'manual-correction', parentId: f.construction, importId: 'i', patchHash: 'p', correctedAt: now } })).rejects.toThrow();
@@ -108,6 +118,7 @@ describe('SQLite 불변 월별 이력', () => {
     const first: StatementSnapshotDto = { asOf: { year: 2026, month: 8, day: 31 }, monthLabels: ['7월', '8월'], baseMonthIndex: 1, planYearEndIndex: 1, amounts: { 기초시재: [0, 1], 수입계: [2, 3], 수입: { unreadable: '합성 결측' }, 분양회수: [6, 7], 기타수입: [8, 9], 지출: [10, 11] } };
     const second: StatementSnapshotDto = { ...first, asOf: { year: 2026, month: 9, day: 30 } };
     const parent = await r.putInputSnapshot({ scopeId: 'scope-A', statements: [first, second], sourceMetadata: { file: 'synthetic' }, inputHash: 'parent', derivation: { kind: 'captured' }, createdAt: now });
+    await seedDerivationImport(r,await fixture(r),'synthetic-import','patch');
     const write = { scopeId: 'scope-A', statements: [first, second], sourceMetadata: { file: 'synthetic correction' }, inputHash: 'child', derivation: { kind: 'manual-correction' as const, parentId: parent.inputSnapshotId, importId: 'synthetic-import', patchHash: 'patch', correctedAt: now }, createdAt: now };
     const changedAmounts = { ...first, amounts: { ...first.amounts, 기초시재: [0, -1.23456789] } };
     const accepted = await r.putInputSnapshot({ ...write, statements: [changedAmounts, second] });
@@ -142,6 +153,7 @@ describe('SQLite 불변 월별 이력', () => {
   it('증거 정정은 부모 원천/수신 시각을 보존하고 산출 clock trace를 복원한다', async () => {
     const r = open(), f = await fixture(r);
     expect((await r.getCalculation('scope-A', f.construction))?.evaluationClockTrace).toEqual(f.common.evaluationClockTrace);
+    await seedDerivationImport(r,f,'i','p');
     const derivation = { kind: 'manual-correction' as const, parentId: f.captureId, importId: 'i', patchHash: 'p', correctedAt: now };
     await expect(r.putEvidence({ ...f.evidence, receivedAt: '2026-10-24T00:00:00.000Z', derivation })).rejects.toThrow();
     await expect(r.putEvidence({ ...f.evidence, sourceKind: 'kofia', derivation })).rejects.toThrow();
@@ -401,4 +413,302 @@ describe('SQLite 불변 월별 이력', () => {
     expect(selection.historyCalculationIds).toEqual([]);
     expect(selection.headRevisions).toEqual([]);
   });
+});
+
+async function correctionFixture(options: { unreadable?: boolean; noFetchedAt?: boolean; future?: boolean; history?: boolean } = {}) {
+  const [{ captureConstruction, captureFunding }, { prepareReportCandidate, restoreStatement }, { ledgerOf }, { roundEntryOf }, codec, sources, correction] = await Promise.all([
+    import('../../application/report-history/report-history'), import('../../application/report-history/report-candidate'), import('../../domain/cashflow/forecast-ledger'), import('../../domain/cashflow/round-entry'), import('./evidence-codec'), import('./captured-sources'), import('../../application/report-history/report-correction'),
+  ]);
+  const r = open(), scopeId = await r.defaultScopeId();
+  const source = Object.fromEntries((await import('../../domain/risk/construction-perception/policy')).SCORING_RULES.filter(rule=>rule.key !== '분양회수예측오차').map(rule=>[rule.key,{ unit:'지수', values:new Map([[yearMonth(2026,7),110],[yearMonth(2026,6),100],[yearMonth(2025,7),100]]), ...(options.noFetchedAt ? {} : {fetchedAt:new Date(now)}) }])) as never;
+  let calls = 0;
+  const deps = { repository:r, indicators:{fetchAll:async()=>source}, yields:{dailyYields:async()=>({days:[{date:'2026/08/31',publicAaa:{average:3.674,byAgency:{A:99}},treasury:{average:2.5,byAgency:{A:99}}}],fetchedAt:new Date(now)})},
+    clock:(()=>{let tick=0;return ()=>new Date((options.future?'2026-07-01T00:00:00.000Z':tick++===0?now:'2026-10-23T00:00:00.001Z'));})(),metadataClock:()=>new Date('2026-11-01T01:00:00.000Z'),hash:hashHistoryValue,encode:codec.evidenceToJson,decode:codec.evidenceFromJson,calculationVersion:version,
+    captureIndicators:sources.captureEconomicSource,captureYields:sources.captureBondSource,replayIndicators:sources.replayEconomicSource,replayYields:sources.replayBondSource,isUnsafe:sources.containsSourceCredentials,
+    nextId:()=>crypto.randomUUID(),workbookCodec:historyWorkbookCodec,ecosCatalog:[],
+    documentFactory: (input: import('../../application/report-history/report-candidate').RestoredReportInput, selection: import('../../application/report-history/ports').ExternalHistorySelection) => {
+      const json = codec.evidenceToJson({ dashboard:input.dashboard,construction:input.constructionOutcome,funding:input.fundingOutcome,authoredAt:input.authoredAt });
+      return { schemaVersion:1 as const,templateVersion:'report@e3a8f9e',contentHash:hashHistoryValue(json),json,historyCalculationIds:selection.historyCalculationIds };
+    },
+  } as unknown as import('../../application/report-history/ports').ReportCorrectionDependencies;
+  const statements = [6,8,9].map(month=>({asOf:{year:2026,month,day:28},monthLabels:Array.from({length:12},(_,i)=>`${i+1}월`),baseMonthIndex:month-1,planYearEndIndex:11,amounts:{기초시재:Array(12).fill(100),수입계:Array(12).fill(50),수입:Array(12).fill(40),분양회수:Array(12).fill(30),기타수입:Array(12).fill(10),지출:Array(12).fill(60)}}));
+  if(options.unreadable)(statements[0].amounts as unknown as Record<string,unknown>).수입={unreadable:'합성 판독 불가'};
+  const ledger = ledgerOf(statements.map(restoreStatement).map(roundEntryOf));
+  const c = await captureConstruction(deps,scopeId,{reportMonth:basis.reportCycle},ledger), f = await captureFunding(deps,scopeId,{judgedMonth:basis.fundingJudgedMonth});
+  if(c.history.captureStatus!=='saved'||f.history.captureStatus!=='saved') throw Error('fixture failed');
+  if(options.history) {
+    const priorBasis={reportCycle:yearMonth(2026,8),reportTitleMonth:yearMonth(2026,7),constructionBaseMonth:yearMonth(2026,6),fundingJudgedMonth:yearMonth(2026,8),fundingObservedMonth:yearMonth(2026,7),gapMonth:yearMonth(2026,8)};
+    const prior=await fixture(r,scopeId,'history',priorBasis);await r.commitConfirmation(scopeId,{candidateId:prior.candidateId,expectedRevision:0,idempotencyKey:'history'});
+  }
+  const selection = await r.createHistorySelection({scopeId,basis,calculationVersion:version,asOf:now,selectedBackfillBatchId:null});
+  const documentFactory = (deps as unknown as {documentFactory:import('../../application/report-history/report-candidate').ReportDocumentFactory}).documentFactory;
+  const candidate = await prepareReportCandidate(deps,{scopeId,basis,statements,sourceMetadata:{files:['synthetic-june','synthetic-aug','synthetic-sept']},constructionCalculationId:c.history.calculationId,fundingCalculationId:f.history.calculationId,historySelectionId:selection.historySelectionId,authoredAt:now,inputGeneration:'fixture'},documentFactory);
+  const confirmed = await r.commitConfirmation(scopeId,{candidateId:candidate.candidateId,expectedRevision:0,idempotencyKey:'fixture'});
+  if(confirmed.kind!=='confirmed') throw Error('fixture failed');
+  const manifest = await correction.exportCorrectionWorkbook(deps,scopeId,confirmed.confirmationId);
+  const disabled = {...deps,indicators:{fetchAll:async()=>{calls++;throw Error('LIVE_CALL');}},yields:{dailyYields:async()=>{calls++;throw Error('LIVE_CALL');}}};
+  const validate = (correction as unknown as {validateCorrectionWorkbook?: (d:typeof deps,s:string,b:Uint8Array)=>Promise<unknown>}).validateCorrectionWorkbook;
+  const edit = async (kind: 'cash'|'kofia'|'same'|'bad') => {
+    const X = await import('xlsx'); const b = X.read(historyWorkbookCodec.encode(manifest),{type:'array'});
+    const sheet = b.Sheets[kind==='kofia'?'조달금리_정정':'자금자료_정정'];
+    sheet.G2={t:'s',v:'값수정'};sheet.H2={t:'n',v:kind==='same'?100:kind==='kofia'?3.7:0};sheet.I2={t:'s',v:'합성 정정'};
+    if(kind==='bad')sheet.D2={t:'s',v:'원'};
+    return new Uint8Array(X.write(b,{type:'array',bookType:'xlsx',compression:true}));
+  };
+  const counts = () => { const db = new DatabaseSync(r.databasePath); const result = Object.fromEntries(['source_capture','report_input_snapshot','calculation_record','report_candidate','correction_preview','monthly_confirmation','monthly_head'].map(table=>[table,Number(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n)])); db.close(); return result; };
+  return {r,scopeId,deps:disabled,manifest,validate,edit,counts,calls:()=>calls,confirmed,candidate,statements};
+}
+it('import_unchanged_is_noop: 원장 파생 레코드·확정 head가 전혀 늘지 않는다',async()=>{
+  const f=await correctionFixture(), before=f.counts();
+  const result=await f.validate?.(f.deps,f.scopeId,await f.edit('same'));
+  expect(result).toMatchObject({kind:'no-change',baseConfirmationId:f.confirmed.confirmationId});
+  expect(f.counts()).toEqual(before); expect(f.calls()).toBe(0);
+});
+it('recalculate_from_complete_input: 검증 성공도 확정 head 불변이며 원래 시계·입력에서 다섯 결과를 복원한다',async()=>{
+  const f=await correctionFixture(),before=f.counts();
+  const result=await f.validate?.(f.deps,f.scopeId,await f.edit('cash')) as {kind:string;previewId:string};
+  expect(result?.kind).toBe('preview');
+  const preview=await (f.r as unknown as {getCorrectionPreview:(s:string,id:string)=>Promise<import('../../application/report-history/ports').JsonValue>}).getCorrectionPreview(f.scopeId,result.previewId) as unknown as {candidateId:string;rawDiff:unknown[]};
+  const c=await f.r.getCandidate(f.scopeId,preview.candidateId); const input=await f.r.getInputSnapshot(f.scopeId,c!.inputSnapshotId);
+  expect((input?.statements[0].amounts.기초시재 as readonly number[])[0]).toBe(0); expect(input?.statements[0].amounts.수입계).toEqual(Array(12).fill(50));
+  expect(preview.rawDiff).toHaveLength(1); expect(f.counts().monthly_head).toBe(before.monthly_head);expect(f.counts().monthly_confirmation).toBe(before.monthly_confirmation);expect(f.calls()).toBe(0);
+  const original=await f.r.getCalculation(f.scopeId,f.manifest.calculationIds.funding),derived=await f.r.getCalculation(f.scopeId,c!.calculationIds.funding);
+  expect(derived?.resultJson).toEqual(original?.resultJson);expect(derived?.evaluationClockTrace).toEqual(original?.evaluationClockTrace);
+});
+
+it('stageCorrection는 모든 저장 단계 실패를 rollback하고 동일 수정안을 두 연결에서 한 번만 게시한다',async()=>{
+  const f=await correctionFixture(),bytes=await f.edit('kofia'),before=f.counts();
+  for(const table of ['workbook_import','source_capture','report_input_snapshot','calculation_record','correction_preview','report_document','report_candidate']) {
+    const db=new DatabaseSync(f.r.databasePath);db.exec(`CREATE TRIGGER fail_stage BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'SYNTHETIC_STAGE_FAILURE'); END;`);
+    await expect(f.validate!(f.deps,f.scopeId,table==='report_input_snapshot'?await f.edit('cash'):bytes)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+    expect(f.counts()).toEqual(before);db.exec('DROP TRIGGER fail_stage');db.close();
+  }
+  const other=open(f.r.databasePath);
+  const [a,b]=await Promise.all([f.validate!(f.deps,f.scopeId,bytes),f.validate!({...f.deps,repository:other},f.scopeId,bytes)]);
+  expect(a).toEqual(b);expect(a).toMatchObject({kind:'preview'});expect(f.counts().correction_preview).toBe(1);
+  const restarted=open(f.r.databasePath);expect(await restarted.getCorrectionPreview(f.scopeId,(a as {previewId:string}).previewId)).toMatchObject({baseRevision:1,rawDiff:[{before:3.674,after:3.7}]});
+  expect(f.counts().monthly_confirmation).toBe(before.monthly_confirmation);
+});
+it('stage 직전 다른 연결이 기준 head를 바꾸면 파생 기록 0으로 409 코드가 보존된다',async()=>{
+  const f=await correctionFixture(),other=open(f.r.databasePath),before=f.counts();
+  const candidate=await other.getCandidate(f.scopeId,f.candidate.candidateId);const next=await other.putCandidate({...candidate!,document:{...candidate!.document,contentHash:'synthetic-head-change'}});
+  const counts=f.counts();
+  const wrapped=new Proxy(f.r,{get(target,key){if(key==='stageCorrection')return async(input:import('../../application/report-history/ports').CorrectionStageWrite)=>{await other.commitConfirmation(f.scopeId,{candidateId:next.candidateId,expectedRevision:1,idempotencyKey:'other-tab',correctionReason:'합성 변경'});return target.stageCorrection(input);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  await expect(f.validate!({...f.deps,repository:wrapped},f.scopeId,await f.edit('cash'))).rejects.toMatchObject({code:'STALE_BASE'});
+  const after=f.counts();for(const table of ['source_capture','report_input_snapshot','calculation_record','correction_preview'])expect(after[table]).toBe(counts[table]);
+  expect(after.monthly_confirmation).toBe(before.monthly_confirmation+1);
+});
+it('correction manual parent/import는 다른 scope나 없는 검증 기록을 참조할 수 없다',async()=>{
+  const r=open(),f=await fixture(r);
+  await expect(r.putEvidence({...f.evidence,derivation:{kind:'manual-correction',parentId:f.captureId,importId:'nonexistent',patchHash:'patch',correctedAt:now}})).rejects.toThrow();
+});
+
+it.each([{noFetchedAt:true},{future:true}])('원래 clock trace/fallback과 미래 guard를 다음 달 수정 때 그대로 재생한다 %j',async options=>{
+  const f=await correctionFixture(options),result=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string};
+  const preview=await f.r.getCorrectionPreview(f.scopeId,result.previewId),candidate=await f.r.getCandidate(f.scopeId,preview!.candidateId);
+  for(const indicator of ['construction','funding'] as const){const old=await f.r.getCalculation(f.scopeId,f.manifest.calculationIds[indicator]),next=await f.r.getCalculation(f.scopeId,candidate!.calculationIds[indicator]);expect(next?.evaluationClockTrace).toEqual(old?.evaluationClockTrace);expect(next?.resultJson).toEqual(old?.resultJson);expect(next?.origin).toBe(old?.origin);}
+  expect(f.calls()).toBe(0);
+});
+it('평가 시간대가 달라지면 파생 쓰기 전에 명시적으로 중단한다',async()=>{
+  const previous=process.env.TZ;
+  try{process.env.TZ='Asia/Seoul';const f=await correctionFixture(),before=f.counts();process.env.TZ='UTC';await expect(f.validate!(f.deps,f.scopeId,await f.edit('cash'))).rejects.toMatchObject({code:'EVALUATION_ZONE_MISMATCH'});expect(f.counts()).toEqual(before);expect(f.calls()).toBe(0);process.env.TZ='Asia/Seoul';expect(await f.validate!(f.deps,f.scopeId,await f.edit('cash'))).toMatchObject({kind:'preview'});}
+  finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});
+it('공표평균만 바꾸고 평가사별 값·원 수신일·원 문서와 기록은 보존한다',async()=>{
+  const f=await correctionFixture(),result=await f.validate!(f.deps,f.scopeId,await f.edit('kofia')) as {previewId:string};
+  const p=await f.r.getCorrectionPreview(f.scopeId,result.previewId),c=await f.r.getCandidate(f.scopeId,p!.candidateId),next=await f.r.getCalculation(f.scopeId,c!.calculationIds.funding),old=await f.r.getCalculation(f.scopeId,f.manifest.calculationIds.funding);
+  const evidence=await f.r.getEvidence(f.scopeId,next!.captureIds[0]),original=await f.r.getEvidence(f.scopeId,old!.captureIds[0]);
+  expect(evidence?.receivedAt).toBe(original?.receivedAt);expect(evidence?.derivation).toMatchObject({kind:'manual-correction',parentId:original?.captureId});
+  const decoded=f.deps.decode!<{kind:string;value:{days:{publicAaa:{average:number;byAgency:unknown}}[];fetchedAt:Date}}>(evidence!.payloadJson);
+  expect(decoded.value.days[0].publicAaa).toEqual({average:3.7,byAgency:{A:99}});expect(decoded.value.fetchedAt).toEqual(new Date(now));
+  expect((await f.r.getConfirmation(f.scopeId,f.confirmed.confirmationId))?.document).toEqual(f.candidate.document);
+  expect((await f.r.getCalculation(f.scopeId,old!.calculationId))?.resultJson).toEqual(old?.resultJson);
+  const resultJson=f.deps.decode!<{value:{result:{spread:number}}}>(next!.resultJson);expect(resultJson.value.result.spread).toBe(1.2);
+});
+it('Unreadable 항목의 일부 복구는 원장 쓰기 0, 모든 기존 월 복구는 전체 입력 복원 성공이다',async()=>{
+  const f=await correctionFixture({unreadable:true}),X=await import('xlsx'),before=f.counts();
+  const patch=async(all:boolean)=>{const b=X.read(historyWorkbookCodec.encode(f.manifest),{type:'array'}),sheet=b.Sheets['자금자료_정정'];
+    const rows=f.manifest.rows.filter(row=>row.sheet==='자금자료_정정');rows.forEach((row,index)=>{if(row.rowId.startsWith('statement:0:수입:')&&(all||row.rowId.endsWith(':0'))){const r=index+2;sheet[`G${r}`]={t:'s',v:'값수정'};sheet[`H${r}`]={t:'n',v:40};sheet[`I${r}`]={t:'s',v:'판독 복구'};}});return new Uint8Array(X.write(b,{type:'array',bookType:'xlsx'}));};
+  expect(await f.validate!(f.deps,f.scopeId,await patch(false))).toMatchObject({kind:'invalid',errors:[{code:'INCOMPLETE_SERIES'}]});expect(f.counts()).toEqual(before);
+  const result=await f.validate!(f.deps,f.scopeId,await patch(true)) as {previewId:string};const p=await f.r.getCorrectionPreview(f.scopeId,result.previewId);const input=await f.r.getInputSnapshot(f.scopeId,p!.inputSnapshotId);expect(input?.statements[0].amounts.수입).toEqual(Array(12).fill(40));
+});
+it('현재 의존 head 토큰은 문서 cutoff와 별개이며 기존 preview는 의존 head 변경 뒤 재기준화하지 않는다',async()=>{
+  const f=await correctionFixture(),bytes=await f.edit('cash'),first=await f.validate!(f.deps,f.scopeId,bytes) as {previewId:string};
+  const p=await f.r.getCorrectionPreview(f.scopeId,first.previewId);expect(p?.dependencyHeads).toContainEqual({reportCycle:basis.reportCycle,confirmationId:f.confirmed.confirmationId,revision:1});
+  expect((await f.r.getHistorySelection(f.scopeId,f.manifest.historySelectionId))?.headRevisions).toEqual([]);
+  const candidate=await f.r.getCandidate(f.scopeId,f.candidate.candidateId),newCandidate=await f.r.putCandidate({...candidate!,document:{...candidate!.document,contentHash:'later'}});
+  await f.r.commitConfirmation(f.scopeId,{candidateId:newCandidate.candidateId,expectedRevision:1,idempotencyKey:'later',correctionReason:'합성 최신본'});
+  const before=f.counts();await expect(f.validate!(f.deps,f.scopeId,bytes)).rejects.toMatchObject({code:'STALE_BASE'});expect(f.counts()).toEqual(before);expect(await f.r.getCorrectionPreview(f.scopeId,p!.previewId)).toEqual(p);
+});
+
+it('서식만 다른 재업로드는 동일 preview이고 산출값이 같아도 원자료 차이를 남긴다',async()=>{
+  const f=await correctionFixture(),X=await import('xlsx'),bytes=await f.edit('kofia'),book=X.read(bytes,{type:'array'});book.Sheets['조달금리_정정'].H2.v=3.6741;
+  const data=()=>new Uint8Array(X.write(book,{type:'array',bookType:'xlsx',compression:true}));
+  const first=await f.validate!(f.deps,f.scopeId,data()) as {previewId:string};book.Sheets['조달금리_정정']['!cols']=[{wch:42}];
+  expect(await f.validate!(f.deps,f.scopeId,data())).toEqual(first);
+  const preview=await f.r.getCorrectionPreview(f.scopeId,first.previewId);expect(preview?.rawDiff).toEqual(expect.arrayContaining([expect.objectContaining({before:3.674,after:3.6741})]));
+  expect(preview?.resultDiff).toEqual(expect.arrayContaining([expect.objectContaining({indicator:'funding',beforeDisplay:'1.174 · 위기',afterDisplay:'1.174 · 위기',changed:false})]));
+});
+it('다른 정정 branch가 부모 원천만 공유하면 가능 영향으로 표시하고 branch 값을 덮지 않는다',async()=>{
+  const f=await correctionFixture();const initial=await f.validate!(f.deps,f.scopeId,await f.edit('kofia')) as {previewId:string};const preview=await f.r.getCorrectionPreview(f.scopeId,initial.previewId),candidate=await f.r.getCandidate(f.scopeId,preview!.candidateId),derived=await f.r.getCalculation(f.scopeId,candidate!.calculationIds.funding);
+  const earlierBasis={reportCycle:yearMonth(2026,8),reportTitleMonth:yearMonth(2026,7),constructionBaseMonth:yearMonth(2026,6),fundingJudgedMonth:yearMonth(2026,8),fundingObservedMonth:yearMonth(2026,7),gapMonth:yearMonth(2026,8)};
+  const other=await fixture(f.r,f.scopeId,'branch',earlierBasis);const linked=await f.r.putCalculation({...other.common,indicator:'funding',effectiveMonth:earlierBasis.fundingObservedMonth,inputHash:other.candidate.calculationInputHashes.funding,captureIds:derived!.captureIds});
+  const c=await f.r.putCandidate({...other.candidate,calculationIds:{...other.candidate.calculationIds,funding:linked.calculationId}});const confirmed=await f.r.commitConfirmation(f.scopeId,{candidateId:c.candidateId,expectedRevision:0,idempotencyKey:'branch'});
+  const before=await f.r.getCalculation(f.scopeId,linked.calculationId),count=f.counts().monthly_confirmation;
+  const X=await import('xlsx'),book=X.read(await f.edit('kofia'),{type:'array'});book.Sheets['조달금리_정정'].H2.v=3.8;
+  const result=await f.validate!(f.deps,f.scopeId,new Uint8Array(X.write(book,{type:'array',bookType:'xlsx'}))) as {previewId:string};const staged=await f.r.getCorrectionPreview(f.scopeId,result.previewId);
+  expect(staged?.affectedReports).toEqual(expect.arrayContaining([expect.objectContaining({reportCycle:'2026/08',indicator:'funding',status:'possible',lineage:'shared-parent'})]));
+  expect(await f.r.getCalculation(f.scopeId,linked.calculationId)).toEqual(before);expect(f.counts().monthly_confirmation).toBe(count);expect(confirmed.kind).toBe('confirmed');
+});
+it('참조한 과거 head가 바뀌면 동일 export/patch 재검증도 STALE_DEPENDENCY이며 preview를 갱신하지 않는다',async()=>{
+  const f=await correctionFixture({history:true}),bytes=await f.edit('cash'),first=await f.validate!(f.deps,f.scopeId,bytes) as {previewId:string};
+  const preview=await f.r.getCorrectionPreview(f.scopeId,first.previewId),prior=(await f.r.listConfirmations(f.scopeId)).find(c=>c.reportCycle==='2026/08')!;
+  const candidate=await f.r.getCandidate(f.scopeId,prior.candidateId),next=await f.r.putCandidate({...candidate!,document:{...candidate!.document,contentHash:'dependency-change'}});
+  const other=open(f.r.databasePath);await other.commitConfirmation(f.scopeId,{candidateId:next.candidateId,expectedRevision:1,idempotencyKey:'changed-dependency',correctionReason:'합성 수정'});
+  const before=f.counts();await expect(f.validate!(f.deps,f.scopeId,bytes)).rejects.toMatchObject({code:'STALE_DEPENDENCY'});expect(f.counts()).toEqual(before);expect(await f.r.getCorrectionPreview(f.scopeId,preview!.previewId)).toEqual(preview);
+});
+it('자금 한 칸을 바꾼 전체 입력에서 기존 dashboard·건설·조달 함수의 결과와 정확히 같다',async()=>{
+  const f=await correctionFixture(),X=await import('xlsx'),book=X.read(historyWorkbookCodec.encode(f.manifest),{type:'array'}),sheet=book.Sheets['자금자료_정정'];
+  const rows=f.manifest.rows.filter(row=>row.sheet==='자금자료_정정'),r=rows.findIndex(row=>row.rowId==='statement:2:기초시재:8')+2;
+  sheet[`G${r}`]={t:'s',v:'값수정'};sheet[`H${r}`]={t:'n',v:0};sheet[`I${r}`]={t:'s',v:'현재 기초시재 정정'};
+  const result=await f.validate!(f.deps,f.scopeId,new Uint8Array(X.write(book,{type:'array',bookType:'xlsx'}))) as {previewId:string};
+  const p=await f.r.getCorrectionPreview(f.scopeId,result.previewId),candidate=await f.r.getCandidate(f.scopeId,p!.candidateId);
+  const expected=structuredClone(f.statements);expected[2].amounts.기초시재[8]=0;
+  const {restoreStatement}=await import('../../application/report-history/report-candidate'),{assessDashboard}=await import('../../application/dashboard'),{ledgerOf}=await import('../../domain/cashflow/forecast-ledger'),{roundEntryOf}=await import('../../domain/cashflow/round-entry'),{assessPerception}=await import('../../application/construction-perception'),{assessFundingRiskReport}=await import('../../application/funding-risk');
+  const restored=expected.map(restoreStatement),dashboard=assessDashboard(restored[1],restored[2],restored[2].months[8]);
+  const document=f.deps.decode!<{dashboard:unknown;construction:unknown;funding:unknown}>(candidate!.document.json);
+  expect(document.dashboard).toEqual(dashboard);expect(dashboard.liquidityGap).toMatchObject({ok:true,value:{gapRatio:0}});
+  const ledger=ledgerOf(restored.map(roundEntryOf));
+  for(const indicator of ['construction','funding'] as const){const parent=await f.r.getCalculation(f.scopeId,f.manifest.calculationIds[indicator]),evidence=await f.r.getEvidence(f.scopeId,parent!.captureIds[0]);let call=0;const clock=()=>new Date(parent!.evaluationClockTrace[call++]);
+    const outcome=indicator==='construction'?await assessPerception(f.deps.replayIndicators!(f.deps.decode!(evidence!.payloadJson)),ledger,{reportMonth:basis.reportCycle},clock):await assessFundingRiskReport(f.deps.replayYields!(f.deps.decode!(evidence!.payloadJson)),{judgedMonth:basis.reportCycle},clock);
+    expect(document[indicator]).toEqual(outcome);
+  }
+  expect((await f.r.getInputSnapshot(f.scopeId,candidate!.inputSnapshotId))?.statements).toEqual(expected);expect(candidate?.document.historyCalculationIds).toEqual(f.candidate.document.historyCalculationIds);expect(f.calls()).toBe(0);
+});
+it.each(['ecos:미분양주택현황:2026/06','ecos:총수주액:2025/07','statement:0:분양회수:6','statement:2:분양회수:6'])('전월·전년 비교와 회차 계획/실적 %s는 기존 건설 함수로 재현한다',async rowId=>{
+  const f=await correctionFixture(),X=await import('xlsx'),book=X.read(historyWorkbookCodec.encode(f.manifest),{type:'array'}),row=f.manifest.rows.find(row=>row.rowId===rowId)!;
+  const r=f.manifest.rows.filter(item=>item.sheet===row.sheet).findIndex(item=>item.rowId===rowId)+2,sheet=book.Sheets[row.sheet];sheet[`G${r}`]={t:'s',v:'값수정'};sheet[`H${r}`]={t:'n',v:65};sheet[`I${r}`]={t:'s',v:'비교 원자료 정정'};
+  const result=await f.validate!(f.deps,f.scopeId,new Uint8Array(X.write(book,{type:'array',bookType:'xlsx'}))) as {previewId:string};
+  const p=await f.r.getCorrectionPreview(f.scopeId,result.previewId),candidate=await f.r.getCandidate(f.scopeId,p!.candidateId),calculation=await f.r.getCalculation(f.scopeId,candidate!.calculationIds.construction),parent=await f.r.getCalculation(f.scopeId,f.manifest.calculationIds.construction),evidence=await f.r.getEvidence(f.scopeId,parent!.captureIds[0]);
+  const observed=f.deps.decode!<import('../../application/report-history/ports').SourceObservation<import('../../application/ports').SourceResult>>(evidence!.payloadJson),expected=structuredClone(f.statements);
+  if(row.sourceKind==='ecos'){if(observed.kind!=='returned')throw Error('fixture');const identity=row.identityJson as {indicator:keyof import('../../application/ports').SourceResult;month:import('../../domain/shared/year-month').YearMonth};const source=observed.value[identity.indicator];if(!('values'in source))throw Error('fixture');(source.values as Map<import('../../domain/shared/year-month').YearMonth,number>).set(identity.month,65);}
+  else{const identity=row.identityJson as {statementIndex:number;monthIndex:number};expected[identity.statementIndex].amounts.분양회수[identity.monthIndex]=65;}
+  const {restoreStatement}=await import('../../application/report-history/report-candidate'),{ledgerOf}=await import('../../domain/cashflow/forecast-ledger'),{roundEntryOf}=await import('../../domain/cashflow/round-entry'),{assessPerception}=await import('../../application/construction-perception');let calls=0;
+  const outcome=await assessPerception(f.deps.replayIndicators!(observed),ledgerOf(expected.map(restoreStatement).map(roundEntryOf)),{reportMonth:basis.reportCycle},()=>new Date(parent!.evaluationClockTrace[calls++]));
+  expect(f.deps.decode!(calculation!.resultJson)).toEqual(outcome);expect(calculation?.effectiveMonth).toBe(parent?.effectiveMonth);expect(f.calls()).toBe(0);expect((await f.r.getConfirmation(f.scopeId,f.confirmed.confirmationId))?.revision).toBe(1);
+});
+
+it('같은 원천 ID를 직접 참조한 다른 보고서는 기존 함수로 영향만 재계산하고 원본을 보존한다', async () => {
+  const f = await correctionFixture();
+  const { captureConstruction, captureFunding } = await import('../../application/report-history/report-history');
+  const { prepareReportCandidate, restoreStatement } = await import('../../application/report-history/report-candidate');
+  const { ledgerOf } = await import('../../domain/cashflow/forecast-ledger');
+  const { roundEntryOf } = await import('../../domain/cashflow/round-entry');
+  const { assessPerception } = await import('../../application/construction-perception');
+  const construction = await f.r.getCalculation(f.scopeId, f.manifest.calculationIds.construction);
+  const funding = await f.r.getCalculation(f.scopeId, f.manifest.calculationIds.funding);
+  const economic = await f.r.getEvidence(f.scopeId, construction!.captureIds[0]);
+  const bond = await f.r.getEvidence(f.scopeId, funding!.captureIds[0]);
+  // Both report calculations explicitly reference these same immutable capture IDs.
+  const repository = new Proxy(f.r, { get(target, key) {
+    if (key === 'putEvidence') return async (input: { sourceKind: string }) => ({ captureId: input.sourceKind === 'ecos' ? economic!.captureId : bond!.captureId });
+    const value = Reflect.get(target, key);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const deps = { ...f.deps, repository, clock: () => new Date(now),
+    indicators: f.deps.replayIndicators!(f.deps.decode!(economic!.payloadJson)),
+    yields: f.deps.replayYields!(f.deps.decode!(bond!.payloadJson)),
+  };
+  const earlierBasis = { reportCycle: yearMonth(2026,8), reportTitleMonth: yearMonth(2026,7), constructionBaseMonth: yearMonth(2026,6), fundingJudgedMonth: yearMonth(2026,8), fundingObservedMonth: yearMonth(2026,7), gapMonth: yearMonth(2026,8) };
+  const statements = f.statements.slice(0,2), ledger = ledgerOf(statements.map(restoreStatement).map(roundEntryOf));
+  const c = await captureConstruction(deps, f.scopeId, { reportMonth: earlierBasis.reportCycle }, ledger);
+  const y = await captureFunding(deps, f.scopeId, { judgedMonth: earlierBasis.fundingJudgedMonth });
+  if (c.history.captureStatus !== 'saved' || y.history.captureStatus !== 'saved') throw Error('fixture failed');
+  const selection = await f.r.createHistorySelection({ scopeId: f.scopeId, basis: earlierBasis, calculationVersion: version, asOf: now, selectedBackfillBatchId: null });
+  const candidate = await prepareReportCandidate(deps, { scopeId: f.scopeId, basis: earlierBasis, statements, sourceMetadata: {}, constructionCalculationId: c.history.calculationId, fundingCalculationId: y.history.calculationId, historySelectionId: selection.historySelectionId, authoredAt: now, inputGeneration: 'shared-capture' }, f.deps.documentFactory);
+  const confirmed = await f.r.commitConfirmation(f.scopeId, { candidateId: candidate.candidateId, expectedRevision: 0, idempotencyKey: 'shared-capture' });
+  expect(confirmed.kind).toBe('confirmed');
+  const beforeHeads = await f.r.currentHeads(f.scopeId, [basis.reportCycle, earlierBasis.reportCycle]);
+  const X = await import('xlsx'), book = X.read(historyWorkbookCodec.encode(f.manifest), { type: 'array' });
+  const rows = f.manifest.rows.filter(row => row.sheet === '경제지표_정정');
+  const index = rows.findIndex(row => row.rowId.endsWith(':2026/06')), row = rows[index], n = index + 2;
+  book.Sheets['경제지표_정정'][`G${n}`] = { t: 's', v: '값수정' };
+  book.Sheets['경제지표_정정'][`H${n}`] = { t: 'n', v: 101 };
+  book.Sheets['경제지표_정정'][`I${n}`] = { t: 's', v: '공유 원자료 검증' };
+  const result = await f.validate!(f.deps, f.scopeId, new Uint8Array(X.write(book, { type: 'array', bookType: 'xlsx' }))) as { previewId: string };
+  const preview = await f.r.getCorrectionPreview(f.scopeId, result.previewId);
+  const patched = f.deps.decode!<import('../../application/report-history/ports').SourceObservation<import('../../application/ports').SourceResult>>(economic!.payloadJson);
+  if (patched.kind !== 'returned') throw Error('fixture source');
+  const key = (row.identityJson as { indicator: keyof import('../../application/ports').SourceResult }).indicator;
+  const series = patched.value[key];
+  if (!('values' in series)) throw Error('fixture series');
+  (series.values as Map<ReturnType<typeof yearMonth>,number>).set(yearMonth(2026,6), 101);
+  const expected = await assessPerception(f.deps.replayIndicators!(patched), ledger, { reportMonth: earlierBasis.reportCycle }, () => new Date(now));
+  const impact = (preview?.affectedReports as unknown as Record<string, unknown>[]).find(item => item.reportCycle === '2026/08' && item.indicator === 'construction');
+  expect(impact?.status).toBe('recalculated');
+  expect(impact?.before).toEqual(f.deps.encode(c.outcome));
+  expect(impact?.after).toEqual(f.deps.encode(expected));
+  expect(await f.r.currentHeads(f.scopeId, [basis.reportCycle, earlierBasis.reportCycle])).toEqual(beforeHeads);
+  expect((await f.r.getCalculation(f.scopeId, c.history.calculationId))?.resultJson).toEqual(f.deps.encode(c.outcome));
+  expect((await f.r.getCandidate(f.scopeId, candidate.candidateId))?.document).toEqual(candidate.document);
+  expect(f.calls()).toBe(0);
+});
+
+it('마지막 평가일 공표평균 결측은 0이나 평가사 평균으로 대체하지 않고 기존 함수대로 산출불가다', async () => {
+  const f = await correctionFixture(), X = await import('xlsx');
+  const book = X.read(await f.edit('kofia'), { type: 'array' });
+  book.Sheets['조달금리_정정'].G2 = { t: 's', v: '결측처리' };
+  delete book.Sheets['조달금리_정정'].H2;
+  const result = await f.validate!(f.deps, f.scopeId, new Uint8Array(X.write(book, { type: 'array', bookType: 'xlsx' }))) as { previewId: string };
+  const preview = await f.r.getCorrectionPreview(f.scopeId, result.previewId);
+  expect(preview).not.toBeNull();
+  const candidate = await f.r.getCandidate(f.scopeId, preview!.candidateId);
+  const calculation = await f.r.getCalculation(f.scopeId, candidate!.calculationIds.funding);
+  const evidence = await f.r.getEvidence(f.scopeId, calculation!.captureIds[0]);
+  const observation = f.deps.decode!<import('../../application/report-history/ports').SourceObservation<import('../../application/ports').YieldFetch>>(evidence!.payloadJson);
+  if (observation.kind !== 'returned' || !('days' in observation.value)) throw Error('fixture source');
+  expect(observation.value.days[0].publicAaa).toEqual({ average: null, byAgency: { A: 99 } });
+  const { assessFundingRiskReport } = await import('../../application/funding-risk');
+  let calls = 0;
+  const expected = await assessFundingRiskReport(f.deps.replayYields!(observation), { judgedMonth: basis.fundingJudgedMonth }, () => new Date(calculation!.evaluationClockTrace[calls++]));
+  expect(calculation!.resultJson as unknown).toEqual(f.deps.encode(expected) as unknown);
+  expect(expected).toMatchObject({ ok: true, value: { result: { kind: 'unavailable' } } });
+  expect(f.calls()).toBe(0);
+});
+
+it.each((['input', 'evidence'] as const).flatMap(kind => ([128, 129, 'cycle', 'missing'] as const).map(shape => ({kind,shape}))))('부모 계보 $kind/$shape: 긴 정상 계보와 순환·없는 부모를 구분한다', async ({kind,shape}) => {
+    const f = await correctionFixture();
+    const calculation = await f.r.getCalculation(f.scopeId, f.manifest.calculationIds.funding);
+    const rootId = kind === 'input' ? f.manifest.inputSnapshotId : calculation!.captureIds[0];
+    const original = kind === 'input' ? await f.r.getInputSnapshot(f.scopeId, rootId) : await f.r.getEvidence(f.scopeId, rootId);
+    const length = typeof shape === 'number' ? shape : 3;
+    const ids = [rootId, ...Array.from({ length: length - 1 }, (_, index) => `synthetic-parent-${index}`)];
+    const queried = new Set<string>();
+    // Immutable repository-port graph: the service still restores/calculates/stages
+    // through the real SQLite fixture; only historical ancestor reads are supplied.
+    const repository = new Proxy(f.r, { get(target, key) {
+      if (key === (kind === 'input' ? 'getInputSnapshot' : 'getEvidence')) return async (scope: string, id: string) => {
+        const index = ids.indexOf(id);
+        if (index >= 0 && scope === f.scopeId) {
+          queried.add(id);
+          const parentId = ids[index + 1] ?? (shape === 'cycle' ? ids[0] : shape === 'missing' ? 'missing-parent' : null);
+          return { ...original, [kind === 'input' ? 'inputSnapshotId' : 'captureId']: id, derivation: parentId ? { kind: 'manual-correction', parentId, importId: 'synthetic-import', patchHash: 'synthetic-patch', correctedAt: now } : { kind: 'captured' } };
+        }
+        return kind === 'input' ? target.getInputSnapshot(scope,id) : target.getEvidence(scope,id);
+      };
+      const value = Reflect.get(target,key);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const before = f.counts();
+    const validate = () => f.validate!({ ...f.deps, repository }, f.scopeId, bytes);
+    const bytes = await f.edit(kind === 'input' ? 'cash' : 'kofia');
+    if (typeof shape === 'number') {
+      expect(await validate()).toMatchObject({kind:'preview'});
+      expect(queried.size).toBe(shape);
+      expect(f.counts().correction_preview).toBe(before.correction_preview + 1);
+      expect(f.counts().monthly_head).toBe(before.monthly_head);
+    } else {
+      await expect(validate()).rejects.toThrow('INVALID_LINEAGE');
+      expect(f.counts()).toEqual(before);
+    }
 });

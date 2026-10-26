@@ -16,6 +16,7 @@ import { evidenceToJson, evidenceFromJson } from '@/infrastructure/report-histor
 import { captureEconomicSource, captureBondSource, replayEconomicSource, replayBondSource, containsSourceCredentials } from '@/infrastructure/report-history/captured-sources';
 import { ECOS_SERIES } from '@/infrastructure/ecos/ecos-indicator-source';
 import { historyWorkbookCodec } from '@/infrastructure/report-history/history-workbook';
+import { reportDocumentFactory } from './report-history-confirmation-handlers';
 import { randomUUID } from 'node:crypto';
 
 /** 기준월을 바꿀 때마다 ECOS를 다시 부르지 않도록 서버 프로세스에 하나만 둔다. */
@@ -31,7 +32,7 @@ export async function historyExportProvider(): Promise<{ readonly scopeId: strin
   // A source call during export is a bug; no live adapter or credential is constructed.
   const unavailable = async (): Promise<never> => { throw Error('EXPORT_MUST_USE_FROZEN_SOURCES'); };
   const { scopeId, deps } = await historyProvider({ fetchAll: unavailable }, { dailyYields: unavailable }, () => new Date());
-  return { scopeId, deps: { ...deps, nextId: randomUUID, ecosCatalog: ECOS_SERIES, workbookCodec: historyWorkbookCodec } };
+  return { scopeId, deps: { ...deps, nextId: randomUUID, ecosCatalog: ECOS_SERIES, workbookCodec: historyWorkbookCodec, documentFactory: reportDocumentFactory(deps, scopeId) } };
 }
 
 export function indicatorSource(): EconomicIndicatorSource {

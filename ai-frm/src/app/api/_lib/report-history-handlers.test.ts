@@ -99,3 +99,20 @@ it('exchange export uses the local origin and returns a saved download URL', asy
   expect(downloaded.headers.get('cache-control')).toBe('no-store');
   expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
 });
+
+it('exchange validate streams multipart limits and returns structured invalid file errors',async()=>{
+  const {handleExchangePost}=await import('./report-history-exchange-handlers');
+  const form=new FormData();form.set('command','validate');form.set('file',new File(['not-xlsx'],'synthetic.xlsx'));
+  const ready=async()=>({scopeId:'scope',deps:{workbookCodec:{readExportId:()=>{throw Error('INVALID_WORKBOOK');}}}} as never);
+  const response=await handleExchangePost(new Request('http://localhost:3000/api/report-history/exchange',{method:'POST',body:form}),ready);
+  expect(response.status).toBe(422);expect(await response.json()).toMatchObject({result:{kind:'invalid',importId:null,errors:[{sheet:null,row:null,column:null}]}});
+  const oversize=new Request('http://localhost:3000/api/report-history/exchange',{method:'POST',headers:{'content-type':'multipart/form-data; boundary=x'},body:new ReadableStream({start(controller){controller.enqueue(new Uint8Array(6*1024*1024+1));controller.close();}}),duplex:'half'} as RequestInit);
+  expect((await handleExchangePost(oversize,provider)).status).toBe(413);
+});
+it('exchange preview reopens saved immutable data in the server scope',async()=>{
+  const {handleExchangeGet}=await import('./report-history-exchange-handlers');
+  const id='22222222-2222-4222-8222-222222222222';
+  const ready=async()=>({scopeId:'scope',deps:{repository:{getCorrectionPreview:async(scope:string,preview:string)=>scope==='scope'&&preview===id?{previewId:id,baseRevision:2}:null}}} as never);
+  const response=await handleExchangeGet(new Request(`http://localhost:3000/api/report-history/exchange?previewId=${id}`),ready);
+  expect(response.status).toBe(200);expect(await response.json()).toMatchObject({preview:{previewId:id,baseRevision:2}});
+});
