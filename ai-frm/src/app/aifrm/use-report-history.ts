@@ -25,6 +25,11 @@ export function historySelectionErrorMessage(code: string): string {
   return code === 'STORAGE_UNAVAILABLE' ? '이력 저장소에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.' : `이력을 선택하지 못했습니다.${alternative}`;
 }
 
+export function invalidateHistorySelection(cache: Map<string, ExternalHistoryView>, advance: () => void): void {
+  cache.clear();
+  advance();
+}
+
 export function useReportHistory(input: Input) {
   const inputKey = useMemo(() => input.reportCycle === null ? '' : JSON.stringify({ reportCycle: input.reportCycle, rounds: input.rounds }), [input.reportCycle, input.rounds]);
   const [batches, setBatches] = useState<readonly HistoryBatch[]>([]);
@@ -152,7 +157,8 @@ export function useReportHistory(input: Input) {
       if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : '보완 작업을 시작하지 못했습니다.'); setStatus('보완 중단 · 같은 요청으로 다시 시도할 수 있습니다.'); }
     } finally { if (operation.current === controller) { operation.current = null; setRunning(false); } }
   }, [input.reportCycle, input.rounds, inputKey, plan, run]);
+  const invalidateSelection = useCallback(() => { invalidateHistorySelection(cache.current, () => setSelectionRevision(value => value + 1)); }, []);
   const cancel = useCallback(() => { operation.current?.abort(); operation.current = null; setRunning(false); setStatus('보완 일시 중지'); }, []);
-  return { batches, plan, selectedBatchId: selectedForInput, view: selection?.key === selectionKey ? selection.view : null, status, error, running, refresh, prepare, start, resume, cancel, applyBatch,
+  return { batches, plan, selectedBatchId: selectedForInput, view: selection?.key === selectionKey ? selection.view : null, status, error, running, refresh, invalidateSelection, prepare, start, resume, cancel, applyBatch,
     canStart: canStartHistoryBackfill(input.reportCycle, input.rounds), range: input.reportCycle ? `${addMonths(input.reportCycle, -17)}~${input.reportCycle}` : null, unreadableRounds: input.unreadableRounds };
 }

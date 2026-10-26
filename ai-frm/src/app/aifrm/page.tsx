@@ -61,14 +61,15 @@ import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
 import { summarizeHistorySources, withExternalRiskHistory } from './report-history-projection';
 import { useReportHistory } from './use-report-history';
-import { ReportControlSurface, ReportHistoryControls, ReportHistorySourceSummary, WorkbookCorrectionControls } from './report-history-controls';
+import { ReportControlSurface, ReportHistoryControls, ReportHistorySourceSummary } from './report-history-controls';
 import type { HistorySourceSummary } from '@/application/report-history/history-view';
 import { snapshotStatement, type PreparedCandidate } from '@/application/report-history/report-candidate';
 import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import type { FinancialReport } from './report-model';
-import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, exportRequestMatches, fetchArchivedDocument, revisionForCycle,
-  type AcceptedCandidate, type ConfirmationAttempt, type ExportRequest } from './report-confirmation-state';
+import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, fetchArchivedDocument, revisionForCycle,
+  type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
+import { ReportCorrectionControls } from './report-correction-editor';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -110,12 +111,10 @@ export default function AifrmDashboardPage() {
   const [confirmationsLoaded, setConfirmationsLoaded] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
-  const [selectedExportRequest, setSelectedExportRequest] = useState<ExportRequest | null>(null);
-  const selectedExportConfirmationId = selectedExportRequest?.confirmationId ?? null;
-  const [savedExport, setSavedExport] = useState<{ exportId: string; request: ExportRequest } | null>(null);
-  const exportRequestRef = useRef<ExportRequest | null>(null);
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const correctionNavigation = useRef<(() => Promise<boolean>) | null>(null);
+  const registerCorrectionNavigation = useCallback((guard: (() => Promise<boolean>) | null) => { correctionNavigation.current = guard; }, []);
+  const openGeneration = useRef(0);
+  const [correctionRefreshRevision, setCorrectionRefreshRevision] = useState(0);
   const [correctionReason, setCorrectionReason] = useState('');
   const [candidateState, setCandidateState] = useState<AcceptedCandidate | null>(null);
   const [candidatePreparingKey, setCandidatePreparingKey] = useState<string | null>(null);
@@ -194,7 +193,8 @@ export default function AifrmDashboardPage() {
     }
   }, []);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (correctionNavigation.current && !await correctionNavigation.current()) return;
     if (prepared.kind !== 'ready' || loaded === prepared.rounds) return;
     resultsFocusPending.current = true;
     dispatchUpload({ type: 'apply' });
@@ -311,13 +311,15 @@ export default function AifrmDashboardPage() {
     ? summarizeHistorySources(displayReport, history.view, 'current') : null;
 
   const openConfirmation = async (id: string) => {
+    const generation = ++openGeneration.current;
     setConfirmationError(null);
     try {
-      const { document, historySources } = await fetchArchivedDocument(id, history.cancel);
+      const { document, historySources } = await fetchArchivedDocument(id, history.cancel, fetch, () => generation === openGeneration.current);
+      if (generation !== openGeneration.current) return;
       setArchived({ id, document, historySources });
       setReportOpenedAt(null);
       window.scrollTo({ top: 0 });
-    } catch { setConfirmationError('확정본을 열지 못했습니다. 저장소와 버전을 확인해 주세요.'); }
+    } catch { if (generation === openGeneration.current) setConfirmationError('확정본을 열지 못했습니다. 저장소와 버전을 확인해 주세요.'); }
   };
   const confirmReport = async () => {
     if (!readyToConfirm || !confirmationKey || !basis || !loaded || !reportOpenedAt || !history.view ||
@@ -368,58 +370,22 @@ export default function AifrmDashboardPage() {
     finally { confirmationBusyRef.current = false; setConfirmationBusy(false); }
   };
 
-  const downloadExport = async (exportId: string, request: ExportRequest) => {
-    if (!exportRequestMatches(exportRequestRef.current, request)) return;
-    setExportBusy(true); setExportError(null);
-    try {
-      const response = await fetch(`/api/report-history/exchange?exportId=${encodeURIComponent(exportId)}`, { cache: 'no-store' });
-      if (!response.ok) throw Error('DOWNLOAD_FAILED');
-      const blob = await response.blob();
-      if (!exportRequestMatches(exportRequestRef.current, request)) return;
-      const name = /filename="([^"]+\.xlsx)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? `aifrm-history-${exportId.slice(0, 8)}.xlsx`;
-      const url = URL.createObjectURL(blob);
-      try {
-        const link = document.createElement('a');
-        link.href = url; link.download = name;
-        document.body.appendChild(link); link.click(); link.remove();
-      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
-    } catch { if (exportRequestMatches(exportRequestRef.current, request)) setExportError('파일을 내려받지 못했습니다. 저장된 내보내기 ID로 다시 다운로드하세요.'); }
-    finally { if (exportRequestMatches(exportRequestRef.current, request)) setExportBusy(false); }
+  const correctionConfirmed = (id: string) => {
+    history.invalidateSelection();
+    confirmationKeyRef.current = null;
+    candidatePreparationRef.current = null;
+    setCandidateState(null);
+    setCandidatePreparingKey(null);
+    setConfirmationAttempt(null);
+    setConfirmationConflictKey(null);
+    setConfirmed(null);
+    setAppliedGeneration(value => value + 1);
+    setCorrectionRefreshRevision(value => value + 1);
+    void loadConfirmations();
+    void openConfirmation(id);
   };
-  const exportSelected = async () => {
-    const request = exportRequestRef.current;
-    if (!request || !exportRequestMatches(request, { confirmationId: selectedExportConfirmationId ?? '', generation: request.generation }) || exportBusy) return;
-    setExportBusy(true); setExportError(null); setSavedExport(null);
-    try {
-      const response = await fetch('/api/report-history/exchange', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'export', confirmationId: request.confirmationId }) });
-      const body = await response.json();
-      if (!response.ok || typeof body.exportId !== 'string') throw Error('EXPORT_FAILED');
-      if (!exportRequestMatches(exportRequestRef.current, request)) return;
-      setSavedExport({ exportId: body.exportId, request });
-      await downloadExport(body.exportId, request);
-    } catch { if (exportRequestMatches(exportRequestRef.current, request)) setExportError('내보내기 명세를 저장하지 못했습니다. 이력을 다시 확인한 뒤 재시도하세요.'); }
-    finally { if (exportRequestMatches(exportRequestRef.current, request)) setExportBusy(false); }
-  };
-
-  const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="월별 확정 이력" className="report-controls" gap={2} align="start">
-    <Heading level={3}>월별 확정 이력</Heading>
-    <Button label="확정 이력 다시 조회" variant="ghost" size="sm" onClick={() => void loadConfirmations()} />
-    {confirmationsLoaded && confirmations.length === 0 && <Text type="supporting">저장된 확정본이 없습니다.</Text>}
-    {confirmations.map(item => <HStack gap={2} vAlign="center" wrap="wrap" key={item.confirmationId}>
-      <Text>{item.reportCycle} · 확정 {item.revision}차 · {new Date(item.confirmedAt).toLocaleString('ko-KR')}</Text>
-      <Button label="확정본 열기" variant="secondary" size="sm" onClick={() => void openConfirmation(item.confirmationId)} />
-      <Button label={`${item.reportCycle} ${item.revision}차 엑셀 내보내기 대상으로 선택`} variant="ghost" size="sm"
-        onClick={() => { const request = { confirmationId: item.confirmationId, generation: (exportRequestRef.current?.generation ?? 0) + 1 }; exportRequestRef.current = request; setSelectedExportRequest(request); setSavedExport(null); setExportError(null); setExportBusy(false); }} />
-    </HStack>)}
-    {selectedExportConfirmationId && <HStack gap={2} wrap="wrap" align="center">
-      <Text type="supporting">선택한 확정본: {confirmations.find(item => item.confirmationId === selectedExportConfirmationId)?.reportCycle ?? '이력 다시 조회 필요'} · {confirmations.find(item => item.confirmationId === selectedExportConfirmationId)?.revision ?? '?'}차</Text>
-      <Button label="정정용 엑셀 내보내기" variant="secondary" size="sm" isLoading={exportBusy} isDisabled={exportBusy || !confirmations.some(item => item.confirmationId === selectedExportConfirmationId)} onClick={() => void exportSelected()} />
-      {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Button label="저장된 엑셀 다시 다운로드" variant="ghost" size="sm" isDisabled={exportBusy} onClick={() => void downloadExport(savedExport.exportId, savedExport.request)} />}
-    </HStack>}
-    {savedExport && exportRequestMatches(selectedExportRequest, savedExport.request) && <Text type="supporting">내보내기 ID {savedExport.exportId} · 엑셀 저장만으로 확정본은 변경되지 않습니다.</Text>}
-    <WorkbookCorrectionControls key={selectedExportConfirmationId ?? 'none'} onConfirmed={id => { void loadConfirmations(); void openConfirmation(id); }} />
-    {exportError && <Banner status="warning" title="엑셀 내보내기 안내" description={exportError} />}
+  const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="보고서 확정·이력" className="report-controls" gap={2}>
+    <ReportCorrectionControls confirmations={confirmations} onOpen={id => void openConfirmation(id)} onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerNavigationGuard={registerCorrectionNavigation} />
     {inReport && archived === null && <VStack gap={2} align="start">
       {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}
       <Button label={confirmationBusy ? '확정 중' : candidatePreparing ? '후보 준비 중' : currentRevision !== null && currentRevision > 0 ? '정정 확정' : '보고서 확정'} variant="secondary"
@@ -427,7 +393,7 @@ export default function AifrmDashboardPage() {
       {currentRevision === null && activeAttempt === null && <Text type="supporting">확정 이력을 조회해야 현재 월의 확정 차수를 확인할 수 있습니다.</Text>}
       {!readyToConfirm && <Text type="supporting">{basis && (basis.constructionBaseMonth !== addMonths(basis.reportCycle, -2) || basis.gapMonth !== basis.reportCycle)
         ? '선택한 월은 열람할 수 있지만 월별 확정의 기본 월 조합이 아닙니다.' : '산출 응답과 이력 선택의 보관이 끝나면 확정할 수 있습니다.'}</Text>}
-      {confirmed?.key === confirmationKey && <Text role="status">확정됨 · {confirmed.id}</Text>}
+      {confirmed?.key === confirmationKey && <Text role="status">확정됨</Text>}
     </VStack>}
     {confirmationError && <Banner status="warning" title="확정 이력 안내" description={confirmationError} />}
   </VStack>;
@@ -447,7 +413,7 @@ export default function AifrmDashboardPage() {
                     <ReportHistoryControls history={history} summary={currentHistorySources} />}
                   {confirmationControls(true)}
                 </ReportControlSurface>
-                <FinancialReportPreview report={displayReport} onBack={() => { setArchived(null); setReportOpenedAt(null); }} />
+                <FinancialReportPreview report={displayReport} onBack={() => { void (async () => { if (correctionNavigation.current && !await correctionNavigation.current()) return; openGeneration.current++; setArchived(null); setReportOpenedAt(null); })(); }} />
               </VStack>
             </LayoutContent>
           }
@@ -501,7 +467,8 @@ export default function AifrmDashboardPage() {
                 id="report-entry"
                 label="HTML 보고서 보기"
                 variant="primary"
-                onClick={() => {
+                onClick={async () => {
+                  if (correctionNavigation.current && !await correctionNavigation.current()) return;
                   setReportOpenedAt(new Date());
                   window.scrollTo({ top: 0 });
                 }}

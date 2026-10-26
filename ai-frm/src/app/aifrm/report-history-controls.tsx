@@ -1,10 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { FileInput } from '@astryxdesign/core/FileInput';
+import type { ReactNode } from 'react';
 import { Table, proportional } from '@astryxdesign/core/Table';
-import { TextInput } from '@astryxdesign/core/TextInput';
-import { TextArea } from '@astryxdesign/core/TextArea';
 import { Button } from '@astryxdesign/core/Button';
 import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
@@ -68,8 +65,6 @@ export function ReportHistoryControls({ history, summary }: { readonly history: 
 }
 
 type Preview = import('@/application/report-history/ports').StoredCorrectionPreview;
-type ImportResult = import('@/application/report-history/ports').ImportResult;
-type CorrectionConfirmCommand = import('@/application/report-history/ports').CorrectionConfirmCommand;
 type PreviewConfirmation = { readonly kind: 'unconfirmed' | 'unknown' } | { readonly kind: 'confirmed'; readonly revision: number };
 type RecordValue = Record<string, unknown>;
 const records = (value: unknown): RecordValue[] => Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
@@ -94,134 +89,6 @@ export function CorrectionPreviewDetails({ preview, confirmation = { kind: 'unkn
     <Table data={results} idKey="indicator" density="compact" columns={columns([['label', '지표'], ['before', '수정 전'], ['after', '수정 후'], ['change', '변화']])} />
     <Heading level={4}>다른 보고서 영향</Heading>
     {impacts.length ? <Table data={impacts} density="compact" columns={columns([['reportCycle', '보고 회차'], ['revision', '차수'], ['label', '지표'], ['status', '영향'], ['reason', '안내']])} /> : <Text type="supporting">같은 원천·입력을 공유하는 다른 확정본의 영향이 없습니다.</Text>}
-    <Text type="supporting">미리보기 ID {preview.previewId} · 기존 확정본과 다른 보고서는 변경되지 않았습니다.</Text>
-  </VStack>;
-}
-export function WorkbookCorrectionControls({ onConfirmed }: { readonly onConfirmed?: (confirmationId: string) => void } = {}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false), [message, setMessage] = useState('정정용 엑셀의 수정본을 선택하세요.');
-  const [result, setResult] = useState<ImportResult | null>(null), [preview, setPreview] = useState<Preview | null>(null);
-  const [previewId, setPreviewId] = useState(''), [reason, setReason] = useState(''), [confirmedId, setConfirmedId] = useState<string | null>(null), [confirmedRevision, setConfirmedRevision] = useState<number | null>(null);
-  const generation = useRef(0), operation = useRef<AbortController | null>(null), command = useRef<CorrectionConfirmCommand | null>(null);
-  useEffect(() => () => operation.current?.abort(), []);
-  const change = (value: File | File[] | null) => {
-    operation.current?.abort();
-    generation.current++;
-    setBusy(false);
-    setFile(Array.isArray(value) ? value[0] ?? null : value);
-    setResult(null);
-    setPreview(null);
-    setConfirmedId(null); setConfirmedRevision(null); command.current = null;
-    setMessage('수정본 검증을 눌러 변경 내용을 확인하세요.');
-  };
-  const changePreviewId = (value: string) => {
-    operation.current?.abort(); generation.current++;
-    setPreviewId(value); setPreview(null); setResult(null); setConfirmedId(null); setConfirmedRevision(null);
-    command.current = null; setBusy(false);
-    setMessage('저장된 미리보기를 열어 내용을 확인하세요.');
-  };
-  const explain = (status: number, code: string) => status === 409 ? '기준 확정본이나 참조 이력이 바뀌었습니다. 새로 엑셀을 내보내 수정안을 옮긴 뒤 검증하세요.' : code === 'EVALUATION_ZONE_MISMATCH' ? '원래 평가 시간대에서 서버를 실행한 뒤 검증하세요.' : status === 413 ? '파일은 5MiB 이하이며 시트·행·셀 한도를 지켜야 합니다.' : status === 503 ? '저장소에 연결하지 못했습니다. 잠시 후 재검증하세요.' : '파일 또는 미리보기 정보를 확인하세요.';
-  const load = async (id: string, signal: AbortSignal) => {
-    const response = await fetch(`/api/report-history/exchange?previewId=${encodeURIComponent(id)}`, { cache: 'no-store', signal });
-    const body = await response.json();
-    if (!response.ok) throw Error(explain(response.status, body.code));
-    return body.preview as Preview;
-  };
-  const validate = async () => {
-    if (!file || busy) return;
-    const token = ++generation.current, controller = new AbortController();
-    operation.current?.abort();
-    operation.current = controller;
-    setBusy(true);
-    setResult(null);
-    setPreview(null);
-    setConfirmedId(null); setConfirmedRevision(null); command.current = null;
-    setMessage('수정본 검증 중');
-    try {
-      const form = new FormData();
-      form.set('command', 'validate');
-      form.set('file', file);
-      const response = await fetch('/api/report-history/exchange', { method: 'POST', body: form, signal: controller.signal });
-      const body = await response.json();
-      if (token !== generation.current) return;
-      if (!response.ok && body.result?.kind !== 'invalid') throw Error(explain(response.status, body.code));
-      const validated = body.result as ImportResult;
-      setResult(validated);
-      if (validated.kind === 'invalid') setMessage('검증 오류 · 표시된 셀을 고친 파일을 다시 선택해 검증하세요.');
-      else if (validated.kind === 'no-change') setMessage('변경 없음 · 기존 원자료와 확정본을 유지합니다.');
-      else {
-        setPreviewId(validated.previewId);
-        const saved = await load(validated.previewId, controller.signal);
-        if (token === generation.current) {
-          setPreview(saved);
-          setMessage('검증 완료 · 차이 미리보기');
-        }
-      }
-    } catch (error) { if (token === generation.current && !controller.signal.aborted) setMessage(error instanceof Error ? error.message : '검증하지 못했습니다.'); }
-    finally { if (token === generation.current) setBusy(false); }
-  };
-  const reopen = async () => {
-    if (busy || !previewId.trim()) return;
-    const token = ++generation.current, controller = new AbortController();
-    operation.current?.abort();
-    operation.current = controller;
-    setBusy(true);
-    setPreview(null);
-    setResult(null);
-    setConfirmedId(null); setConfirmedRevision(null); command.current = null;
-    setMessage('미리보기 불러오는 중');
-    try {
-      const saved = await load(previewId.trim(), controller.signal);
-      if (token === generation.current) {
-        setPreview(saved);
-        setResult(null);
-        setMessage('저장된 정정 미리보기 · 확정 이력에서 상태를 확인할 수 있습니다.');
-      }
-    }
-    catch (error) { if (token === generation.current && !controller.signal.aborted) setMessage(error instanceof Error ? error.message : '미리보기를 열지 못했습니다.'); }
-    finally { if (token === generation.current) setBusy(false); }
-  };
-  const confirm = async () => {
-    if (!preview || !reason.trim() || busy || confirmedId) return;
-    const token = generation.current, controller = new AbortController();
-    operation.current?.abort(); operation.current = controller;
-    const attempt = command.current ?? { previewId: preview.previewId, previewHash: preview.previewHash, expectedBaseRevision: preview.baseRevision,
-      idempotencyKey: crypto.randomUUID(), reason: reason.trim() };
-    command.current = attempt;
-    setBusy(true); setMessage('정정 확정 저장 중');
-    try {
-      const response = await fetch('/api/report-history/corrections', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify(attempt), signal: controller.signal });
-      const body = await response.json();
-      if (token !== generation.current) return;
-      if (response.status === 409) {
-        command.current = null;
-        setMessage('정정 충돌 · 새 엑셀을 내보내 같은 수정안을 다시 입력하고 검증하세요. 기존 파일 재검증으로는 해결되지 않습니다.');
-        return;
-      }
-      if (!response.ok || !body.ok) throw Error(response.status === 503 ? '저장 결과를 확인하지 못했습니다.' : response.status === 422 ? '정정 사유 또는 미리보기 정보를 확인하세요.' : '정정 확정 요청을 완료하지 못했습니다.');
-      if (body.result?.kind !== 'confirmed' && body.result?.kind !== 'already-confirmed') throw Error('확정 결과를 확인하지 못했습니다. 같은 명령으로 재시도하세요.');
-      setConfirmedId(body.result.confirmationId);
-      setConfirmedRevision(body.result.revision);
-      setMessage(`정정 확정됨 · ${body.result.revision}차`);
-      onConfirmed?.(body.result.confirmationId);
-    } catch (error) { if (token === generation.current && !controller.signal.aborted) setMessage(`${error instanceof Error ? error.message : '결과를 확인하지 못했습니다.'} 같은 정정 확정 명령으로 재시도하세요.`); }
-    finally { if (token === generation.current) setBusy(false); }
-  };
-  return <VStack as="section" gap={2} className="report-controls" aria-label="엑셀 수정본 검증">
-    <Heading level={3}>수정본 가져오기</Heading>
-    <FileInput label="정정용 엑셀 수정본" placeholder="엑셀 수정본을 놓거나 클릭하여 선택" value={file} onChange={change} accept=".xlsx" maxSize={5 * 1024 * 1024} description="앱에서 내보낸 .xlsx · 최대 5MiB · 수정 동작·수정 값·사유·근거 메모만 편집" mode="dropzone" />
-    <Button label={busy ? '검증 중' : '수정본 검증'} isDisabled={!file} aria-disabled={busy} aria-busy={busy} variant="secondary" onClick={() => void validate()} />
-    <Text role="status" aria-live="polite">{message}</Text>
-    {result?.kind === 'invalid' && <Table data={result.errors.map((error, index) => ({ id: String(index), location: [error.sheet, error.column && error.row ? `${error.column}${error.row}` : error.column].filter(Boolean).join(' · ') || '파일', message: error.message }))} idKey="id" density="compact" columns={columns([['location', '오류 위치'], ['message', '원인']])} />}
-    {preview && <CorrectionPreviewDetails preview={preview} confirmation={confirmedId && confirmedRevision !== null ? { kind: 'confirmed', revision: confirmedRevision } : result?.kind === 'preview' ? { kind: 'unconfirmed' } : { kind: 'unknown' }} />}
-    {preview && !confirmedId && <VStack gap={2} align="start">
-      <TextArea label="전체 정정 사유" value={reason} onChange={value => { setReason(value); command.current = null; }} isRequired maxLength={2000} />
-      <Button label="정정 확정" variant="secondary" isDisabled={!reason.trim() || busy || message.startsWith('정정 충돌')} aria-busy={busy} onClick={() => void confirm()} />
-    </VStack>}
-    {confirmedId && <Text role="status">정정 확정됨 · 이전 확정본과 새 확정본은 확정 이력에서 열 수 있습니다.</Text>}
-    <Collapsible trigger="저장된 미리보기 다시 열기" defaultIsOpen={false}><VStack gap={2}>
-      <TextInput label="미리보기 ID" value={previewId} onChange={changePreviewId} />
-      <Button label="미리보기 열기" variant="ghost" isDisabled={!previewId.trim()} aria-disabled={busy} aria-busy={busy} onClick={() => void reopen()} />
-    </VStack></Collapsible>
+    <Text type="supporting">기존 확정본과 다른 보고서는 변경되지 않았습니다.</Text>
   </VStack>;
 }

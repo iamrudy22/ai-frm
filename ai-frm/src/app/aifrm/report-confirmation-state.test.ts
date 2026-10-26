@@ -74,3 +74,11 @@ it('늦은 A 내보내기 응답·다운로드 오류를 B 선택이나 새 A �
   expect(state.exportRequestMatches?.(newA, A)).toBe(false);
   expect(state.exportRequestMatches?.(A, A)).toBe(true);
 });
+
+it('late old archived open cannot cancel current backfill or overwrite the newer document', async()=>{
+ let resolveOld!:(response:Response)=>void;let generation=0;const cancel=vi.fn();let displayed:unknown=null;
+ const request=vi.fn(async(id:string)=>id.includes('old')?new Promise<Response>(resolve=>{resolveOld=resolve;}):Response.json({document:{...candidate.document,json:{value:'new'}},historySources:{construction:{confirmed:2}}}));
+ const open=async(id:string)=>{const token=++generation;const data=await fetchArchivedDocument(id,cancel,request as never,()=>token===generation);if(token===generation)displayed=data;};
+ const old=open('old');await open('new');const newest=displayed;resolveOld(Response.json({document:candidate.document,historySources:{construction:{confirmed:1}}}));await old;
+ expect(displayed).toBe(newest);expect(cancel).toHaveBeenCalledTimes(1);
+});

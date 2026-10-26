@@ -47,11 +47,11 @@ export function revisionForCycle(confirmations: readonly { reportCycle: YearMont
 }
 
 export async function fetchArchivedDocument(id: string, cancelBackfill: () => void,
-  request: typeof fetch = fetch): Promise<{ document: PreparedDocument; historySources: HistorySourceSummary }> {
+  request: typeof fetch = fetch, isCurrent: () => boolean = () => true): Promise<{ document: PreparedDocument; historySources: HistorySourceSummary }> {
   const response = await request(`/api/report-history/confirmations?confirmationId=${encodeURIComponent(id)}`, { cache: 'no-store' });
   const body = await response.json();
   if (!response.ok) throw Error(body.code ?? 'STORAGE_UNAVAILABLE');
   if (!body.document || !body.historySources) throw Error('INVALID_ARCHIVED_RESPONSE');
-  cancelBackfill();
+  if (isCurrent()) cancelBackfill();
   return { document: body.document as PreparedDocument, historySources: body.historySources as HistorySourceSummary };
 }

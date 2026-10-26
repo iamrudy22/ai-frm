@@ -12,7 +12,7 @@
 
 **상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`)·Task8(`e4aa811`) 완료. Task9 기능·통합 검증·운영 문서·최종 독립 재검토 Approved까지 완료했으며 최종 커밋에 이 기록을 포함한다. 보완 후 전체 lint·webpack build·896개 테스트(병렬4)·합성 전체 원장 백업복원·재시작·문서별 출처 전환 QA가 통과했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 인수는 미완료다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 보호51파일 SHA-256은 모두 그대로이며 실제 업무 파일 대신 합성 자료로 검증했다.
 
-**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1~W4의 구현·TDD·독립 검토·QA를 완료했으며 W5부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
+**현재 재개 지점(2026-10-27):** 웹 전환 실행 기준은 `666e6ef`이며 W1~W5의 구현·TDD·독립 검토·QA를 완료했다. W5는 `feat(ui): manage report corrections with Astryx`로 커밋한다. W6에서 보존 회귀 보강·schema4 운영 문서·최종 빌드/검토·PDF/200% QA를 진행한다. 이전 Task1~9는 재실행하지 않는다. 기존 계산식과 리포트 템플릿/폰트/참고표의 보호51파일 변경0을 유지한다.
 
 ## Global Constraints
 
@@ -685,15 +685,15 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** 신규 editor/state/use-report-correction와 테스트, 기존 page/history-controls/confirmation-state/use-report-history와 관련 테스트. **Consumes:** W4 API. **Produces:** §7.1 UI/UX와 §7.4 공식 컴포넌트 구성.
 
-- [ ] **RED 작성:** `existing_draft_is_resumed_by_primary_action`, `new_draft_requires_explicit_action`, `summary_identifies_item_period_before_after`, `closed_detail_is_read_only_and_copy_is_separate`를 고정한다. 미처리 수·이전 차수·처리 기록과 내용 보기 상태는 서로 구분한다.
-- [ ] **RED 작성:** fake timer/client로 `autosave_debounces_1000ms_and_serializes_writes`, `create_before_ack_coalesces_to_one_draft`, `late_ack_advances_queue_revision_without_replacing_new_text`, `late_ack_cannot_replace_other_month`, `leave_and_preview_wait_for_ack`, `failed_save_keeps_text_and_requires_retry`를 검증한다. 보관됨은 ACK 이후다.
-- [ ] **RED 작성:** `edit_invalidates_preview_and_confirmation_command`, `readonly_view_never_autosaves`, `tab_filters_and_hidden_edits_survive_switch`, `copied_proposal_requires_comparison_and_revalidation`, no-change/오류/충돌 확정 불가·응답 불명 동일 명령 재시도를 고정한다.
-- [ ] **RED 작성:** `report_title_year_filter_preserves_source_cycle_mapping`에서2025년12월 보고서가2026년1월 자료회차로 표시·조회되고, 연도 필터가 자료회차 연도로 바뀌지 않음을 확인한다. 기존 월 함수는 수정하지 않는다.
-- [ ] **RED 실행:** `npx vitest run src/app/aifrm/report-correction-state.test.ts src/app/aifrm/use-report-correction.test.ts src/app/aifrm/report-correction-editor.test.tsx src/app/aifrm/report-history-controls.test.tsx --maxWorkers=4`. 단순 구현 복제 테스트 대신 순서 뒤집힌 응답·상태 전이를 검사한다.
-- [ ] **GREEN:** §7.4 컴포넌트/CLI에 따라 목록/요약/대표 재개/명시적 새 작성·자동 보관·에러·비교·내용 보기·종료/복사를 구현하고 엑셀 정정/ID UI만 제거한다. 추가 현황판·줄글 설명·리포트 양식 미리보기는 만들지 않는다.
-- [ ] **GREEN:** `useReportHistory.invalidateSelection():void`는 cache 비우기+selectionRevision 증가다. 정정 성공 시 월별 목록/현재 후보/현재 selection을 갱신하고 새 보관 확정본을 연다. 이미 열린 과거 문서에 최신 selection을 섞지 않는다.
-- [ ] **QA/검토:** 실제 합성 화면에서 5년치/같은사유 다수/20건 초과/연말/미처리0/0과값없음/키보드·오류초점·닫기초점복귀/712·1280px 및200% 확대/인쇄 제외를 확인한다. 고정 식별 열과 자료 식별을 유지한다. `correction_success_refreshes_current_history_but_preserves_archived_document` 회귀와 독립 검토를 수행한다.
-- [ ] **커밋/컨텍스트:** `feat(ui): manage report corrections with Astryx`. 화면 증거·저장/검증/확정 구분·캐시/복구·미완료 수동 항목과 W6를 기록한다.
+- [x] **RED 작성:** `existing_draft_is_resumed_by_primary_action`, `new_draft_requires_explicit_action`, `summary_identifies_item_period_before_after`, `closed_detail_is_read_only_and_copy_is_separate`를 고정한다. 미처리 수·이전 차수·처리 기록과 내용 보기 상태는 서로 구분한다.
+- [x] **RED 작성:** fake timer/client로 `autosave_debounces_1000ms_and_serializes_writes`, `create_before_ack_coalesces_to_one_draft`, `late_ack_advances_queue_revision_without_replacing_new_text`, `late_ack_cannot_replace_other_month`, `leave_and_preview_wait_for_ack`, `failed_save_keeps_text_and_requires_retry`를 검증한다. 보관됨은 ACK 이후다.
+- [x] **RED 작성:** `edit_invalidates_preview_and_confirmation_command`, `readonly_view_never_autosaves`, `tab_filters_and_hidden_edits_survive_switch`, `copied_proposal_requires_comparison_and_revalidation`, no-change/오류/충돌 확정 불가·응답 불명 동일 명령 재시도를 고정한다.
+- [x] **RED 작성:** `report_title_year_filter_preserves_source_cycle_mapping`에서2025년12월 보고서가2026년1월 자료회차로 표시·조회되고, 연도 필터가 자료회차 연도로 바뀌지 않음을 확인한다. 기존 월 함수는 수정하지 않는다.
+- [x] **RED 실행:** `npx vitest run src/app/aifrm/report-correction-state.test.ts src/app/aifrm/use-report-correction.test.ts src/app/aifrm/report-correction-editor.test.tsx src/app/aifrm/report-history-controls.test.tsx --maxWorkers=4`. 단순 구현 복제 테스트 대신 순서 뒤집힌 응답·상태 전이를 검사한다.
+- [x] **GREEN:** §7.4 컴포넌트/CLI에 따라 목록/요약/대표 재개/명시적 새 작성·자동 보관·에러·비교·내용 보기·종료/복사를 구현하고 엑셀 정정/ID UI만 제거한다. 추가 현황판·줄글 설명·리포트 양식 미리보기는 만들지 않는다.
+- [x] **GREEN:** `useReportHistory.invalidateSelection():void`는 cache 비우기+selectionRevision 증가다. 정정 성공 시 월별 목록/현재 후보/현재 selection을 갱신하고 새 보관 확정본을 연다. 이미 열린 과거 문서에 최신 selection을 섞지 않는다.
+- [x] **QA/검토:** 실제 합성 화면에서 5년치/같은사유 다수/20건 초과/연말/미처리0/0과값없음/키보드·오류초점·닫기초점복귀/712·1280px 및200% 확대/인쇄 제외를 확인한다. 고정 식별 열과 자료 식별을 유지한다. W5 실제 60개월/28안·두 탭409·실저장503·재접속·확정/복사·712/1280px 검증은 통과했다. archived 통합 회귀 보강·200%·실제 PDF 페이지 경계는 W6 최종 게이트로 이관하며 완료를 주장하지 않는다. `correction_success_refreshes_current_history_but_preserves_archived_document` 회귀와 독립 검토를 수행한다.
+- [x] **커밋/컨텍스트:** `feat(ui): manage report corrections with Astryx`. 화면 증거·저장/검증/확정 구분·캐시/복구·미완료 수동 항목과 W6를 기록한다.
 
 ### W6: 보존 회귀·백업/복구·운영 안내·인수
 
