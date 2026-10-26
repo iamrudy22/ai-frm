@@ -22,7 +22,9 @@ npm run dev
 ```
 
 `http://localhost:3000/aifrm`을 연다.
-이력 저장 기능은 `package.json`에 지정한 Node.js **26.8.2**의 내장 SQLite를 사용한다. 별도 SQLite 서버나 패키지 설치는 필요 없다. 앱 폴더에서 서버를 실행하면 `data/report-history.sqlite`가 자동 생성되고 기존 원장은 시작 시 스키마 3으로 이관된다. 다른 작업 폴더에서 실행하면 저장 위치도 달라지므로 항상 `ai-frm`에서 실행한다. `data/`는 Git에서 제외된다.
+이력 저장 기능은 `package.json`에 지정한 Node.js **26.12.1**의 내장 SQLite를 사용한다. 별도 SQLite 서버나 패키지 설치는 필요 없다. 앱 폴더에서 서버를 실행하면 `data/report-history.sqlite`가 자동 생성되고 기존 원장은 시작 시 스키마 3으로 이관된다. 다른 작업 폴더에서 실행하면 저장 위치도 달라지므로 항상 `ai-frm`에서 실행한다. `data/`는 Git에서 제외된다.
+
+Node.js 26.12.1은 Brotli 취약점 CVE-2026-111497 패치를 포함한 [보안 릴리스](https://nodejs.org/en/blog/release/v26.12.1/)다([공식 보안 공지](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)). 실행 전 `node -p 'process.version'`으로 `v26.12.1`을 확인한다. 런타임 변경 뒤에는 기존 앱 서버를 완전히 종료하고 다시 시작하며, 관리 도구나 디버거에서 실제 서버 프로세스의 `process.version`도 `v26.12.1`인지 확인한다. `engines` 변경이나 새 터미널의 버전 확인만으로 이미 실행 중인 서버가 갱신되지는 않는다.
 
 검증: `npm run verify`(tsc + vitest), `npm run lint`(전체 ESLint).
 
@@ -102,7 +104,7 @@ UI/UX 단계별 변경·검토·QA·재개 지점은 [진행 기록](../docs/sup
 
 ## 원장 백업·복구·PC 이전
 
-앱에는 **자동 백업, 백업 버튼, 백업 API가 없다.** 아래 명령은 필요할 때 운영자가 `ai-frm` 폴더에서 Node.js 26.8.2로 직접 실행한다. 서버를 켠 상태의 백업은 SQLite 온라인 백업을 사용하며 `data/backups/report-history-<UTC시각>-<UUID>.sqlite`에 만든다. 실행 중인 WAL 원장의 `report-history.sqlite` 파일 하나만 복사하면 최근 기록이 빠질 수 있다. 백업 성공 경로를 확인하고 DB·백업을 접근 권한이 제한된 별도 저장소에도 보관한다.
+앱에는 **자동 백업, 백업 버튼, 백업 API가 없다.** 아래 명령은 필요할 때 운영자가 `ai-frm` 폴더에서 Node.js 26.12.1로 직접 실행한다. 서버를 켠 상태의 백업은 SQLite 온라인 백업을 사용하며 `data/backups/report-history-<UTC시각>-<UUID>.sqlite`에 만든다. 실행 중인 WAL 원장의 `report-history.sqlite` 파일 하나만 복사하면 최근 기록이 빠질 수 있다. 백업 성공 경로를 확인하고 DB·백업을 접근 권한이 제한된 별도 저장소에도 보관한다.
 
 ```bash
 node --input-type=module <<'NODE'

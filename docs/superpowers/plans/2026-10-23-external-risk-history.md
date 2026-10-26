@@ -6,7 +6,7 @@
 
 **Architecture:** 원천 캡처·정규화 회차 입력·계산 실행·업무 확정을 분리해 로컬 SQLite에 불변 보관하고, 기존 차트에는 이력 점만 투영한다. 엑셀은 조회·수정안 교환에 사용하며, 가져온 수정안은 서버의 기준 기록과 대조하고 기존 함수로 재계산한 뒤 별도 정정 확정으로 새 버전을 만든다. 원본 캡처와 이전 확정 문서는 그대로 보존한다.
 
-**Tech Stack:** 현행 Next.js 16.3.4·React 19·TypeScript·Astryx 0.5.4·Vitest, 기존 SheetJS `xlsx@0.18.5`, 확인한 Node.js v26.8.2의 `node:sqlite`/`DatabaseSync`·`backup`·crypto·zlib. 외부 DB·스프레드시트 연결·새 npm 패키지·스케줄러는 사용하지 않는다.
+**Tech Stack:** 현행 Next.js 16.3.4·React 19·TypeScript·Astryx 0.5.4·Vitest, 기존 SheetJS `xlsx@0.18.5`, 현재 지원 Node.js v26.12.1의 `node:sqlite`/`DatabaseSync`·`backup`·crypto·zlib. 외부 DB·스프레드시트 연결·새 npm 패키지·스케줄러는 사용하지 않는다.
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
@@ -275,11 +275,11 @@ interface HistoryRepository {
 - 엑셀 정정은 `(scope_id,export_id,patch_hash)`의 채택 import/preview를 unique로 연결하고 정정 확정의 `(scope_id,preview_id)`도 unique로 둔다. commitCorrection은 멱등 요청/이미 확정된 preview부터 확인해 기존 ID를 돌려준다. 그 외 previewHash·기준 head·검증 시점 dependencyHeads·사유를 한 트랜잭션에서 확인하고 **선택한 한 보고서**의 새 revision/head만 갱신한다. 같은 키/다른 요청은409, 미확정 preview의 head 충돌도409다. 이 경우 새 exportId로 다시 내보낸 파일을 사용하며 동일 preview를 갱신/재기준화하지 않는다. 이미 확정된 preview 재시도는 후속 head를 되돌리지 않는다.
 - import/preview/parent source/input/candidate 참조는 같은 scope의 외래키로 묶는다. 실제 파일 읽기·해시·ZIP 검사·기존 함수 재계산·문서 생성은 트랜잭션 밖에서 하고 최종 게시/확정만 원자 처리한다. 정정 중 디스크 실패 시 반쪽 후보·성공 메시지를 남기지 않는다.
 - 시작 시 migration을 적용한다. 미지원 스키마/읽기 전용/손상 파일이면 보관 기능을 중단하고 기존 산출·HTML·인쇄는 유지한다. 빈 DB로 조용히 대체하지 않는다.
-- `node:sqlite`가 release candidate인 점과 현재 확인한 v26.8.2 API를 기록한다. 서버 어댑터에 격리하고 최초 지원 런타임은 package engines의 `26.8.2`로 명시한다. 범위 확대는 호환 검증 후 별도 변경하며 글로벌 Node 설치/업그레이드는 하지 않는다.
+- 최초 구현에서 `node:sqlite`의 release candidate 상태와 v26.8.2 API를 확인하고 package engines의 `26.8.2`를 최초 지원 런타임으로 명시했다(과거 검증 기록). 서버 어댑터 격리는 유지한다. **현재 지원 기준은 2026-10-26 보안 대응으로 승인한 `26.12.1` 정확 버전**이며 package engines와 실행·백업 안내에 반영한다. 이는 CVE-2026-111497 패치를 포함한 [Node.js 26.12.1 보안 릴리스](https://nodejs.org/en/blog/release/v26.12.1/)를 기준으로 한 갱신이다. 범위 확대는 호환 검증 후 별도 변경하며 글로벌 Node 설치/업그레이드는 하지 않는다.
 - 온라인 backup API로 `data/backups/report-history-YYYYMMDDTHHmmssZ.sqlite`를 만든다. 실행 중 DB 파일 하나만 복사하지 않는다. v1에서는 확정본 자동 삭제/보존기간 정리는 하지 않는다. 백업 복구는 별도 경로에서 확인한 뒤 서버를 중지하고 교체하는 수동 절차로 제공한다.
 - 결과적으로 브라우저를 닫아도 기록은 남지만 PC의 파일을 잃으면 백업 복구가 필요하다. Task1에서 저장·백업을, Task9에서 복구·이전 절차를 인수한다. XLSX만 보관해서는 export 명세·이전 문서를 복구할 수 없다.
 
-검토 근거: [Node v26.8.2 SQLite API](https://nodejs.org/download/release/v26.8.2/docs/api/sqlite.html), [SQLite의 로컬 저장 용도](https://www.sqlite.org/whentouse.html), [SQLite 온라인 백업](https://www.sqlite.org/backup.html). 여러 서버/네트워크 공유 폴더로 확장하는 설계는 이번 로컬 범위에 포함하지 않는다.
+최초 구현의 검토 근거(과거 기록): [Node v26.8.2 SQLite API](https://nodejs.org/download/release/v26.8.2/docs/api/sqlite.html), [SQLite의 로컬 저장 용도](https://www.sqlite.org/whentouse.html), [SQLite 온라인 백업](https://www.sqlite.org/backup.html). 여러 서버/네트워크 공유 폴더로 확장하는 설계는 이번 로컬 범위에 포함하지 않는다.
 
 ## 3. 기존 계산·문서와 연결하는 방법
 
