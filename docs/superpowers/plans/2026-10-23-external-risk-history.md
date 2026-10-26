@@ -10,7 +10,7 @@
 
 **Spec:** 이 문서 §1~§4가 명세다. 사용자 요청 ‘기존 계산식과 리포트 템플릿은 유지’, ‘보고서 확정 시 자동 보관’, ‘로컬 파일로 기록’과 최신 ‘엑셀 내보내기·수정본 가져오기·정정 검증까지 포함해서 구현 계획 보완’을 따른다. 이전 제공 자료 기반 계획은 [2026-10-21-report-history.md](./2026-10-21-report-history.md), 현재 템플릿·서체·원본 참고표 기준은 [UI 진행 기록](./2026-10-21-ui-ux.md)의 최신 항목이다.
 
-**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`) 완료. Task7 수정본 검증·재계산·불변 미리보기 구현과 독립 재검토 Approved, 최종879개 테스트·전체 lint 및 재시작 공개 API QA를 완료했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 검수는 미완료로 구분하며 Task9 인수 기록에서 이어 관리한다. 다음은 Task8 명시적 정정 확정이다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 실제 업무 파일 대신 합성 자료로 검증한다.
+**상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`) 완료. Task8 명시적 정정 확정 구현·독립 재검토 Approved, 최종891개 테스트·전체 lint·실제 두 탭의 순차 충돌 QA를 완료했다. 최종 커밋 정리 후 Task9 통합 검증·백업 복구·운영 문서로 진행한다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 검수는 미완료로 구분한다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 실제 업무 파일 대신 합성 자료로 검증한다.
 
 ## Global Constraints
 
@@ -468,13 +468,15 @@ interface HistoryRepository {
 **Files:** domain/report-history 불변식, report-correction·repository·corrections route/handlers와 테스트, 기존 view/controls/page.
 **Interfaces:** `confirmWorkbookCorrection(deps:ReportCorrectionDependencies, scopeId:string, cmd:CorrectionConfirmCommand):Promise<ConfirmationResult>`는 저장된 preview/candidate를 사용해 repository.commitCorrection을 호출한다. 성공 후 Task5의 `openConfirmedReport`로 새/이전 버전을 연다.
 
-- [ ] `correction_commits_one_revision`: preview 전후 head 불변, 정정 확정 클릭+사유 후 대상 reportCycle만 revision+1·부모 confirmationId·importId·원자료 lineage 연결. 이전 문서/hash/차트/작성일 불변, 새 작성일은 preview 생성일, confirmedAt은 실제 확정 시각이다.
-- [ ] `correction_cas_and_idempotency`: 두 탭/오래된 export/preview hash 변조/대상 또는 dependency head 변경은409·쓰기0. 같은 preview 재시도·응답 유실·새 멱등 키는 같은 확정 ID이며 후속 head를 되돌리지 않는다. 같은 키/다른 요청은409, 일반 confirm endpoint로 엑셀 후보 우회는422다. dependency만 바뀐409에서도 새 exportId→동일 수정 입력→새 preview로만 복구되고, 기존 파일의 재검증은 새 preview 생성 없이409임을 검증한다.
-- [ ] `correction_atomic_after_restart`: 저장 중 예외·디스크 실패는 정정/멱등/확정/head 모두 rollback. 재시작 후 미확정 preview를 그대로 열어 다시 확인하고 명시적 클릭으로만 확정한다. 재열람/확정 때 외부 API0, 이력 재선택0이다.
-- [ ] `npx vitest run src/domain/report-history src/application/report-history/report-correction.test.ts src/infrastructure/report-history/sqlite-history-repository.test.ts src/app/api/_lib/report-history-handlers.test.ts src/app/aifrm/report-history-controls.test.tsx`로 RED를 확인하고 트랜잭션/CAS·UI를 구현해 GREEN을 확인한다.
-- [ ] 기존 controls에 ‘엑셀 내보내기/수정본 가져오기/검증 중/오류/차이 확인/정정 확정/이전 버전’ 상태만 추가한다. 가져오기 성공과 확정 성공을 구분하며 충돌 시 새로 내보내기→수정→재검증 경로를 제공한다. 같은 파일만 재검증하면 충돌이 해소된다는 안내는 하지 않는다. 용지 안과 기존 보고서 진입/복귀·다운로드 흐름은 유지한다.
-- [ ] 실제 합성 파일을 두 탭에서 수정해 먼저 확정한1건만 채택되는지, 뒤 탭은409 안내 후 이전 확정본을 조회할 수 있는지 QA한다. no-change에 정정 확정 버튼이 없고, 상태·오류·차이표가 인쇄에 포함되지 않는지 확인한다.
-- [ ] 독립 리뷰·전체 verify·관련 lint 후 `feat(history): confirm validated corrections without overwriting history` 커밋·컨텍스트 기록.
+- [x] `correction_commits_one_revision`: preview 전후 head 불변, 정정 확정 클릭+사유 후 대상 reportCycle만 revision+1·부모 confirmationId·importId·원자료 lineage 연결. 이전 문서/hash/차트/작성일 불변, 새 작성일은 preview 생성일, confirmedAt은 실제 확정 시각이다.
+- [x] `correction_cas_and_idempotency`: 두 탭/오래된 export/preview hash 변조/대상 또는 dependency head 변경은409·쓰기0. 같은 preview 재시도·응답 유실·새 멱등 키는 같은 확정 ID이며 후속 head를 되돌리지 않는다. 같은 키/다른 요청은409, 일반 confirm endpoint로 엑셀 후보 우회는422다. dependency만 바뀐409에서도 새 exportId→동일 수정 입력→새 preview로만 복구되고, 기존 파일의 재검증은 새 preview 생성 없이409임을 검증한다.
+- [x] `correction_atomic_after_restart`: 저장 중 예외·디스크 실패는 정정/멱등/확정/head 모두 rollback. 재시작 후 미확정 preview를 그대로 열어 다시 확인하고 명시적 클릭으로만 확정한다. 재열람/확정 때 외부 API0, 이력 재선택0이다.
+- [x] `npx vitest run src/domain/report-history src/application/report-history/report-correction.test.ts src/infrastructure/report-history/sqlite-history-repository.test.ts src/app/api/_lib/report-history-handlers.test.ts src/app/aifrm/report-history-controls.test.tsx`로 RED를 확인하고 트랜잭션/CAS·UI를 구현해 GREEN을 확인한다.
+- [x] 기존 controls에 ‘엑셀 내보내기/수정본 가져오기/검증 중/오류/차이 확인/정정 확정/이전 버전’ 상태만 추가한다. 가져오기 성공과 확정 성공을 구분하며 충돌 시 새로 내보내기→수정→재검증 경로를 제공한다. 같은 파일만 재검증하면 충돌이 해소된다는 안내는 하지 않는다. 용지 안과 기존 보고서 진입/복귀·다운로드 흐름은 유지한다.
+- [x] 실제 합성 파일을 두 탭에서 수정해 먼저 확정한1건만 채택되는지, 뒤 탭은409 안내 후 이전 확정본을 조회할 수 있는지 QA한다. no-change에 정정 확정 버튼이 없고, 상태·오류·차이표가 인쇄에 포함되지 않는지 확인한다.
+- [x] 독립 리뷰·전체 verify·관련 lint 후 `feat(history): confirm validated corrections without overwriting history` 커밋·컨텍스트 기록.
+
+검수 기록: 두 탭에서 기존 합성 수정 미리보기를 각각 열어 첫 탭을 확정한 뒤 두 번째 탭을 확정했다. 첫 요청만3차로 채택되고 두 번째 탭은409·새 내보내기 안내를 표시했으며 기존2차 보고서 재열람도 성공했다. 이는 순차 클릭 검수이며 정확히 동시에 클릭했다고 주장하지 않는다. 원본 파일 선택/Excel 저장은 Task7에서 기록한 수동 한계가 남아 있고, 저장 preview 기반 화면/공개 HTTP/저장소의 실제 연결 경쟁을 구분한다. 용지3개·차트5개·용지 안 제어부0개, 제어부 report-controls 인쇄 제외 계약은 확인했으나 실제 PDF 저장은 미완료다.
 
 ### Task 9: 전체 보존 검증·운영 문서·인수 QA
 

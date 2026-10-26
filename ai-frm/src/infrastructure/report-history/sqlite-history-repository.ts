@@ -44,6 +44,11 @@ INSERT INTO report_candidate_v2(scope_id,id,body,input_id,construction_id,fundin
 DROP TABLE report_candidate;
 ALTER TABLE report_candidate_v2 RENAME TO report_candidate;
 `;
+const SCHEMA_3 = `
+CREATE TABLE correction_command(scope_id TEXT NOT NULL REFERENCES workspace_scope,key TEXT NOT NULL,request_hash TEXT NOT NULL,confirmation_id TEXT NOT NULL,PRIMARY KEY(scope_id,key),FOREIGN KEY(scope_id,confirmation_id) REFERENCES monthly_confirmation(scope_id,id));
+CREATE TRIGGER immutable_correction_command_update BEFORE UPDATE ON correction_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_correction_command_delete BEFORE DELETE ON correction_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+`;
 function instant(value: string): number { const n = Date.parse(value); if (!Number.isFinite(n))
   throw Error('INVALID_INSTANT'); return n; }
 function assertEvaluationCalendar(input: Pick<P.CalculationWrite, 'evaluationTimeZone' | 'evaluatedAt' | 'evaluatedCalendar'>): void {
@@ -97,10 +102,10 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     try {
       this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
       const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 2)
+      if (version > 3)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (options.readOnly) {
-        if (version !== 1 && version !== 2)
+        if (version !== 1 && version !== 2 && version !== 3)
           throw Error('UNSUPPORTED_SCHEMA_VERSION');
       }
       else {
@@ -133,6 +138,11 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
           }
           finally { this.db.exec('PRAGMA foreign_keys=ON'); }
         }
+        if (version <= 2) this.transaction(() => {
+          this.db.exec(SCHEMA_3);
+          this.db.prepare('INSERT INTO schema_migration VALUES(3,?)').run(this.now());
+          this.db.exec('PRAGMA user_version=3');
+        });
         chmodSync(this.databasePath, 0o600);
       }
       if (this.db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok')
@@ -142,6 +152,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (this.db.prepare('SELECT version FROM schema_migration WHERE version=1').get()?.version !== 1)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 2 && this.db.prepare('SELECT version FROM schema_migration WHERE version=2').get()?.version !== 2)
+        throw Error('UNSUPPORTED_SCHEMA_VERSION');
+      if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 3 && [2,3].some(version => this.db.prepare('SELECT version FROM schema_migration WHERE version=?').get(version)?.version !== version))
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
     }
     catch (error) {
@@ -293,6 +305,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     return this.transaction(() => {
       if (!cmd.idempotencyKey.trim())
         return { kind: 'not-ready', reason: 'IDEMPOTENCY_KEY_REQUIRED' };
+      const candidate = this.read<P.StoredCandidate>('report_candidate', scopeId, cmd.candidateId);
+      if (candidate?.correctionPreviewId !== null && candidate?.correctionPreviewId !== undefined) return { kind: 'not-ready', reason: 'CORRECTION_PREVIEW_REQUIRED' };
       const previousCommand = this.db.prepare('SELECT candidate_id,confirmation_id FROM idempotent_command WHERE scope_id=? AND key=?').get(scopeId, cmd.idempotencyKey);
       if (previousCommand) {
         if (previousCommand.candidate_id !== cmd.candidateId)
@@ -300,7 +314,6 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         const confirmed = this.require<P.StoredConfirmation>('monthly_confirmation', scopeId, String(previousCommand.confirmation_id));
         return { kind: 'already-confirmed', confirmationId: confirmed.confirmationId, revision: confirmed.revision };
       }
-      const candidate = this.read<P.StoredCandidate>('report_candidate', scopeId, cmd.candidateId);
       if (!candidate)
         return { kind: 'not-ready', reason: 'CANDIDATE_NOT_FOUND' };
       this.validateCandidate(candidate);
@@ -322,6 +335,63 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, cmd.candidateId, confirmationId);
       return { kind: 'confirmed', confirmationId, revision: record.revision };
     });
+  }
+  async commitCorrection(scopeId: string, cmd: P.CorrectionConfirmCommand): Promise<P.ConfirmationResult> {
+    try { return this.transaction(() => {
+      if (!cmd.idempotencyKey.trim() || !cmd.reason.trim() || cmd.reason.length > 2000 || !Number.isSafeInteger(cmd.expectedBaseRevision) || cmd.expectedBaseRevision < 1)
+        return { kind: 'not-ready', reason: 'INVALID_CORRECTION_COMMAND' };
+      const requestHash = hashHistoryValue({ previewId: cmd.previewId, previewHash: cmd.previewHash, expectedBaseRevision: cmd.expectedBaseRevision, reason: cmd.reason });
+      const used = this.db.prepare('SELECT request_hash,confirmation_id FROM correction_command WHERE scope_id=? AND key=?').get(scopeId, cmd.idempotencyKey);
+      if (used) {
+        if (used.request_hash !== requestHash) return { kind: 'conflict', reason: 'IDEMPOTENCY_KEY_REUSED' };
+        const confirmed = this.require<P.StoredConfirmation>('monthly_confirmation', scopeId, String(used.confirmation_id));
+        return { kind: 'already-confirmed', confirmationId: confirmed.confirmationId, revision: confirmed.revision };
+      }
+      if (this.db.prepare('SELECT 1 FROM idempotent_command WHERE scope_id=? AND key=?').get(scopeId, cmd.idempotencyKey))
+        return { kind: 'conflict', reason: 'IDEMPOTENCY_KEY_REUSED' };
+      const preview = this.read<P.StoredCorrectionPreview>('correction_preview', scopeId, cmd.previewId);
+      if (!preview) throw new HistoryOperationError('NOT_FOUND');
+      if (preview.previewHash !== cmd.previewHash || preview.baseRevision !== cmd.expectedBaseRevision)
+        return { kind: 'conflict', reason: 'STALE_BASE' };
+      const candidate = this.require<P.StoredCandidate>('report_candidate', scopeId, preview.candidateId);
+      const imported = this.require<P.StoredWorkbookImport>('workbook_import', scopeId, preview.importId);
+      const exported = this.require<P.StoredWorkbookExport>('workbook_export', scopeId, preview.exportId);
+      const base = this.require<P.StoredConfirmation>('monthly_confirmation', scopeId, preview.baseConfirmationId);
+      if (candidate.correctionPreviewId !== preview.previewId || candidate.authoredAt !== preview.createdAt ||
+        candidate.inputSnapshotId !== preview.inputSnapshotId || candidate.basis.reportCycle !== base.reportCycle ||
+        imported.status !== 'validated' || imported.exportId !== preview.exportId || !imported.patch.length ||
+        exported.baseConfirmationId !== base.confirmationId || exported.baseRevision !== base.revision ||
+        preview.baseRevision !== base.revision || preview.exportId !== imported.exportId)
+        return { kind: 'not-ready', reason: 'INVALID_CORRECTION_LINEAGE' };
+      const existing = this.db.prepare('SELECT id,revision FROM monthly_confirmation WHERE scope_id=? AND report_cycle=? AND candidate_id=?').get(scopeId, candidate.basis.reportCycle, candidate.candidateId);
+      if (existing) {
+        this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, candidate.candidateId, existing.id);
+        this.db.prepare('INSERT INTO correction_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, requestHash, existing.id);
+        return { kind: 'already-confirmed', confirmationId: String(existing.id), revision: Number(existing.revision) };
+      }
+      const head = this.head(scopeId, candidate.basis.reportCycle);
+      if (head.confirmationId !== preview.baseConfirmationId || head.revision !== preview.baseRevision)
+        return { kind: 'conflict', reason: 'STALE_BASE' };
+      if (preview.dependencyHeads.some(token => token.reportCycle !== head.reportCycle && !equal(this.head(scopeId, token.reportCycle), token)))
+        return { kind: 'conflict', reason: 'STALE_DEPENDENCY' };
+      const decision = confirmDecision(candidate.basis, head.revision, cmd.expectedBaseRevision, cmd.reason);
+      if (decision.kind !== 'create') return decision;
+      const confirmationId = this.nextId(), confirmedAt = this.now();
+      instant(confirmedAt);
+      const record: P.StoredConfirmation = { confirmationId, scopeId, reportCycle: candidate.basis.reportCycle, revision: decision.revision,
+        confirmedAt, candidateId: candidate.candidateId, previousConfirmationId: base.confirmationId, basis: candidate.basis,
+        canonicalCurrentCalculationIds: candidate.calculationIds, historySelectionId: candidate.historySelectionId,
+        document: candidate.document, correctionReason: cmd.reason.trim() };
+      this.db.prepare('INSERT INTO monthly_confirmation VALUES(?,?,?,?,?,?,?,?)').run(scopeId, confirmationId, record.reportCycle, record.revision, candidate.candidateId, base.confirmationId, confirmedAt, encodeEvidence(record));
+      const moved = this.db.prepare('UPDATE monthly_head SET confirmation_id=?,revision=? WHERE scope_id=? AND report_cycle=? AND confirmation_id=? AND revision=?').run(confirmationId, record.revision, scopeId, record.reportCycle, base.confirmationId, base.revision);
+      if (moved.changes !== 1) throw Error('HEAD_UPDATE_FAILED');
+      this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, candidate.candidateId, confirmationId);
+      this.db.prepare('INSERT INTO correction_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, requestHash, confirmationId);
+      return { kind: 'confirmed', confirmationId, revision: record.revision };
+    }); } catch (error) {
+      if (error instanceof HistoryOperationError) throw error;
+      throw new HistoryOperationError('STORAGE_UNAVAILABLE');
+    }
   }
   async getConfirmation(scopeId: string, id: string): Promise<P.StoredConfirmation | null> { return this.read('monthly_confirmation', scopeId, id); }
   async putWorkbookExport(input: P.WorkbookExportWrite): Promise<P.StoredWorkbookExport> {

@@ -13,6 +13,14 @@ it('내보내기는 먼저 서버 명세를 영속 저장하고 같은 ID를 다
   expect(typeof service.exportCorrectionWorkbook).toBe('function');
   expect(typeof service.downloadCorrectionWorkbook).toBe('function');
 });
+it('confirmWorkbookCorrection은 검증된 preview 명령만 저장소에 전달하고 저장 결과로 확정을 표시한다',async()=>{
+  const { confirmWorkbookCorrection } = await import('./report-correction');
+  const command={previewId:'preview-1',previewHash:'hash-1',expectedBaseRevision:1,idempotencyKey:'key-1',reason:'월별 정정'};
+  const deps={repository:{commitCorrection:async (_scope:string, received:typeof command)=>received===command
+    ? {kind:'confirmed',confirmationId:'confirmation-2',revision:2} : {kind:'conflict',reason:'INVALID_COMMAND'}},
+    indicators:{fetchAll:async()=>{throw Error('LIVE_CALL');}},yields:{dailyYields:async()=>{throw Error('LIVE_CALL');}}} as unknown as ReportCorrectionDependencies;
+  expect(await confirmWorkbookCorrection(deps,'scope-A',command)).toEqual({kind:'confirmed',confirmationId:'confirmation-2',revision:2});
+});
 
 describe('revision-bound export', () => {
   const scopeId = 'scope-A';

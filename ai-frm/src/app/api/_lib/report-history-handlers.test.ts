@@ -99,6 +99,28 @@ it('exchange export uses the local origin and returns a saved download URL', asy
   expect(downloaded.headers.get('cache-control')).toBe('no-store');
   expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
 });
+it('corrections POST는 ID·hash·기준차수·키·전체사유만 받아 명시 확정 결과를 반환한다',async()=>{
+  const {handleCorrectionPost}=await import('./report-history-exchange-handlers');
+  const command={previewId:'11111111-1111-4111-8111-111111111111',previewHash:'a'.repeat(64),expectedBaseRevision:1,idempotencyKey:'22222222-2222-4222-8222-222222222222',reason:'합성 정정'};
+  const captured:unknown[]=[];
+  const ready=async()=>({scopeId:'scope-A',deps:{repository:{commitCorrection:async(_scope:string,cmd:unknown)=>{captured.push(cmd);return {kind:'confirmed',confirmationId:'33333333-3333-4333-8333-333333333333',revision:2};}}}}) as never;
+  const request=(body:unknown,origin?:string)=>new Request('http://localhost:3000/api/report-history/corrections',{method:'POST',headers:{'content-type':'application/json',...(origin?{origin}:{})},body:JSON.stringify(body)});
+  expect((await handleCorrectionPost(request({...command,amount:123}),ready)).status).toBe(422);
+  expect((await handleCorrectionPost(request(command,'https://other.test'),ready)).status).toBe(403);
+  expect(captured).toHaveLength(0);
+  const response=await handleCorrectionPost(request(command),ready);
+  expect(response.status).toBe(200);expect(await response.json()).toMatchObject({ok:true,result:{revision:2}});
+  expect(captured).toEqual([command]);
+});
+it('corrections POST는 저장소 CAS 충돌을 409, 저장 실패를 재시도 가능한 503으로 전한다',async()=>{
+  const {handleCorrectionPost}=await import('./report-history-exchange-handlers');
+  const command={previewId:'11111111-1111-4111-8111-111111111111',previewHash:'a'.repeat(64),expectedBaseRevision:1,idempotencyKey:'22222222-2222-4222-8222-222222222222',reason:'합성 정정'};
+  const request=()=>new Request('http://localhost:3000/api/report-history/corrections',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)});
+  const conflict=await handleCorrectionPost(request(),async()=>({scopeId:'scope-A',deps:{repository:{commitCorrection:async()=>({kind:'conflict',reason:'STALE_DEPENDENCY'})}}}) as never);
+  expect(conflict.status).toBe(409);expect(await conflict.json()).toMatchObject({ok:false,result:{reason:'STALE_DEPENDENCY'}});
+  const failed=await handleCorrectionPost(request(),async()=>({scopeId:'scope-A',deps:{repository:{commitCorrection:async()=>{throw Error('SQL file path secret');}}}}) as never);
+  expect(failed.status).toBe(503);expect(failed.headers.get('retry-after')).toBe('1');expect(await failed.json()).toEqual({ok:false,code:'STORAGE_UNAVAILABLE'});
+});
 
 it('exchange validate streams multipart limits and returns structured invalid file errors',async()=>{
   const {handleExchangePost}=await import('./report-history-exchange-handlers');

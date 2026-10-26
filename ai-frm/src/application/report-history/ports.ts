@@ -247,6 +247,7 @@ export type WorkbookImportWrite = { readonly scopeId: string; readonly importId:
 export type StoredWorkbookImport = WorkbookImportWrite;
 export type CorrectionPreviewWrite = { readonly scopeId: string; readonly previewId: string; readonly previewHash: string; readonly importId: string; readonly exportId: string; readonly baseConfirmationId: string; readonly baseRevision: number; readonly inputSnapshotId: string; readonly candidateId: string; readonly dependencyHeads: readonly RevisionToken[]; readonly rawDiff: JsonValue; readonly resultDiff: JsonValue; readonly affectedReports: JsonValue; readonly createdAt: string };
 export type StoredCorrectionPreview = CorrectionPreviewWrite;
+export type CorrectionConfirmCommand = { readonly previewId: string; readonly previewHash: string; readonly expectedBaseRevision: number; readonly idempotencyKey: string; readonly reason: string };
 export type CorrectionStageWrite = { readonly scopeId: string; readonly expectedBase: RevisionToken; readonly dependencyHeads: readonly RevisionToken[]; readonly evidence: readonly StoredEvidence[]; readonly inputs: readonly StoredInputSnapshot[]; readonly calculations: readonly StoredCalculation[]; readonly candidate: CandidateWrite & { readonly candidateId: string }; readonly import: WorkbookImportWrite; readonly preview: CorrectionPreviewWrite };
 export type ImportResult = { readonly kind: 'invalid'; readonly importId: string | null; readonly errors: readonly WorkbookCellError[] } | { readonly kind: 'no-change'; readonly importId: string; readonly baseConfirmationId: string } | { readonly kind: 'preview'; readonly previewId: string; readonly previewHash: string };
 export interface HistoryRepository {
@@ -256,6 +257,7 @@ export interface HistoryRepository {
   getWorkbookImport(scopeId: string, id: string): Promise<StoredWorkbookImport | null>;
   getCorrectionPreview(scopeId: string, id: string): Promise<StoredCorrectionPreview | null>;
   stageCorrection(input: CorrectionStageWrite): Promise<StoredCorrectionPreview>;
+  commitCorrection(scopeId: string, cmd: CorrectionConfirmCommand): Promise<ConfirmationResult>;
   putEvidence(input: EvidenceWrite): Promise<{
     captureId: string;
   }>;

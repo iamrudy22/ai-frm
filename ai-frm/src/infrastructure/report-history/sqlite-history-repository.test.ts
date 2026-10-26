@@ -53,7 +53,7 @@ describe('SQLite 불변 월별 이력', () => {
     const r = open();
     const scopeId = await r.defaultScopeId();
     const database = new DatabaseSync(r.databasePath, { readOnly: true });
-    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(2);
+    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(3);
     database.close();
     const draft = { scopeId, exportId: 'export-1', workbookFormatVersion: 1 as const, baseConfirmationId: 'base-1', baseRevision: 1,
       baseDocumentHash: 'hash', basis, inputSnapshotId: 'input-1', inputHash: 'input-hash', calculationIds: { construction: 'c', funding: 'f' },
@@ -456,13 +456,107 @@ async function correctionFixture(options: { unreadable?: boolean; noFetchedAt?: 
     return new Uint8Array(X.write(b,{type:'array',bookType:'xlsx',compression:true}));
   };
   const counts = () => { const db = new DatabaseSync(r.databasePath); const result = Object.fromEntries(['source_capture','report_input_snapshot','calculation_record','report_candidate','correction_preview','monthly_confirmation','monthly_head'].map(table=>[table,Number(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n)])); db.close(); return result; };
-  return {r,scopeId,deps:disabled,manifest,validate,edit,counts,calls:()=>calls,confirmed,candidate,statements};
+  return {r,scopeId,deps:disabled,manifest,validate,edit,counts,calls:()=>calls,confirmed,candidate,statements,correction};
 }
 it('import_unchanged_is_noop: 원장 파생 레코드·확정 head가 전혀 늘지 않는다',async()=>{
   const f=await correctionFixture(), before=f.counts();
   const result=await f.validate?.(f.deps,f.scopeId,await f.edit('same'));
   expect(result).toMatchObject({kind:'no-change',baseConfirmationId:f.confirmed.confirmationId});
   expect(f.counts()).toEqual(before); expect(f.calls()).toBe(0);
+});
+it('correction_commits_one_revision: 저장된 preview만 한 회차를 새 revision으로 확정하고 원본을 보존한다',async()=>{
+  const f=await correctionFixture(),old=await f.r.getConfirmation(f.scopeId,f.confirmed.confirmationId);
+  const result=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const preview=await f.r.getCorrectionPreview(f.scopeId,result.previewId);
+  const command={previewId:result.previewId,previewHash:preview!.previewHash,expectedBaseRevision:1,idempotencyKey:'correction-1',reason:'합성 원자료 정정'};
+  expect(f.counts().monthly_confirmation).toBe(1);
+  const saved=await f.r.commitCorrection(f.scopeId,command);
+  expect(saved).toMatchObject({kind:'confirmed',revision:2});
+  if(saved.kind!=='confirmed') throw Error('expected confirmation');
+  const current=await f.r.getConfirmation(f.scopeId,saved.confirmationId);
+  expect(current).toMatchObject({previousConfirmationId:f.confirmed.confirmationId,candidateId:preview!.candidateId,correctionReason:command.reason});
+  expect(await f.r.getConfirmation(f.scopeId,f.confirmed.confirmationId)).toEqual(old);
+  expect((await f.r.getCandidate(f.scopeId,preview!.candidateId))?.authoredAt).toBe(preview!.createdAt);
+  expect(current?.confirmedAt).not.toBe(preview!.createdAt);
+  expect(f.calls()).toBe(0);
+});
+it('correction_cas_and_idempotency: 다른 키 재시도는 기존 ID이고 변조·재사용·stale은 쓰기 없이 충돌한다',async()=>{
+  const f=await correctionFixture({history:true}),validated=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const cmd={previewId:validated.previewId,previewHash:validated.previewHash,expectedBaseRevision:1,idempotencyKey:'same',reason:'합성 정정'};
+  const initial=await f.r.commitCorrection(f.scopeId,cmd);
+  expect(initial.kind).toBe('confirmed');
+  if(initial.kind!=='confirmed') throw Error('expected confirmation');
+  const before=f.counts();
+  expect(await f.r.commitCorrection(f.scopeId,cmd)).toMatchObject({kind:'already-confirmed',confirmationId:initial.confirmationId});
+  expect(await f.r.commitCorrection(f.scopeId,{...cmd,idempotencyKey:'other'})).toMatchObject({kind:'already-confirmed',confirmationId:initial.confirmationId});
+  expect(await f.r.commitConfirmation(f.scopeId,{candidateId:f.candidate.candidateId,expectedRevision:1,idempotencyKey:'other'})).toMatchObject({kind:'conflict',reason:'IDEMPOTENCY_KEY_REUSED'});
+  expect(await f.r.commitCorrection(f.scopeId,{...cmd,previewHash:'tampered',idempotencyKey:'tampered'})).toMatchObject({kind:'conflict'});
+  expect(await f.r.commitCorrection(f.scopeId,{...cmd,reason:'다른 사유'})).toMatchObject({kind:'conflict',reason:'IDEMPOTENCY_KEY_REUSED'});
+  expect(await f.r.commitConfirmation(f.scopeId,{candidateId:(await f.r.getCorrectionPreview(f.scopeId,cmd.previewId))!.candidateId,expectedRevision:1,idempotencyKey:'bypass'})).toMatchObject({kind:'not-ready',reason:'CORRECTION_PREVIEW_REQUIRED'});
+  expect(f.counts()).toEqual(before);
+});
+it('두 탭에서 이전 preview와 의존 head 변경은 409이고 확정된 preview 재시도는 최신 head를 되돌리지 않는다',async()=>{
+  const f=await correctionFixture({history:true}),bytes=await f.edit('cash'),validated=await f.validate!(f.deps,f.scopeId,bytes) as {previewId:string;previewHash:string};
+  const cmd={previewId:validated.previewId,previewHash:validated.previewHash,expectedBaseRevision:1,idempotencyKey:'tab-one',reason:'합성 정정'};
+  const other=open(f.r.databasePath),first=await other.commitCorrection(f.scopeId,cmd);
+  expect(first).toMatchObject({kind:'confirmed',revision:2});
+  if(first.kind!=='confirmed') throw Error('expected confirmation');
+  const prior=(await f.r.listConfirmations(f.scopeId)).find(item=>item.reportCycle==='2026/08')!;
+  const priorCandidate=await f.r.getCandidate(f.scopeId,prior.candidateId),next=await f.r.putCandidate({...priorCandidate!,document:{...priorCandidate!.document,contentHash:'changed-prior'}});
+  await f.r.commitConfirmation(f.scopeId,{candidateId:next.candidateId,expectedRevision:1,idempotencyKey:'dependency-change',correctionReason:'합성 이력 변경'});
+  const before=f.counts();
+  expect(await f.r.commitCorrection(f.scopeId,{...cmd,idempotencyKey:'tab-two'})).toMatchObject({kind:'already-confirmed',confirmationId:first.confirmationId});
+  expect(f.counts()).toEqual(before);
+  const newerExport=await f.correction.exportCorrectionWorkbook(f.deps,f.scopeId,first.confirmationId);
+  expect(newerExport.exportId).not.toBe(f.manifest.exportId);
+  await expect(f.validate!(f.deps,f.scopeId,bytes)).rejects.toMatchObject({code:'STALE_BASE'});
+});
+it('확정 전에 참조 head가 바뀌면 정정 명령은 STALE_DEPENDENCY로 충돌하고 쓰지 않는다',async()=>{
+  const f=await correctionFixture({history:true}),validated=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const prior=(await f.r.listConfirmations(f.scopeId)).find(item=>item.reportCycle==='2026/08')!;
+  const old=await f.r.getCandidate(f.scopeId,prior.candidateId),next=await f.r.putCandidate({...old!,document:{...old!.document,contentHash:'changed-dependency'}});
+  const other=open(f.r.databasePath);await other.commitConfirmation(f.scopeId,{candidateId:next.candidateId,expectedRevision:1,idempotencyKey:'prior-change',correctionReason:'합성 변경'});
+  const before=f.counts();
+  expect(await f.r.commitCorrection(f.scopeId,{previewId:validated.previewId,previewHash:validated.previewHash,expectedBaseRevision:1,idempotencyKey:'stale',reason:'합성 정정'})).toMatchObject({kind:'conflict',reason:'STALE_DEPENDENCY'});
+  expect(f.counts()).toEqual(before);
+});
+it('동일 기준본의 서로 다른 두 탭 preview 중 처음 확정한 것만 채택한다',async()=>{
+  const f=await correctionFixture(),cash=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const kofia=await f.validate!(f.deps,f.scopeId,await f.edit('kofia')) as {previewId:string;previewHash:string};
+  const other=open(f.r.databasePath);
+  expect(await other.commitCorrection(f.scopeId,{previewId:cash.previewId,previewHash:cash.previewHash,expectedBaseRevision:1,idempotencyKey:'tab-a',reason:'자금 수정'})).toMatchObject({kind:'confirmed',revision:2});
+  const before=f.counts();
+  expect(await f.r.commitCorrection(f.scopeId,{previewId:kofia.previewId,previewHash:kofia.previewHash,expectedBaseRevision:1,idempotencyKey:'tab-b',reason:'채권 수정'})).toMatchObject({kind:'conflict',reason:'STALE_BASE'});
+  expect(f.counts()).toEqual(before);
+  expect((await f.r.listConfirmations(f.scopeId,basis.reportCycle)).map(item=>item.revision)).toEqual([1,2]);
+});
+it('존재하지 않는 정정 미리보기는 저장 없이 NOT_FOUND로 구분한다',async()=>{
+  const r=open();const scopeId=await r.defaultScopeId();
+  await expect(r.commitCorrection(scopeId,{previewId:'00000000-0000-4000-8000-000000000000',previewHash:'a'.repeat(64),expectedBaseRevision:1,idempotencyKey:'missing',reason:'합성 정정'})).rejects.toMatchObject({code:'NOT_FOUND'});
+  expect(await r.listConfirmations(scopeId)).toEqual([]);
+});
+it('correction_atomic_after_restart: head와 멱등 INSERT 실패는 모두 rollback하고 미확정 preview는 재시작 뒤 클릭에서만 확정한다',async()=>{
+  const f=await correctionFixture(),validated=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const command={previewId:validated.previewId,previewHash:validated.previewHash,expectedBaseRevision:1,idempotencyKey:'restart',reason:'합성 정정'};
+  const before=f.counts();
+  for(const table of ['monthly_confirmation','monthly_head','idempotent_command','correction_command']){
+    const db=new DatabaseSync(f.r.databasePath);db.exec(`CREATE TRIGGER fail_correction BEFORE ${table==='monthly_head'?'UPDATE':'INSERT'} ON ${table} BEGIN SELECT RAISE(ABORT,'SYNTHETIC_DISK_FAILURE'); END;`);
+    await expect(f.r.commitCorrection(f.scopeId,command)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+    expect(f.counts()).toEqual(before);db.exec('DROP TRIGGER fail_correction');db.close();
+  }
+  const restarted=open(f.r.databasePath);
+  expect(await restarted.getCorrectionPreview(f.scopeId,validated.previewId)).toMatchObject({previewHash:validated.previewHash});
+  expect(f.counts()).toEqual(before);
+  expect(await restarted.commitCorrection(f.scopeId,command)).toMatchObject({kind:'confirmed',revision:2});
+  expect(f.calls()).toBe(0);
+});
+it('head UPDATE가 trigger에 의해 조용히 무시되면 confirmation과 idempotency도 남기지 않는다',async()=>{
+  const f=await correctionFixture(),validated=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+  const before=f.counts(),db=new DatabaseSync(f.r.databasePath);
+  db.exec('CREATE TRIGGER ignore_head BEFORE UPDATE ON monthly_head BEGIN SELECT RAISE(IGNORE); END;');
+  await expect(f.r.commitCorrection(f.scopeId,{previewId:validated.previewId,previewHash:validated.previewHash,expectedBaseRevision:1,idempotencyKey:'ignore-head',reason:'합성 정정'})).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+  expect(f.counts()).toEqual(before);
+  db.exec('DROP TRIGGER ignore_head');db.close();
 });
 it('recalculate_from_complete_input: 검증 성공도 확정 head 불변이며 원래 시계·입력에서 다섯 결과를 복원한다',async()=>{
   const f=await correctionFixture(),before=f.counts();

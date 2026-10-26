@@ -1,4 +1,4 @@
-import { downloadCorrectionWorkbook, exportCorrectionWorkbook, validateCorrectionWorkbook, getCorrectionPreview } from '@/application/report-history/report-correction';
+import { downloadCorrectionWorkbook, exportCorrectionWorkbook, validateCorrectionWorkbook, getCorrectionPreview, confirmWorkbookCorrection } from '@/application/report-history/report-correction';
 import type { ReportCorrectionDependencies } from '@/application/report-history/ports';
 import { bodyOf, json, localOrigin } from './report-history-handlers';
 
@@ -10,6 +10,25 @@ function failure(error: unknown): Response {
   const status = code === 'NOT_FOUND' ? 404 : code === 'LIMIT_EXCEEDED' || code === 'BODY_TOO_LARGE' ? 413 :
     code === 'STALE_BASE' || code === 'STALE_DEPENDENCY' ? 409 : code === 'UNSUPPORTED_VERSION' || code === 'EVALUATION_ZONE_MISMATCH' || code === 'INVALID_WORKBOOK' ? 422 : /^INVALID_/.test(code) ? 400 : 503;
   return json({ ok: false, code: status === 503 ? 'STORAGE_UNAVAILABLE' : code }, status, status === 503 ? { 'Retry-After': '1' } : undefined);
+}
+
+export async function handleCorrectionPost(request: Request, provider: Provider): Promise<Response> {
+  try {
+    if (!localOrigin(request)) return json({ ok: false, code: 'LOCAL_ORIGIN_REQUIRED' }, 403);
+    const body = await bodyOf(request, 16_384);
+    if (Object.keys(body).sort().join('|') !== ['previewId','previewHash','expectedBaseRevision','idempotencyKey','reason'].sort().join('|') ||
+      !validId(body.previewId) || !validId(body.idempotencyKey) || typeof body.previewHash !== 'string' || !/^[a-f0-9]{64}$/i.test(body.previewHash) ||
+      !Number.isSafeInteger(body.expectedBaseRevision) || (body.expectedBaseRevision as number) < 1 ||
+      typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 2000)
+      return json({ ok: false, code: 'INVALID_CORRECTION_COMMAND' }, 422);
+    const { scopeId, deps } = await provider();
+    const result = await confirmWorkbookCorrection(deps, scopeId, {
+      previewId: body.previewId, previewHash: body.previewHash, expectedBaseRevision: body.expectedBaseRevision as number,
+      idempotencyKey: body.idempotencyKey, reason: body.reason,
+    });
+    return json({ ok: result.kind === 'confirmed' || result.kind === 'already-confirmed', result },
+      result.kind === 'conflict' ? 409 : result.kind === 'not-ready' ? 422 : 200);
+  } catch (error) { return failure(error); }
 }
 
 export async function handleExchangePost(request: Request, provider: Provider): Promise<Response> {

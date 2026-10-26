@@ -11,7 +11,7 @@ import { calendarOf, type ItemName, type Unreadable } from '../../domain/cashflo
 import type { SourceResult, YieldFetch } from '../ports';
 import { restoreStatement } from './report-candidate';
 import type {
-  CandidateWrite, CorrectionPatch, DecodedCorrection, Derivation, HistoryOperationErrorCode, HistoryRepository, ImportResult, JsonValue, ReportBasis, StatementSnapshotDto, StoredCalculation, StoredCorrectionPreview, StoredEvidence, StoredInputSnapshot, WorkbookCellError, WorkbookImportWrite, ExportRow, ReportCorrectionDependencies, SourceObservation, StoredWorkbookExport, WorkbookExportWrite
+  CandidateWrite, CorrectionConfirmCommand, CorrectionPatch, DecodedCorrection, Derivation, HistoryOperationErrorCode, HistoryRepository, ImportResult, JsonValue, ReportBasis, StatementSnapshotDto, StoredCalculation, StoredCorrectionPreview, StoredEvidence, StoredInputSnapshot, WorkbookCellError, WorkbookImportWrite, ExportRow, ReportCorrectionDependencies, SourceObservation, StoredWorkbookExport, WorkbookExportWrite
 } from './ports';
 import { HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 
@@ -415,3 +415,7 @@ async function affected(deps: ReportCorrectionDependencies, scopeId: string, man
   return result;
 }
 export async function getCorrectionPreview(repository: HistoryRepository, scopeId: string, previewId: string): Promise<StoredCorrectionPreview | null> { return repository.getCorrectionPreview(scopeId, previewId); }
+/** Explicit commit only; recalculation and source access occurred at validation time. */
+export async function confirmWorkbookCorrection(deps: ReportCorrectionDependencies, scopeId: string, cmd: CorrectionConfirmCommand) {
+  return deps.repository.commitCorrection(scopeId, cmd);
+}

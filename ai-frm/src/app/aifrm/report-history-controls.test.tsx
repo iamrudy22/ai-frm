@@ -50,10 +50,15 @@ describe('history controls outside printable paper', () => {
 
 it('정정 미리보기는 원자료 0/결측·사유·결과불가·영향을 표로 제공하고 확정으로 표시하지 않는다',async()=>{
   const components=await import('./report-history-controls');
-  const Details=(components as unknown as {CorrectionPreviewDetails?: React.ComponentType<{preview:unknown}>}).CorrectionPreviewDetails;
+  const Details=(components as unknown as {CorrectionPreviewDetails?: React.ComponentType<{preview:unknown;confirmation?:{kind:'confirmed';revision:number}|{kind:'unconfirmed'|'unknown'}}>}).CorrectionPreviewDetails;
   const preview={previewId:'preview',baseRevision:1,rawDiff:[{rowId:'r1',sheet:'조달금리_정정',identity:{date:'2026/08/31',bond:'publicAaa'},unit:'%',before:3.674,after:0,reason:'합성 정정',evidenceNote:'공표값 확인'},{rowId:'r2',sheet:'경제지표_정정',identity:{month:'2026/07',indicator:'총수주액'},unit:'지수',before:2,after:null,reason:'합성 결측',evidenceNote:''}],resultDiff:[{indicator:'funding',changed:true,beforeDisplay:'1.174 · 정상',afterDisplay:'산출불가 · 마지막 평가일 결측'}],affectedReports:[{confirmationId:'other',reportCycle:'2026/08',revision:1,indicator:'construction',status:'possible',reason:'저장된 평가 문맥 확인 필요'}]};
   const html=Details?renderToStaticMarkup(<Details preview={preview}/>):'';
   expect(html).toContain('3.674');expect(html).toContain('>0<');expect(html).toContain('결측');expect(html).toContain('합성 정정');expect(html).toContain('산출불가');expect(html).toContain('2026/08');expect(html).toContain('<table');expect(html).not.toContain('정정 확정');expect(html).not.toContain('확정됨');
+  expect(html).toContain('저장된 정정 미리보기');expect(html).not.toContain('미확정');
+  const newlyValidated=Details?renderToStaticMarkup(<Details preview={preview} confirmation={{kind:'unconfirmed'}}/>):'';
+  expect(newlyValidated).toContain('검증 완료 · 미확정');
+  const confirmed=Details?renderToStaticMarkup(<Details preview={preview} confirmation={{kind:'confirmed',revision:2}}/>):'';
+  expect(confirmed).toContain('정정 확정됨 · 2차');expect(confirmed).not.toContain('미확정');
 });
 
 it('수정본 파일 선택 안내를 한국어로 표시한다', async () => {
@@ -103,6 +108,7 @@ it('정상 미리보기 다음에 없는 ID를 열면 대기·실패 중 이전 
     changeId(goodId);
     reopen();
     await vi.waitFor(() => expect(preview()?.props.preview).toEqual(saved));
+    expect(renderToStaticMarkup(<CorrectionPreviewDetails preview={preview()!.props.preview as never} confirmation={preview()!.props.confirmation as never}/>)).toContain('저장된 정정 미리보기');
     changeId(missingId);
     reopen();
     expect(preview()).toBeUndefined();
@@ -118,4 +124,45 @@ it('정상 미리보기 다음에 없는 ID를 열면 대기·실패 중 이전 
     vi.unstubAllGlobals();
     vi.resetModules();
   }
+});
+it('정정 확정은 미리보기·전체 사유·명시 클릭 후에만 진행하고 503 재시도는 같은 명령을 쓴다',async()=>{
+  const state:unknown[]=[],refs:{current:unknown}[]=[];let slot=0,refSlot=0;
+  vi.resetModules();vi.doMock('react',async importOriginal=>({
+    ...await importOriginal<typeof import('react')>(),
+    useState:(initial:unknown)=>{const index=slot++;if(!(index in state))state[index]=initial;return [state[index],(next:unknown)=>{state[index]=typeof next==='function'?(next as (old:unknown)=>unknown)(state[index]):next;}];},
+    useRef:(initial:unknown)=>refs[refSlot++]??(refs[refSlot-1]={current:initial}),useEffect:()=>{},
+  }));
+  type Element={type:unknown;props:Record<string,unknown>&{children?:unknown}};
+  const elements=(value:unknown):Element[]=>Array.isArray(value)?value.flatMap(elements):!value||typeof value!=='object'||!('props'in value)?[]:[value as Element,...elements((value as Element).props.children)];
+  const previewId='11111111-1111-4111-8111-111111111111',previewHash='a'.repeat(64);
+  const saved={previewId,previewHash,baseRevision:1,rawDiff:[{rowId:'r',before:1,after:2}],resultDiff:[],affectedReports:[]};
+  let attempts=0;const commands:string[]=[];const opened:string[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(url:string,init?:RequestInit)=>{
+    if(url.includes('exchange?previewId='))return Response.json({ok:true,preview:saved});
+    commands.push(String(init?.body));attempts++;
+    return attempts===1?Response.json({ok:false,code:'STORAGE_UNAVAILABLE'},{status:503}):Response.json({ok:true,result:{kind:'confirmed',confirmationId:'confirmed-2',revision:2}});
+  }));
+  try{
+    const {WorkbookCorrectionControls}=await import('./report-history-controls');
+    const render=()=>{slot=0;refSlot=0;return elements(WorkbookCorrectionControls({onConfirmed:(id:string)=>opened.push(id)}));};
+    const field=(label:string)=>render().find(item=>item.props.label===label)!;
+    expect(render().some(item=>item.props.label==='정정 확정')).toBe(false);
+    (field('미리보기 ID').props.onChange as (value:string)=>void)(previewId);
+    (field('미리보기 열기').props.onClick as ()=>void)();
+    await vi.waitFor(()=>expect(render().some(item=>item.props.label==='정정 확정')).toBe(true));
+    (field('전체 정정 사유').props.onChange as (value:string)=>void)('합성 정정');
+    (field('정정 확정').props.onClick as ()=>void)();
+    await vi.waitFor(()=>expect(commands).toHaveLength(1));
+    await vi.waitFor(()=>expect(field('정정 확정').props['aria-busy']).toBe(false));
+    expect(opened).toHaveLength(0);
+    expect(render().some(item=>typeof item.props.children==='string'&&item.props.children.includes('재검증'))).toBe(false);
+    expect(render().some(item=>typeof item.props.children==='string'&&item.props.children.includes('같은 정정 확정 명령으로 재시도'))).toBe(true);
+    (field('정정 확정').props.onClick as ()=>void)();
+    await vi.waitFor(()=>expect(opened).toEqual(['confirmed-2']));
+    expect(commands[1]).toBe(commands[0]);
+    expect(JSON.parse(commands[0])).toMatchObject({previewId,previewHash,expectedBaseRevision:1,reason:'합성 정정'});
+    const {CorrectionPreviewDetails}=await import('./report-history-controls');
+    const details=render().find(item=>item.type===CorrectionPreviewDetails)!;
+    expect(renderToStaticMarkup(<CorrectionPreviewDetails preview={details.props.preview as never} confirmation={details.props.confirmation as never}/>)).toContain('정정 확정됨 · 2차');
+  }finally{vi.doUnmock('react');vi.unstubAllGlobals();vi.resetModules();}
 });
