@@ -46,6 +46,19 @@ export function selectionView(selection: ExternalHistorySelection, decode: (valu
       return resultPoint(calculation, decode(calculation.resultJson));
     }) };
 }
+export async function qualifiedSelectionView(selection: ExternalHistorySelection, repository: HistoryRepository,
+  decode: (value: JsonValue) => unknown): Promise<ExternalHistoryView> {
+  const view = selectionView(selection, decode);
+  const confirmed = new Set<string>();
+  for (const token of selection.headRevisions) {
+    if (!token.confirmationId) continue;
+    const report = await repository.getConfirmation(selection.scopeId, token.confirmationId);
+    if (!report || report.scopeId !== selection.scopeId || report.confirmationId !== token.confirmationId ||
+      report.reportCycle !== token.reportCycle || report.revision !== token.revision) throw Error('INVALID_SELECTION_RECORD');
+    for (const id of Object.values(report.canonicalCurrentCalculationIds)) confirmed.add(id);
+  }
+  return { ...view, confirmedCalculationIds: [...confirmed].sort() };
+}
 function failure(error: unknown): Response {
   const code = error instanceof Error ? error.message : 'STORAGE_UNAVAILABLE';
   const status = code === 'SELECTION_NOT_FOUND' || code === 'NOT_FOUND_OR_WRONG_SCOPE' ? 404 :
@@ -62,7 +75,7 @@ export async function handleHistorySelectionPost(request: Request, provider: Pro
     const selectedBackfillBatchId = body.selectedBackfillBatchId === null || body.selectedBackfillBatchId === undefined ? null : id(body.selectedBackfillBatchId);
     const { scopeId, repository, decode, now } = await provider();
     const selection = await repository.createHistorySelection({ scopeId, basis, calculationVersion: HISTORY_CALCULATION_VERSION, asOf: now().toISOString(), selectedBackfillBatchId });
-    return json({ ok: true, view: selectionView(selection, decode) });
+    return json({ ok: true, view: await qualifiedSelectionView(selection, repository, decode) });
   } catch (error) { return failure(error); }
 }
 export async function handleHistorySelectionGet(request: Request, provider: Provider): Promise<Response> {
@@ -72,6 +85,6 @@ export async function handleHistorySelectionGet(request: Request, provider: Prov
     const { scopeId, repository, decode } = await provider();
     const selection = await repository.getHistorySelection(scopeId, selectionId);
     if (!selection) throw Error('SELECTION_NOT_FOUND');
-    return json({ ok: true, view: selectionView(selection, decode) });
+    return json({ ok: true, view: await qualifiedSelectionView(selection, repository, decode) });
   } catch (error) { return failure(error); }
 }

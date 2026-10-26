@@ -344,12 +344,25 @@ export async function validateCorrectionWorkbook(deps: ReportCorrectionDependenc
   });
   const beforeResults = [originalInput.dashboard.paymentRecovery, originalInput.dashboard.liquidityGap, originalInput.dashboard.adequateCash, ...calculations.map(c => deps.decode!(c.resultJson))];
   const afterResults = [restored.dashboard.paymentRecovery, restored.dashboard.liquidityGap, restored.dashboard.adequateCash, ...outcomes];
-  const resultDiff = ['recovery', 'liquidity', 'cash', 'construction', 'funding'].map((indicator, index) => ({ indicator, changed: resultDisplay(beforeResults[index]) !== resultDisplay(afterResults[index]), beforeDisplay: resultDisplay(beforeResults[index]), afterDisplay: resultDisplay(afterResults[index]), before: deps.encode(beforeResults[index]), after: deps.encode(afterResults[index]) }));
+  const resultDiff = ['recovery', 'liquidity', 'cash', 'construction', 'funding'].map((indicator, index) => ({ indicator, ...correctionResultDifference(beforeResults[index], afterResults[index]), before: deps.encode(beforeResults[index]), after: deps.encode(afterResults[index]) }));
   const affectedReports = await affected(deps, scopeId, manifest, decoded.patch, statements, changedEvidence);
   const previewBody = { scopeId, previewId, importId, exportId, baseConfirmationId: manifest.baseConfirmationId, baseRevision: manifest.baseRevision, inputSnapshotId: input.inputSnapshotId, candidateId, dependencyHeads, rawDiff, resultDiff, affectedReports, createdAt: receivedAt };
   const previewHash = deps.hash({ patch: decoded.patch, inputHash: input.inputHash, calculations: derived.map(c => ({ inputHash: c.inputHash, result: c.resultJson, captureIds: c.captureIds })), documentHash: document.contentHash, baseRevision: manifest.baseRevision, dependencyHeads });
   const preview = await deps.repository.stageCorrection({ scopeId, expectedBase, dependencyHeads, evidence: [...changedEvidence.values()], inputs: changedInput ? [input] : [], calculations: derived, candidate, import: { ...imported, status: 'validated', patch: decoded.patch, patchHash }, preview: { ...previewBody, previewHash } });
   return { kind: 'preview', previewId: preview.previewId, previewHash: preview.previewHash };
+}
+
+export function correctionResultDifference(before: unknown, after: unknown): { changed: boolean; beforeDisplay: string; afterDisplay: string } {
+  const beforeDisplay = resultDisplay(before), afterDisplay = resultDisplay(after);
+  return { changed: resultComparisonKey(before, beforeDisplay) !== resultComparisonKey(after, afterDisplay), beforeDisplay, afterDisplay };
+}
+
+function resultComparisonKey(value: unknown, display: string): string {
+  const outcome = value as { value?: { result?: { kind?: string; missing?: { key: string; reason: string }[] } } } | null;
+  const result = outcome?.value?.result;
+  if (result?.kind !== 'unavailable' || !Array.isArray(result.missing)) return display;
+  const pairs = result.missing.map(item => [item.key, item.reason]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return JSON.stringify({ display, pairs });
 }
 
 function resultDisplay(value: unknown): string {
@@ -358,7 +371,13 @@ function resultDisplay(value: unknown): string {
   if (outcome.ok === false) return `산출불가 · ${outcome.reason ?? ''}`;
   const result = (outcome.value?.result ?? outcome.value) as Record<string, unknown> | undefined;
   if (!result) return '산출불가';
-  if (result.kind === 'unavailable' || result.kind === 'invalid') return `산출불가 · ${result.reason ?? ''}`;
+  if (result.kind === 'unavailable') {
+    const missing = Array.isArray(result.missing) ? result.missing.filter((item): item is { key: string; reason: string } =>
+      item !== null && typeof item === 'object' && typeof item.key === 'string' && typeof item.reason === 'string') : [];
+    const details = missing.map(item => `${JSON.stringify(item.key)}: ${JSON.stringify(item.reason)}`).sort().join(' / ');
+    return `산출불가 · ${details || (typeof result.reason === 'string' ? result.reason : '필요한 원천값이 없습니다.')}`;
+  }
+  if (result.kind === 'invalid') return `산출불가 · ${result.reason ?? ''}`;
   const measured = result.index ?? result.spread ?? result.rate ?? result.gapRatio ?? result.adequateCash;
   return [typeof measured === 'number' ? measured.toString() : result.kind === 'net-inflow' ? '비적용 · 순유입' : '산출', typeof result.grade === 'string' ? result.grade : typeof result.isAdequate === 'boolean' ? (result.isAdequate ? '충족' : '부족') : ''].filter(Boolean).join(' · ');
 }

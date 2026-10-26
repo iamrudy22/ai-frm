@@ -59,9 +59,10 @@ import { GRADE_COLOR, money, percent } from './format';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
-import { withExternalRiskHistory } from './report-history-projection';
+import { summarizeHistorySources, withExternalRiskHistory } from './report-history-projection';
 import { useReportHistory } from './use-report-history';
-import { ReportControlSurface, ReportHistoryControls, WorkbookCorrectionControls } from './report-history-controls';
+import { ReportControlSurface, ReportHistoryControls, ReportHistorySourceSummary, WorkbookCorrectionControls } from './report-history-controls';
+import type { HistorySourceSummary } from '@/application/report-history/history-view';
 import { snapshotStatement, type PreparedCandidate } from '@/application/report-history/report-candidate';
 import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
 import { TextInput } from '@astryxdesign/core/TextInput';
@@ -104,7 +105,7 @@ export default function AifrmDashboardPage() {
   const committedSource = loaded === null ? ''
     : `${roundsText(loaded.rounds.map((round) => round.round))} 회차의 ${loaded.rounds.map((round) => round.file).join(' · ')} 파일`;
   const [reportOpenedAt, setReportOpenedAt] = useState<Date | null>(null);
-  const [archived, setArchived] = useState<{ id: string; document: PreparedDocument } | null>(null);
+  const [archived, setArchived] = useState<{ id: string; document: PreparedDocument; historySources: HistorySourceSummary } | null>(null);
   const [confirmations, setConfirmations] = useState<readonly { confirmationId: string; reportCycle: YearMonth; revision: number; confirmedAt: string }[]>([]);
   const [confirmationsLoaded, setConfirmationsLoaded] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
@@ -306,12 +307,14 @@ export default function AifrmDashboardPage() {
   const candidatePreparing = confirmationKey !== null && candidatePreparingKey === confirmationKey;
   const displayReport = archived?.document.json as FinancialReport | undefined ??
     (activeCandidate?.previewRequired ? activeCandidate.candidate.document.json as FinancialReport : projectedReport);
+  const currentHistorySources = archived === null && displayReport && history.view
+    ? summarizeHistorySources(displayReport, history.view, 'current') : null;
 
   const openConfirmation = async (id: string) => {
     setConfirmationError(null);
     try {
-      const document = await fetchArchivedDocument(id, history.cancel);
-      setArchived({ id, document });
+      const { document, historySources } = await fetchArchivedDocument(id, history.cancel);
+      setArchived({ id, document, historySources });
       setReportOpenedAt(null);
       window.scrollTo({ top: 0 });
     } catch { setConfirmationError('확정본을 열지 못했습니다. 저장소와 버전을 확인해 주세요.'); }
@@ -440,7 +443,8 @@ export default function AifrmDashboardPage() {
             <LayoutContent isScrollable={false}>
               <VStack gap={3}>
                 <ReportControlSurface>
-                  <ReportHistoryControls history={history} />
+                  {archived ? <ReportHistorySourceSummary summary={archived.historySources} archived /> :
+                    <ReportHistoryControls history={history} summary={currentHistorySources} />}
                   {confirmationControls(true)}
                 </ReportControlSurface>
                 <FinancialReportPreview report={displayReport} onBack={() => { setArchived(null); setReportOpenedAt(null); }} />
@@ -460,7 +464,7 @@ export default function AifrmDashboardPage() {
         <LayoutContent>
           <VStack gap={6}>
             <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
-            <ReportHistoryControls history={history} />
+            <ReportHistoryControls history={history} summary={currentHistorySources} />
             {confirmationControls(false)}
 
             <UploadPanel

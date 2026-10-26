@@ -15,24 +15,34 @@ import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
 import type { useReportHistory } from './use-report-history';
+import type { HistorySourceSummary } from '@/application/report-history/history-view';
 
 type Controller = ReturnType<typeof useReportHistory>;
 export function ReportControlSurface({ children }: { readonly children: ReactNode }) {
   return <Card variant="default" className="report-controls"><VStack gap={3}>{children}</VStack></Card>;
 }
 
-export function ReportHistoryControls({ history }: { readonly history: Controller }) {
+export function ReportHistorySourceSummary({ summary, archived = false }: { readonly summary: HistorySourceSummary; readonly archived?: boolean }) {
+  const line = (label: string, counts: HistorySourceSummary['construction']) =>
+    `${label} · 확정 ${counts.confirmed}개월 · 보완 ${counts.backfill}개월${counts.unconfirmed ? ` · 미확정 이력 ${counts.unconfirmed}개월` : ''}${counts.current ? ` · 현재 산출 ${counts.current}개월` : ''}`;
+  return <VStack as="section" gap={1} className="report-controls" aria-label="외부 위험 이력 출처">
+    <Text type="supporting">{archived ? '저장된 확정 문서의 표시 이력' : '현재 보고서의 표시 이력'}</Text>
+    <Text type="supporting">{line('건설경기', summary.construction)}</Text>
+    <Text type="supporting">{line('조달위험', summary.funding)}</Text>
+  </VStack>;
+}
+
+export function ReportHistoryControls({ history, summary }: { readonly history: Controller; readonly summary?: HistorySourceSummary | null }) {
   const selected = history.batches.find(batch => batch.batchId === history.selectedBatchId);
   const completed = selected?.completedCycles.length ?? 0;
   const total = completed + (selected?.pendingCycles.length ?? 0);
-  const saved = history.view?.points.filter(item => item.point.kind === 'available').length ?? 0;
   return <VStack as="section" gap={2} className="report-controls" aria-label="외부 위험 이력 보완">
     <HStack gap={2} wrap="wrap" align="center">
       <Heading level={2}>외부 위험 이력</Heading>
       <StatusDot variant={history.error ? 'warning' : history.running ? 'accent' : history.view ? 'success' : 'neutral'} label={history.status} />
       <Text type="supporting" aria-live="polite">{history.status}</Text>
-      {history.view && <Text type="supporting">저장된 산출 이력 {saved}개 · {history.selectedBatchId ? '선택한 보완 포함' : '확정 저장 이력 기준'}</Text>}
     </HStack>
+    {summary && <ReportHistorySourceSummary summary={summary} />}
     {selected && total > 0 && <ProgressBar label="과거 회차 보완 진행" value={completed} max={total} hasValueLabel formatValueLabel={(value, max) => `${value}/${max}회차`} />}
     <HStack gap={2} wrap="wrap">
       <Button label={history.running ? '보완 일시 중지' : history.plan ? '과거 18회차 보완 시작' : '보완 준비 확인'} size="sm" variant="secondary" isDisabled={!history.running && !history.canStart} onClick={() => history.running ? history.cancel() : history.plan ? void history.start() : void history.prepare()} />

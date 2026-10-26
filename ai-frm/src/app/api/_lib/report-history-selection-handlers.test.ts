@@ -43,6 +43,24 @@ describe('immutable history selection HTTP boundary', () => {
     const again = await handleHistorySelectionGet(new Request(`${url}?historySelectionId=${id}`), provider);
     expect((await again.json()).view).toEqual(json.view);
   });
+  it('qualifies confirmed points from stored head confirmations, including reconstructed origins, without selecting current heads', async () => {
+    const confirmedId = '22222222-2222-4222-8222-222222222222';
+    const frozen = { ...selection, headRevisions: [{ reportCycle: ym('2026/08'), confirmationId: confirmedId, revision: 2 }],
+      calculations: [selection.calculations[0], { ...selection.calculations[0], calculationId: 'unconfirmed', origin: 'live' as const }] };
+    let reads = 0;
+    const repository = { getHistorySelection: async () => frozen, getConfirmation: async (scope: string, key: string) => {
+      reads++;
+      expect([scope, key]).toEqual(['default', confirmedId]);
+      return { scopeId: scope, confirmationId: key, reportCycle: ym('2026/08'), revision: 2,
+        canonicalCurrentCalculationIds: { construction: 'c', funding: 'different' } };
+    } } as unknown as HistoryRepository;
+    const provider = async () => ({ scopeId: 'default', repository, decode: () => ({ ok: true, value: { result: { kind: 'ok', month: ym('2026/06'), index: 0 } } }), now: () => new Date() });
+    const response = await handleHistorySelectionGet(new Request(`${url}?historySelectionId=${id}`), provider);
+    const result = await response.json();
+    expect(response.status).toBe(200);
+    expect(result.view.confirmedCalculationIds).toEqual(['c', 'different']);
+    expect(reads).toBe(1);
+  });
   it('rejects caller supplied scope, version, cutoff, or foreign origin', async () => {
     const provider = async (): Promise<never> => { throw Error('PROVIDER_SHOULD_NOT_RUN'); };
     for (const key of ['scopeId', 'calculationVersion', 'asOf']) {

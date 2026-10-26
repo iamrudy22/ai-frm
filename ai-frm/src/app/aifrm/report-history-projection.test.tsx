@@ -4,7 +4,7 @@ import { addMonths, parseYearMonth as ym } from '@/domain/shared/year-month';
 import { summarizeHistory } from './report-chart-view';
 import type { FinancialReport, ReportMetric } from './report-model';
 import type { ExternalHistoryView } from '@/application/report-history/history-view';
-import { withExternalRiskHistory } from './report-history-projection';
+import { summarizeHistorySources, withExternalRiskHistory } from './report-history-projection';
 import { FinancialReportPreview } from './report-preview';
 
 const construction = ym('2026/07'), funding = ym('2026/08');
@@ -24,6 +24,24 @@ const view: ExternalHistoryView = { historySelectionId: 'fixed-id', scopeId: 'de
   ] };
 
 describe('external history projection', () => {
+  it('counts only actually plotted available months by immutable confirmation qualification, with a separate current anchor', () => {
+    const current = { ...report, metrics: report.metrics.map(item => item.id === 'construction' || item.id === 'funding'
+      ? { ...item, points: [{ month: item.id === 'construction' ? construction : funding, kind: 'available' as const, value: 7 }] } : item) };
+    const projected = withExternalRiskHistory(current, view);
+    const qualified = { ...view, confirmedCalculationIds: ['a'] };
+    expect(summarizeHistorySources(projected, qualified, 'current')).toEqual({
+      construction: { confirmed: 1, backfill: 0, unconfirmed: 1, current: 1 },
+      funding: { confirmed: 0, backfill: 1, unconfirmed: 0, current: 1 },
+    });
+    expect(summarizeHistorySources(projected, qualified, 'confirmed')).toEqual({
+      construction: { confirmed: 2, backfill: 0, unconfirmed: 1, current: 0 },
+      funding: { confirmed: 1, backfill: 1, unconfirmed: 0, current: 0 },
+    });
+    expect(summarizeHistorySources(projected, { ...view, confirmedCalculationIds: ['b', 'f-old'] }, 'confirmed')).toEqual({
+      construction: { confirmed: 2, backfill: 1, unconfirmed: 0, current: 0 },
+      funding: { confirmed: 2, backfill: 0, unconfirmed: 0, current: 0 },
+    });
+  });
   it('keeps two distinct 18 month windows, gaps, zero and negative values, and current failure at each anchor', () => {
     const frozen = structuredClone(report);
     const result = withExternalRiskHistory(report, view);

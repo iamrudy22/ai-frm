@@ -4,11 +4,12 @@ import { HISTORY_TEMPLATE_VERSION, type JsonValue, type ReportBasis } from '@/do
 import { parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { arrangeRounds } from '@/app/aifrm/uploaded-rounds';
 import { buildFinancialReport } from '@/app/aifrm/report-model';
-import { withExternalRiskHistory } from '@/app/aifrm/report-history-projection';
-import { selectionView } from './report-history-selection-handlers';
+import { summarizeHistorySources, withExternalRiskHistory } from '@/app/aifrm/report-history-projection';
+import { qualifiedSelectionView, selectionView } from './report-history-selection-handlers';
 import { bodyOf, json, localOrigin } from './report-history-handlers';
 import type { PerceptionResponse } from '@/app/api/construction-perception/dto';
 import type { FundingRiskResponse } from '@/app/api/funding-risk/dto';
+import type { FinancialReport } from '@/app/aifrm/report-model';
 
 type Provider = () => Promise<{ readonly scopeId: string; readonly deps: HistoryDependencies }>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -92,9 +93,16 @@ export async function handleConfirmationGet(request: Request, provider: Provider
     const url = new URL(request.url);
     const confirmationId = url.searchParams.get('confirmationId');
     if (confirmationId) {
-      const document = await openConfirmedReport(deps.repository, scopeId, id(confirmationId));
+      const confirmedId = id(confirmationId);
+      const document = await openConfirmedReport(deps.repository, scopeId, confirmedId);
       if (deps.hash(document.json) !== document.contentHash) throw Error('INVALID_DOCUMENT_HASH');
-      return json({ ok: true, document });
+      const confirmation = await deps.repository.getConfirmation(scopeId, confirmedId);
+      if (!confirmation || confirmation.scopeId !== scopeId) throw Error('CONFIRMATION_NOT_FOUND');
+      const selection = await deps.repository.getHistorySelection(scopeId, confirmation.historySelectionId);
+      if (!selection || selection.scopeId !== scopeId || selection.historySelectionId !== confirmation.historySelectionId) throw Error('INVALID_SELECTION_RECORD');
+      const view = await qualifiedSelectionView(selection, deps.repository, value => deps.decode?.(value));
+      const historySources = summarizeHistorySources(document.json as FinancialReport, view, 'confirmed');
+      return json({ ok: true, document, historySources });
     }
     const summaries = await deps.repository.listConfirmations(scopeId);
     return json({ ok: true, confirmations: [...summaries].sort((a, b) => b.confirmedAt.localeCompare(a.confirmedAt)) });

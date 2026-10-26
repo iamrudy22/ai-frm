@@ -30,13 +30,24 @@ it('reads an old monthly revision from a complete 51-item list and treats failed
 
 it('suspends new backfill steps when a stored document opens, and leaves failed opens alone', async () => {
   const cancel = vi.fn();
-  const request = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ document: candidate.document }) })
+  const historySources = { construction: { confirmed: 1, backfill: 0, unconfirmed: 0, current: 0 }, funding: { confirmed: 0, backfill: 1, unconfirmed: 0, current: 0 } };
+  const request = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ document: candidate.document, historySources }) })
     .mockResolvedValueOnce({ ok: false, json: async () => ({ code: 'CONFIRMATION_NOT_FOUND' }) });
-  expect(await fetchArchivedDocument('id 1', cancel, request as unknown as typeof fetch)).toEqual(candidate.document);
+  expect(await fetchArchivedDocument('id 1', cancel, request as unknown as typeof fetch)).toEqual({ document: candidate.document, historySources });
   expect(request).toHaveBeenCalledWith('/api/report-history/confirmations?confirmationId=id%201', { cache: 'no-store' });
   expect(cancel).toHaveBeenCalledTimes(1);
   await expect(fetchArchivedDocument('missing', cancel, request as unknown as typeof fetch)).rejects.toThrow('CONFIRMATION_NOT_FOUND');
   expect(cancel).toHaveBeenCalledTimes(1);
+});
+
+it('two archived revisions return their own document and source counts without retaining dashboard selection', async () => {
+  const cancel = vi.fn();
+  const first = { document: candidate.document, historySources: { construction: { confirmed: 1, backfill: 0, unconfirmed: 0, current: 0 }, funding: { confirmed: 0, backfill: 0, unconfirmed: 0, current: 0 } } };
+  const second = { document: { ...candidate.document, json: { value: 3 } }, historySources: { construction: { confirmed: 0, backfill: 2, unconfirmed: 0, current: 0 }, funding: { confirmed: 1, backfill: 0, unconfirmed: 0, current: 0 } } };
+  const request = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => first }).mockResolvedValueOnce({ ok: true, json: async () => second });
+  expect(await fetchArchivedDocument('first', cancel, request as unknown as typeof fetch)).toEqual(first);
+  expect(await fetchArchivedDocument('second', cancel, request as unknown as typeof fetch)).toEqual(second);
+  expect(cancel).toHaveBeenCalledTimes(2);
 });
 
 it('reuses the original candidate, revision, and key after an ambiguous storage failure', () => {

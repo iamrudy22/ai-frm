@@ -1,10 +1,32 @@
 import { addMonths, compareYearMonth, parseYearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { HISTORY_CALCULATION_VERSION } from '@/domain/report-history/report-history';
-import type { ExternalHistoryView } from '@/application/report-history/history-view';
+import type { ExternalHistoryView, HistorySourceCounts, HistorySourceSummary } from '@/application/report-history/history-view';
 import { summarizeHistory } from './report-chart-view';
 import type { FinancialReport, ReportMetric, ReportPoint } from './report-model';
 
 export type HistoryProjectionBasis = { readonly construction: YearMonth; readonly funding: YearMonth; readonly scopeId?: string };
+
+/** Summarize the visible chart points; an archived document owns its current anchor. */
+export function summarizeHistorySources(report: FinancialReport, view: ExternalHistoryView,
+  anchorSource: 'current' | 'confirmed'): HistorySourceSummary {
+  const confirmed = new Set(view.confirmedCalculationIds ?? []);
+  const count = (indicator: 'construction' | 'funding'): HistorySourceCounts => {
+    const anchor = view.anchors[indicator];
+    const visible = report.metrics.find(metric => metric.id === indicator)?.points ?? [];
+    const result = { confirmed: 0, backfill: 0, unconfirmed: 0, current: 0 };
+    for (const point of visible) {
+      if (point.kind !== 'available') continue;
+      if (point.month === anchor) { result[anchorSource]++; continue; }
+      const source = view.points.find(item => item.indicator === indicator && item.point.month === point.month);
+      if (!source || source.point.kind !== 'available' || source.point.value !== point.value) continue;
+      if (confirmed.has(source.calculationId)) result.confirmed++;
+      else if (source.origin === 'reconstructed') result.backfill++;
+      else result.unconfirmed++;
+    }
+    return result;
+  };
+  return { construction: count('construction'), funding: count('funding') };
+}
 
 /** The selected, immutable view changes chart history only. The current report point always owns its month. */
 export function withExternalRiskHistory(report: FinancialReport, view: ExternalHistoryView, basis?: HistoryProjectionBasis): FinancialReport {

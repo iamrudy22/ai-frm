@@ -8,6 +8,23 @@ const evidenceToJson = (value: unknown) => value as never;
 const evidenceFromJson = <T,>(value: unknown): T => value as T;
 const historyWorkbookCodec = { structure: () => ({ sheets: [] }), encode: (manifest: StoredWorkbookExport) => new TextEncoder().encode(JSON.stringify(manifest)) };
 
+it('건설 산출불가 비교는 결측 항목·사유의 추가·제거를 보여 주고 원자료만 바뀐 동일 결과는 유지한다', async () => {
+  const { correctionResultDifference } = await import('./report-correction');
+  const unavailable = (missing: { key: string; reason: string }[]) => ({ ok: true, value: { result: { kind: 'unavailable', missing } } });
+  const both = unavailable([{ key: '총수주액', reason: '원천 결측' }, { key: '건축허가', reason: '공표 전' }]);
+  const one = unavailable([{ key: '건축허가', reason: '공표 전' }]);
+  const added = correctionResultDifference(one, both);
+  expect(added).toMatchObject({ changed: true });
+  expect(added.afterDisplay).toContain('"총수주액": "원천 결측"');
+  expect(added.afterDisplay).toContain('"건축허가": "공표 전"');
+  expect(correctionResultDifference(both, one)).toMatchObject({ changed: true });
+  expect(correctionResultDifference({ ok: true, value: { result: { kind: 'ok', index: 42, grade: '정상' } } }, one))
+    .toMatchObject({ changed: true, afterDisplay: expect.stringContaining('"건축허가": "공표 전"') });
+  expect(correctionResultDifference(one, unavailable([{ key: '건축허가', reason: '공표 전' }]))).toMatchObject({ changed: false });
+  expect(correctionResultDifference(unavailable([{ key: 'A: B', reason: 'C' }]), unavailable([{ key: 'A', reason: 'B: C' }])))
+    .toMatchObject({ changed: true });
+});
+
 it('내보내기는 먼저 서버 명세를 영속 저장하고 같은 ID를 다시 다운로드한다', async () => {
   const service = await import('./report-correction');
   expect(typeof service.exportCorrectionWorkbook).toBe('function');

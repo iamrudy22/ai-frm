@@ -19,5 +19,10 @@ export type ExternalHistoryView = {
   readonly anchors: { readonly construction: YearMonth; readonly funding: YearMonth };
   readonly cutoff: string;
   readonly selectedBackfillBatchId: string | null;
+  /** Canonical calculation IDs from the immutable confirmations named by headRevisions. */
+  readonly confirmedCalculationIds?: readonly string[];
   readonly points: readonly ExternalHistoryPoint[];
 };
+
+export type HistorySourceCounts = { readonly confirmed: number; readonly backfill: number; readonly unconfirmed: number; readonly current: number };
+export type HistorySourceSummary = { readonly construction: HistorySourceCounts; readonly funding: HistorySourceCounts };

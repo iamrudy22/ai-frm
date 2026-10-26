@@ -103,6 +103,7 @@ describe('candidate preparation and confirmation', () => {
       asOf: '2026-10-26T03:00:00.000Z', selectedBackfillBatchId: null });
     const reselection = vi.spyOn(f.repository, 'createHistorySelection');
     const recalculation = vi.spyOn(f.repository, 'getCalculation');
+    const storedSelection = vi.spyOn(f.repository, 'getHistorySelection');
     const reopened = await openConfirmedReport(f.repository, f.scopeId, result.confirmationId);
     expect(reopened).toEqual(prepared.document);
     expect(reopened.contentHash).toBe(prepared.document.contentHash);
@@ -113,7 +114,13 @@ describe('candidate preparation and confirmation', () => {
     const opened = await handleConfirmationGet(new Request(`http://localhost/api/report-history/confirmations?confirmationId=${result.confirmationId}`),
       async () => ({ scopeId: f.scopeId, deps: f.deps }));
     expect(opened.status).toBe(200);
-    expect((await opened.json()).document).toEqual(prepared.document);
+    const openedBody = await opened.json();
+    expect(openedBody.document).toEqual(prepared.document);
+    expect(openedBody.historySources).toEqual({
+      construction: { confirmed: 0, backfill: 0, unconfirmed: 0, current: 0 },
+      funding: { confirmed: 0, backfill: 0, unconfirmed: 0, current: 0 },
+    });
+    expect(storedSelection).toHaveBeenCalledWith(f.scopeId, selection.historySelectionId);
     expect(reselection).not.toHaveBeenCalled();
     expect(recalculation).not.toHaveBeenCalled();
   });

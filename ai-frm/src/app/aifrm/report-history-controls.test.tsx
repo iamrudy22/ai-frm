@@ -1,10 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ReportHistoryControls } from './report-history-controls';
+import { ReportHistoryControls, ReportHistorySourceSummary } from './report-history-controls';
 import { historySelectionErrorMessage, type useReportHistory } from './use-report-history';
 
 const noop = () => {};
 describe('history controls outside printable paper', () => {
+  it('shows separate visible source counts for current and archived documents outside the paper', () => {
+    const summary = { construction: { confirmed: 1, backfill: 2, unconfirmed: 0, current: 1 }, funding: { confirmed: 3, backfill: 0, unconfirmed: 1, current: 0 } };
+    const archived = renderToStaticMarkup(<ReportHistorySourceSummary summary={summary} archived />);
+    expect(archived).toContain('저장된 확정 문서');
+    expect(archived).toContain('건설경기');
+    expect(archived).toContain('확정 1개월');
+    expect(archived).toContain('보완 2개월');
+    expect(archived).toContain('조달위험');
+    expect(archived).toContain('미확정 이력 1개월');
+    expect(archived).not.toContain('보완 시작');
+    expect(archived).not.toContain('확정 저장 이력 기준');
+    const current = renderToStaticMarkup(<ReportHistorySourceSummary summary={summary} />);
+    expect(current).toContain('현재 보고서');
+    expect(current).toContain('현재 산출 1개월');
+  });
   it('keeps details collapsed and exposes status, progress and explicit resume actions', () => {
     const history = { batches: [{ batchId: 'batch', startKey: 'key', scopeId: 'default', fromCycle: '2026/08', toCycle: '2026/09', completedCycles: ['2026/08'], pendingCycles: ['2026/09'], status: 'running' }],
       plan: { cycles: ['2026/08', '2026/09'], readiness: [{ reportCycle: '2026/08', missingRounds: ['2026/06'], localReason: '합성 부족' }] },
