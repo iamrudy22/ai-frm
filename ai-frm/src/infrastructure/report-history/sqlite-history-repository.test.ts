@@ -53,7 +53,7 @@ describe('SQLite 불변 월별 이력', () => {
     const r = open();
     const scopeId = await r.defaultScopeId();
     const database = new DatabaseSync(r.databasePath, { readOnly: true });
-    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(3);
+    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
     database.close();
     const draft = { scopeId, exportId: 'export-1', workbookFormatVersion: 1 as const, baseConfirmationId: 'base-1', baseRevision: 1,
       baseDocumentHash: 'hash', basis, inputSnapshotId: 'input-1', inputHash: 'input-hash', calculationIds: { construction: 'c', funding: 'f' },
@@ -805,4 +805,228 @@ it.each((['input', 'evidence'] as const).flatMap(kind => ([128, 129, 'cycle', 'm
       await expect(validate()).rejects.toThrow('INVALID_LINEAGE');
       expect(f.counts()).toEqual(before);
     }
+});
+
+async function webFixture() {
+  const r = open(), f = await fixture(r);
+  const confirmed = await r.commitConfirmation('scope-A', { candidateId: f.candidateId, expectedRevision: 0, idempotencyKey: 'web-base' });
+  if (confirmed.kind !== 'confirmed') throw Error('fixture');
+  const neutral: import('../../application/report-history/ports').CorrectionBasis = {
+    recordKind: 'correction-basis', payloadVersion: 2, basisId: 'web-basis', scopeId: 'scope-A', baseConfirmationId: confirmed.confirmationId,
+    baseRevision: 1, baseDocumentHash: f.candidate.document.contentHash, basis, inputSnapshotId: f.inputSnapshotId, inputHash: f.candidate.inputHash,
+    calculationIds: f.candidate.calculationIds, historySelectionId: f.candidate.historySelectionId, calculationVersion: version, templateVersion: 'report@e3a8f9e', createdAt: now,
+    rows: [{ rowId: 'economic', category: 'economic', label: '합성 지수', sourceRound: month, period: basis.constructionBaseMonth, unit: '지수', originalText: '0', originalState: 'available', allowedActions: ['set','set-missing'], sourceRecordId: f.captureId, fieldPath: 'value', originalValue: 0, sourceIdentity: { kind:'ecos', indicator:'synthetic', statistic:'synthetic', items:[] } }],
+  };
+  await r.putCorrectionBasis(neutral);
+  return { r, f, neutral, confirmed };
+}
+const rawContent = { edits: [{ rowId:'economic', action:'set' as const, rawValue:'-' }], reason:'', evidenceNote:'' };
+describe('schema4 correction work persistence', () => {
+  it('schema4 adds exactly three tables', () => {
+    const r = open(), db = new DatabaseSync(r.databasePath, {readOnly:true});
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(21); db.close();
+  });
+  it('invalid_draft_autosaves_without_derivation_or_head_change', async () => {
+    const { r, neutral } = await webFixture();
+    const draft = await r.createCorrectionDraft('scope-A', { basisId:neutral.basisId, idempotencyKey:'create', content:rawContent });
+    expect(draft).toMatchObject({ draftRevision:1, content:rawContent, currentPreviewId:null });
+    expect(await r.currentHeads('scope-A',[month])).toMatchObject([{revision:1}]);
+    expect(await r.getCorrectionDraft('other',draft!.draftId)).toBeNull();
+    const db = new DatabaseSync(r.databasePath); expect(db.prepare('SELECT count(*) AS n FROM correction_preview').get()?.n).toBe(0); db.close();
+  });
+  it('draft_revision_cas_rejects_out_of_order_and_two_tab_writes and original ACK never reverts draft', async () => {
+    const {r,neutral}=await webFixture(), other=open(r.databasePath);
+    const d=(await r.createCorrectionDraft('scope-A',{basisId:neutral.basisId,idempotencyKey:'create',content:rawContent}))!;
+    const cmd={draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'save',content:{...rawContent,reason:'first'}};
+    const ack=await r.saveCorrectionDraft('scope-A',cmd);
+    await expect(other.saveCorrectionDraft('scope-A',{...cmd,idempotencyKey:'tab'})).rejects.toMatchObject({code:'STALE_DRAFT'});
+    await r.saveCorrectionDraft('scope-A',{...cmd,expectedDraftRevision:2,idempotencyKey:'new',content:{...rawContent,reason:'latest'}});
+    expect(await other.saveCorrectionDraft('scope-A',cmd)).toEqual(ack);
+    expect((await r.getCorrectionDraft('scope-A',d.draftId))?.content.reason).toBe('latest');
+    await expect(r.saveCorrectionDraft('scope-A',{...cmd,content:rawContent})).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+  });
+  it('closed_legacy_preview_cannot_be_newly_confirmed and completed_detail_read_is_write_free',async()=>{
+    const f=await correctionFixture(), p=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string};
+    const ref={kind:'legacy-preview' as const,id:p.previewId};
+    const cmd={ref,expectedDraftRevision:null,idempotencyKey:'close'};
+    const closed=await f.r.closeCorrectionWork(f.scopeId,cmd);
+    expect(closed.state).toBe('closed'); expect(await f.r.closeCorrectionWork(f.scopeId,cmd)).toEqual(closed);
+    expect(await f.r.commitCorrection(f.scopeId,{...p,expectedBaseRevision:1,idempotencyKey:'confirm-closed',reason:'합성 정정'})).toMatchObject({kind:'conflict',reason:'WORK_CLOSED'});
+    const ro=open(f.r.databasePath,{readOnly:true});
+    expect((await ro.getCorrectionReviewDetail(f.scopeId,ref))?.summary.state).toBe('closed');
+  });
+});
+
+const validContent = { edits:[{rowId:'economic',action:'set' as const,rawValue:'7'}],reason:'합성 정정',evidenceNote:'합성 근거' };
+async function createWebDraft(f:Awaited<ReturnType<typeof webFixture>>,key=crypto.randomUUID()) { return (await f.r.createCorrectionDraft('scope-A',{basisId:f.neutral.basisId,idempotencyKey:key,content:validContent}))!; }
+async function webStage(f:Awaited<ReturnType<typeof webFixture>>,d:import('../../application/report-history/ports').StoredCorrectionDraft) {
+  const {normalizeCorrectionEdits}=await import('../../domain/report-history/correction');
+  const v=normalizeCorrectionEdits(f.neutral,{basisId:f.neutral.basisId,reason:d.content.reason,edits:d.content.edits.map(e=>({...e,evidenceNote:d.content.evidenceNote}))});if(v.kind!=='valid') throw Error('fixture');
+  const id=crypto.randomUUID(),heads=await f.r.currentHeads(f.neutral.scopeId,[month]);
+  const submission={recordKind:'correction-submission' as const,payloadVersion:2 as const,scopeId:f.neutral.scopeId,submissionId:'submission-'+id,basisId:f.neutral.basisId,draftId:d.draftId,draftRevision:d.draftRevision,submissionHash:hashHistoryValue({d,patch:v.patch}),patchHash:hashHistoryValue(v.patch),patch:v.patch,reason:v.reason,evidenceNote:d.content.evidenceNote.trim(),baseConfirmationId:f.confirmed.confirmationId,baseRevision:1,dependencyHeads:heads,createdAt:now};
+  const preview={recordKind:'correction-preview' as const,payloadVersion:2 as const,scopeId:f.neutral.scopeId,previewId:'preview-'+id,previewHash:hashHistoryValue({submission,candidateId:id}),submissionId:submission.submissionId,basisId:f.neutral.basisId,draftId:d.draftId,draftRevision:d.draftRevision,baseConfirmationId:f.confirmed.confirmationId,baseRevision:1,inputSnapshotId:f.f.inputSnapshotId,candidateId:id,dependencyHeads:heads,rawDiff:[],resultDiff:[],affectedReports:[],createdAt:now};
+  submission.submissionHash=hashHistoryValue({basisId:submission.basisId,draftId:d.draftId,draftRevision:d.draftRevision,patch:submission.patch,reason:submission.reason,evidenceNote:submission.evidenceNote,baseConfirmationId:submission.baseConfirmationId,baseRevision:submission.baseRevision,dependencyHeads:heads,inputSnapshotId:f.f.inputSnapshotId,calculationIds:f.f.candidate.calculationIds,historySelectionId:f.f.candidate.historySelectionId,documentHash:f.f.candidate.document.contentHash});
+  const {previewHash:ignored,...previewBody}=preview;void ignored;preview.previewHash=hashHistoryValue({...previewBody,submissionHash:submission.submissionHash});
+  const stage={scopeId:f.neutral.scopeId,expectedBase:heads[0],dependencyHeads:heads,draft:{draftId:d.draftId,draftRevision:d.draftRevision},evidence:[],inputs:[],calculations:[],submission,preview,candidate:{...f.f.candidate,candidateId:id,correctionPreviewId:preview.previewId}};
+  return {stage,preview:await f.r.stageCorrection(stage)};
+}
+function confirmWeb(p:import('../../application/report-history/ports').StoredCorrectionPreview,key=crypto.randomUUID()) {return {previewId:p.previewId,previewHash:p.previewHash,expectedBaseRevision:p.baseRevision,idempotencyKey:key,reason:validContent.reason};}
+describe('schema4 complete lifecycle contracts',()=>{
+  it('editing_invalidates_current_preview_without_mutating_old_preview; confirm_rejects_outdated_draft_revision; same_patch_after_edit_requires_current_draft_preview',async()=>{
+    const f=await webFixture(),d=await createWebDraft(f),{stage,preview}=await webStage(f,d);
+    const edited=await f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'edit',content:{...validContent,edits:[{...validContent.edits[0],rawValue:'8'}]}});
+    expect(edited.currentPreviewId).toBeNull();expect(await f.r.getCorrectionPreview('scope-A',preview.previewId)).toEqual(preview);
+    expect(await f.r.commitCorrection('scope-A',confirmWeb(preview))).toMatchObject({kind:'conflict',reason:'STALE_DRAFT'});
+    await expect(f.r.stageCorrection(stage)).rejects.toMatchObject({code:'STALE_DRAFT'});
+    const back=await f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:2,idempotencyKey:'back',content:validContent});
+    const next=await webStage(f,back);expect(next.preview.previewId).not.toBe(preview.previewId);expect(await f.r.stageCorrection(next.stage)).toEqual(next.preview);
+    expect(await f.r.commitCorrection('scope-A',confirmWeb(next.preview))).toMatchObject({kind:'confirmed',revision:2});
+    const db=new DatabaseSync(f.r.databasePath,{readOnly:true});const bodies=db.prepare('SELECT body FROM workbook_import').all().map(row=>decodeEvidence<Record<string,unknown>>(String(row.body)));
+    expect(bodies).toHaveLength(2);expect(bodies.every(b=>b.recordKind==='correction-submission'&&!('fileHash' in b))).toBe(true);db.close();
+  });
+  it('close_and_confirm_are_atomic_and_idempotent; successful_confirmation_retry_precedes_later_resolution_checks',async()=>{
+    const f=await webFixture(),d=await createWebDraft(f),{preview}=await webStage(f,d),other=open(f.r.databasePath);
+    const close={ref:{kind:'draft' as const,id:d.draftId},expectedDraftRevision:1,idempotencyKey:'close'};
+    const closed=await other.closeCorrectionWork('scope-A',close);expect(await f.r.closeCorrectionWork('scope-A',close)).toEqual(closed);
+    expect(await f.r.commitCorrection('scope-A',confirmWeb(preview))).toMatchObject({kind:'conflict',reason:'WORK_CLOSED'});
+    const d2=await createWebDraft(f),p2=(await webStage(f,d2)).preview,cmd=confirmWeb(p2,'success');const success=await f.r.commitCorrection('scope-A',cmd);expect(success.kind).toBe('confirmed');
+    await expect(other.closeCorrectionWork('scope-A',{...close,ref:{kind:'draft',id:d2.draftId},idempotencyKey:'close-done'})).rejects.toMatchObject({code:'WORK_CLOSED'});
+    const fresh=await fixture(f.r,'scope-A','later');await f.r.commitConfirmation('scope-A',{candidateId:fresh.candidateId,expectedRevision:2,idempotencyKey:'later',correctionReason:'후속'});
+    expect(await other.commitCorrection('scope-A',cmd)).toMatchObject({...success,kind:'already-confirmed'});expect(await f.r.currentHeads('scope-A',[month])).toMatchObject([{revision:3}]);
+  });
+  it('old_preview_reflection_cannot_close_edited_draft; already_applied_resolution_is_stable_after_later_head_changes',async()=>{
+    const f=await webFixture(),a=await createWebDraft(f),b=await createWebDraft(f),c=await createWebDraft(f);const pa=(await webStage(f,a)).preview;await webStage(f,b);await webStage(f,c);
+    await f.r.saveCorrectionDraft('scope-A',{draftId:c.draftId,expectedDraftRevision:1,idempotencyKey:'edited',content:{...validContent,edits:[{...validContent.edits[0],rawValue:'9'}]}});
+    expect((await f.r.commitCorrection('scope-A',confirmWeb(pa))).kind).toBe('confirmed');
+    expect((await f.r.getCorrectionReviewDetail('scope-A',{kind:'draft',id:b.draftId}))?.summary.state).toBe('reflected');expect(await f.r.getCorrectionResolution('scope-A',{kind:'draft',id:c.draftId})).toBeNull();
+    const fresh=await fixture(f.r,'scope-A','after');await f.r.commitConfirmation('scope-A',{candidateId:fresh.candidateId,expectedRevision:2,idempotencyKey:'after',correctionReason:'후속'});
+    expect((await f.r.getCorrectionReviewDetail('scope-A',{kind:'draft',id:b.draftId}))?.summary.state).toBe('reflected');expect((await f.r.getCorrectionReviewDetail('scope-A',{kind:'draft',id:a.draftId}))?.summary.state).toBe('confirmed');
+  });
+  it('work_list_spans_all_revisions_and_paginates_without_loss; month_counts_include_every_page_and_missing_months_are_not_filled',async()=>{
+    const f=await webFixture();for(let i=0;i<27;i++)await createWebDraft(f,'draft-'+i);
+    let page=await f.r.listCorrectionWork('scope-A',{pendingOnly:true,limit:20});const items=[...page.items];expect(items).toHaveLength(20);const late=await createWebDraft(f,'late');
+    while(page.nextCursor){page=await f.r.listCorrectionWork('scope-A',{pendingOnly:true,limit:20,cursor:page.nextCursor});items.push(...page.items);}
+    expect(new Set(items.map(i=>i.ref.id)).size).toBe(27);expect(items.some(i=>i.ref.id===late.draftId)).toBe(false);
+    const months=await f.r.listCorrectionMonths('scope-A',{pendingOnly:false,limit:12});expect(months.items).toMatchObject([{reportCycle:month,reportTitleMonth:basis.reportTitleMonth,pendingCount:28,draftCount:28}]);expect(months.items).toHaveLength(1);
+  });
+  it('unknown_payload_is_rejected',async()=>{
+    const f=await webFixture(),db=new DatabaseSync(f.r.databasePath);db.exec('DROP TRIGGER immutable_workbook_export_update');db.prepare('UPDATE workbook_export SET body=? WHERE id=?').run(encodeEvidence({...f.neutral,recordKind:'future-basis',payloadVersion:3}),f.neutral.basisId);db.close();
+    await expect(f.r.getCorrectionBasis('scope-A',f.neutral.basisId)).rejects.toMatchObject({code:'UNSUPPORTED_VERSION'});
+  });
+});
+
+function ledgerSnapshot(path:string) {
+  const db=new DatabaseSync(path,{readOnly:true}),tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('correction_draft','correction_work_command','correction_resolution') ORDER BY name").all().map(r=>String(r.name));
+  const rows=Object.fromEntries(tables.map(t=>[t,db.prepare(`SELECT * FROM ${t}${t==='schema_migration'?' WHERE version<=3':''} ORDER BY rowid`).all()]));
+  const triggers=db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name NOT IN ('correction_draft','correction_work_command','correction_resolution') ORDER BY name").all();db.close();return {rows,triggers};
+}
+function schema3Only(path:string) {
+  const db=new DatabaseSync(path);db.exec('DROP TABLE correction_resolution; DROP TABLE correction_work_command; DROP TABLE correction_draft; DELETE FROM schema_migration WHERE version=4; PRAGMA user_version=3');db.close();
+}
+describe('schema4 migration and adversarial storage',()=>{
+  it('schema3_upgrade_preserves_every_existing_body_hash_and_head; legacy_preview_retry_survives_upgrade',async()=>{
+    const f=await correctionFixture(),p=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string;previewHash:string},cmd={...p,expectedBaseRevision:1,idempotencyKey:'before-upgrade',reason:'합성 정정'};
+    const confirmed=await f.r.commitCorrection(f.scopeId,cmd);f.r.close();schema3Only(f.r.databasePath);
+    const before=ledgerSnapshot(f.r.databasePath);const legacyRo=open(f.r.databasePath,{readOnly:true});expect((await legacyRo.getCorrectionReviewDetail(f.scopeId,{kind:'legacy-preview',id:p.previewId}))?.summary.state).toBe('confirmed');legacyRo.close();expect(ledgerSnapshot(f.r.databasePath)).toEqual(before);expect(Object.keys(before.rows)).toHaveLength(18);expect(before.triggers).toHaveLength(26);
+    const r=open(f.r.databasePath);expect(ledgerSnapshot(r.databasePath)).toEqual(before);expect(await r.commitCorrection(f.scopeId,cmd)).toEqual({...confirmed,kind:'already-confirmed'});
+    const db=new DatabaseSync(r.databasePath,{readOnly:true});expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);expect(db.prepare('PRAGMA integrity_check').get()?.integrity_check).toBe('ok');db.close();
+    const backup=await r.backup(),restored=open(backup,{readOnly:true});expect(await restored.getCorrectionPreview(f.scopeId,p.previewId)).toEqual(await r.getCorrectionPreview(f.scopeId,p.previewId));
+  });
+  it('migration failure rolls DDL/version back and retry succeeds; old executable rejects schema4',async()=>{
+    const r=open();r.close();schema3Only(r.databasePath);const db=new DatabaseSync(r.databasePath);
+    db.exec("CREATE TRIGGER stop_v4 BEFORE INSERT ON schema_migration WHEN NEW.version=4 BEGIN SELECT RAISE(ABORT,'SYNTHETIC_MIGRATION_FAIL');END;");
+    expect(()=>open(r.databasePath)).toThrow('SYNTHETIC_MIGRATION_FAIL');expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(3);expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'correction_draft%'").all()).toEqual([]);
+    db.exec('DROP TRIGGER stop_v4');db.close();open(r.databasePath);
+    const old=spawnSync(process.execPath,['--input-type=module','-e',"import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1],{readOnly:true});if(db.prepare('PRAGMA user_version').get().user_version>3){console.error('UNSUPPORTED_SCHEMA_VERSION');process.exitCode=1;}db.close();",r.databasePath],{encoding:'utf8'});expect(old.status).toBe(1);expect(old.stderr).toContain('UNSUPPORTED_SCHEMA_VERSION');
+  });
+  it('completed_detail_read_is_write_free and legacy statement sourceRound is canonical YYYY/MM',async()=>{
+    const f=await correctionFixture(),p=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string},ref={kind:'legacy-preview' as const,id:p.previewId};await f.r.closeCorrectionWork(f.scopeId,{ref,expectedDraftRevision:null,idempotencyKey:'close-ro'});
+    const before=ledgerSnapshot(f.r.databasePath),raw=new DatabaseSync(f.r.databasePath),change=raw.prepare('PRAGMA data_version').get();const ro=open(f.r.databasePath,{readOnly:true});
+    const detail=await ro.getCorrectionReviewDetail(f.scopeId,ref);expect(detail?.rows[0].sourceRound).toBe('2026/06');expect(detail?.summary.state).toBe('closed');await ro.listCorrectionWork(f.scopeId,{pendingOnly:false,limit:20});await ro.listCorrectionMonths(f.scopeId,{pendingOnly:false,limit:12});
+    expect(raw.prepare('PRAGMA data_version').get()).toEqual(change);expect(ledgerSnapshot(f.r.databasePath)).toEqual(before);raw.close();
+  });
+  it('ignored draft UPDATE cannot acknowledge a save or leave a staged preview behind',async()=>{
+    const f=await webFixture(),d=await createWebDraft(f),db=new DatabaseSync(f.r.databasePath);db.exec('CREATE TRIGGER ignore_draft BEFORE UPDATE ON correction_draft BEGIN SELECT RAISE(IGNORE);END;');
+    await expect(f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'ignored',content:rawContent})).rejects.toMatchObject({code:'STALE_DRAFT'});
+    await expect(webStage(f,d)).rejects.toMatchObject({code:'STALE_DRAFT'});expect(await f.r.getCorrectionWorkCommand('scope-A','ignored')).toBeNull();expect(db.prepare('SELECT count(*) AS n FROM correction_preview').get()?.n).toBe(0);db.exec('DROP TRIGGER ignore_draft');db.close();
+  });
+  it('copy and reapply use independent commands with head CAS and preserve original closed work',async()=>{
+    const f=await webFixture(),d=await createWebDraft(f),ref={kind:'draft' as const,id:d.draftId};await f.r.closeCorrectionWork('scope-A',{ref,expectedDraftRevision:1,idempotencyKey:'closed'});
+    const head=(await f.r.currentHeads('scope-A',[month]))[0],copy={...d,draftId:'copy',requiresReapply:true,copiedFrom:ref,originalBasisId:d.basisId,proposedContent:d.content,content:{edits:[],reason:'',evidenceNote:''}};
+    const mutation={draft:copy,expectedDraftRevision:null,expectedHead:head,command:{action:'copy' as const,idempotencyKey:'copy',requestHash:'copy-hash'}};
+    expect(await f.r.writeCorrectionDraft(mutation)).toEqual(copy);expect(await f.r.writeCorrectionDraft(mutation)).toEqual(copy);await expect(webStage(f,{...copy,content:d.content})).rejects.toMatchObject({code:'INVALID_DRAFT'});
+    const noChange={scopeId:'scope-A',action:'reapply' as const,idempotencyKey:'nochange-reapply',requestHash:'nochange-reapply',expectedHead:head,ref:{kind:'draft' as const,id:copy.draftId},expectedDraftRevision:1};
+    expect(await f.r.completeCorrectionWorkCommand(noChange)).toEqual({kind:'no-change'});
+    const reapply={...copy,draftRevision:2,requiresReapply:false,content:d.content};await expect(f.r.writeCorrectionDraft({draft:reapply,expectedDraftRevision:1,expectedHead:{...head,revision:0},command:{action:'reapply',idempotencyKey:'reapply',requestHash:'reapply-hash'}})).rejects.toMatchObject({code:'STALE_BASE'});
+    const applied=await f.r.writeCorrectionDraft({draft:reapply,expectedDraftRevision:1,expectedHead:head,command:{action:'reapply',idempotencyKey:'reapply',requestHash:'reapply-hash'}});expect(applied).toMatchObject({requiresReapply:false});expect(await f.r.completeCorrectionWorkCommand(noChange)).toEqual({kind:'no-change'});expect((await f.r.getCorrectionReviewDetail('scope-A',ref))?.summary.state).toBe('closed');
+  });
+});
+
+it('neutral payload identifiers cover draft version patch reason heads calculation and document refs',async()=>{
+  const f=await webFixture(),d=await createWebDraft(f),first=await webStage(f,d);
+  const updated=await f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'hash-edit',content:validContent});
+  const stage={...first.stage,draft:{draftId:d.draftId,draftRevision:updated.draftRevision},submission:{...first.stage.submission,draftRevision:updated.draftRevision},preview:{...first.stage.preview,draftRevision:updated.draftRevision}};
+  await expect(f.r.stageCorrection(stage)).rejects.toMatchObject({code:'INVALID_DRAFT'});
+});
+it('month cursor traverses sparse report title months with complete counts and every confirmation revision',async()=>{
+  const r=open();
+  for(let i=0;i<24;i++){
+    const cycle=yearMonth(2025+Math.floor(i/6),(i%6)*2+1),b={reportCycle:cycle,reportTitleMonth:(await import('../../domain/shared/year-month')).addMonths(cycle,-1),constructionBaseMonth:(await import('../../domain/shared/year-month')).addMonths(cycle,-2),fundingJudgedMonth:cycle,fundingObservedMonth:(await import('../../domain/shared/year-month')).addMonths(cycle,-1),gapMonth:cycle};
+    const f=await fixture(r,'scope-A','sparse-'+i,b);await r.commitConfirmation('scope-A',{candidateId:f.candidateId,expectedRevision:0,idempotencyKey:'sparse-'+i});
+  }
+  const page=await r.listCorrectionMonths('scope-A',{pendingOnly:false,limit:12});expect(page.items).toHaveLength(12);expect(page.nextCursor).not.toBeNull();
+  const next=await r.listCorrectionMonths('scope-A',{pendingOnly:false,limit:12,cursor:page.nextCursor!});expect(next.items).toHaveLength(12);expect(new Set([...page.items,...next.items].map(m=>m.reportTitleMonth)).size).toBe(24);
+  const ranged=await r.listCorrectionMonths('scope-A',{pendingOnly:false,limit:12,fromCycle:'2027/01',toCycle:'2027/12'});expect(ranged.items).toHaveLength(6);expect(ranged.items.every(m=>m.reportTitleMonth<m.reportCycle)).toBe(true);
+});
+
+it('no-change copy receipt precedes later heads and cannot be reused for a different request',async()=>{
+  const f=await webFixture(),d=await createWebDraft(f),ref={kind:'draft' as const,id:d.draftId};await f.r.closeCorrectionWork('scope-A',{ref,expectedDraftRevision:1,idempotencyKey:'close-nochange'});
+  const expectedHead=(await f.r.currentHeads('scope-A',[month]))[0],cmd={scopeId:'scope-A',action:'copy' as const,idempotencyKey:'nochange',requestHash:'request-a',expectedHead,ref,expectedDraftRevision:null};
+  const before=ledgerSnapshot(f.r.databasePath);expect(await f.r.completeCorrectionWorkCommand(cmd)).toEqual({kind:'no-change'});expect(ledgerSnapshot(f.r.databasePath)).toEqual(before);
+  const later=await fixture(f.r,'scope-A','new-head');await f.r.commitConfirmation('scope-A',{candidateId:later.candidateId,expectedRevision:1,idempotencyKey:'new-head',correctionReason:'합성'});
+  expect(await f.r.completeCorrectionWorkCommand(cmd)).toEqual({kind:'no-change'});await expect(f.r.completeCorrectionWorkCommand({...cmd,requestHash:'request-b'})).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+  await expect(f.r.completeCorrectionWorkCommand({...cmd,idempotencyKey:'fresh-request'})).rejects.toMatchObject({code:'STALE_BASE'});expect((await f.r.getCorrectionDraft('scope-A',d.draftId))?.draftRevision).toBe(1);
+});
+it('reflection requires every semantic row and keeps partial/mismatched/unit/ambiguous proposals open',async()=>{
+  const f=await webFixture();
+  const row2={...f.neutral.rows[0],rowId:'second',label:'두번째',period:yearMonth(2026,6)};
+  const multi={...f.neutral,basisId:'multi',rows:[...f.neutral.rows,row2]};await f.r.putCorrectionBasis(multi);
+  const multiDraft=(await f.r.createCorrectionDraft('scope-A',{basisId:'multi',idempotencyKey:'multi',content:{...validContent,edits:[...validContent.edits,{rowId:'second',action:'set',rawValue:'2'}]}}))!;
+  await webStage({...f,neutral:multi},multiDraft);
+  const unitBasis={...f.neutral,basisId:'unit',rows:f.neutral.rows.map(r=>({...r,unit:'원'}))};await f.r.putCorrectionBasis(unitBasis);const unitDraft=await createWebDraft({...f,neutral:unitBasis},'unit');await webStage({...f,neutral:unitBasis},unitDraft);
+  const ambiguous={...f.neutral,basisId:'ambiguous',rows:[...f.neutral.rows,{...f.neutral.rows[0],rowId:'alias'}]};await f.r.putCorrectionBasis(ambiguous);const ambiguousDraft=await createWebDraft({...f,neutral:ambiguous},'ambiguous');await webStage({...f,neutral:ambiguous},ambiguousDraft);
+  const winner=await createWebDraft(f,'winner'),p=(await webStage(f,winner)).preview;await f.r.commitCorrection('scope-A',confirmWeb(p));
+  for(const d of [multiDraft,unitDraft,ambiguousDraft]) expect(await f.r.getCorrectionResolution('scope-A',{kind:'draft',id:d.draftId})).toBeNull();
+});
+it('legacy and neutral web basis share canonical meaning; both resolve only complete matching proposals',async()=>{
+  const f=await correctionFixture(),legacy=await f.validate!(f.deps,f.scopeId,await f.edit('cash')) as {previewId:string},p=await f.r.getCorrectionPreview(f.scopeId,legacy.previewId);
+  const original=(await f.r.getCorrectionBasis(f.scopeId,f.manifest.exportId))!;
+  expect(original.rows.find(r=>r.category==='cashflow')?.sourceRound).toBe('2026/06');
+  const neutral={...original,basisId:'web-again'};await f.r.putCorrectionBasis(neutral);
+  const patch=(await f.r.getCorrectionSubmission(f.scopeId,'importId' in p! ? p.importId : p!.submissionId))!.patch;
+  const content={edits:patch.map(e=>({rowId:e.rowId,action:e.action,rawValue:e.value===null?null:String(e.value)})),reason:'합성 정정',evidenceNote:''};
+  const d=(await f.r.createCorrectionDraft(f.scopeId,{basisId:neutral.basisId,idempotencyKey:'neutral-draft',content}))!;
+  const baseCandidate=(await f.r.getCandidate(f.scopeId,f.candidate.candidateId))!;
+  const wf={r:f.r,neutral,confirmed:f.confirmed,f:{candidate:baseCandidate,inputSnapshotId:baseCandidate.inputSnapshotId}} as unknown as Awaited<ReturnType<typeof webFixture>>;
+  await webStage(wf,d);
+  await f.r.commitCorrection(f.scopeId,{previewId:p!.previewId,previewHash:p!.previewHash,expectedBaseRevision:1,idempotencyKey:'legacy-winner',reason:'합성 정정'});
+  expect(await f.r.getCorrectionResolution(f.scopeId,{kind:'draft',id:d.draftId})).toMatchObject({kind:'reflected'});expect((await f.r.getCorrectionDraft(f.scopeId,d.draftId))?.content).toEqual(content);
+});
+it('draft save and close receipt failures rollback body and resolution; raw boundaries are enforced',async()=>{
+  const f=await webFixture(),d=await createWebDraft(f),db=new DatabaseSync(f.r.databasePath);
+  await expect(f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'bad-row',content:{...rawContent,edits:[{rowId:'other-scope-row',action:'set',rawValue:'-'}]}})).rejects.toMatchObject({code:'INVALID_DRAFT'});
+  db.exec("CREATE TRIGGER fail_work_command BEFORE INSERT ON correction_work_command BEGIN SELECT RAISE(ABORT,'SYNTHETIC_DISK_FAILURE');END;");
+  await expect(f.r.saveCorrectionDraft('scope-A',{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:'fail-save',content:rawContent})).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+  await expect(f.r.closeCorrectionWork('scope-A',{ref:{kind:'draft',id:d.draftId},expectedDraftRevision:1,idempotencyKey:'fail-close'})).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+  expect(await f.r.getCorrectionDraft('scope-A',d.draftId)).toEqual(d);expect(await f.r.getCorrectionResolution('scope-A',{kind:'draft',id:d.draftId})).toBeNull();db.exec('DROP TRIGGER fail_work_command');db.close();
+});
+
+it('work list retains drafts from every revision and month head counts all of them',async()=>{
+  const f=await webFixture(),old=await createWebDraft(f,'old-revision'),fresh=await fixture(f.r,'scope-A','revision-two');
+  const confirmed=await f.r.commitConfirmation('scope-A',{candidateId:fresh.candidateId,expectedRevision:1,idempotencyKey:'revision-two',correctionReason:'합성'});if(confirmed.kind!=='confirmed')throw Error('fixture');
+  const nextBasis={...f.neutral,basisId:'basis-revision-two',baseConfirmationId:confirmed.confirmationId,baseRevision:2,baseDocumentHash:fresh.candidate.document.contentHash,inputSnapshotId:fresh.inputSnapshotId,inputHash:fresh.candidate.inputHash,calculationIds:fresh.candidate.calculationIds,historySelectionId:fresh.candidate.historySelectionId};await f.r.putCorrectionBasis(nextBasis);
+  const current=(await f.r.createCorrectionDraft('scope-A',{basisId:nextBasis.basisId,idempotencyKey:'current-revision',content:validContent}))!;
+  const list=await f.r.listCorrectionWork('scope-A',{pendingOnly:true,limit:20});expect(list.items.map(w=>w.ref.id).sort()).toEqual([old.draftId,current.draftId].sort());expect(list.items.map(w=>w.baseRevision).sort()).toEqual([1,2]);
+  expect((await f.r.listCorrectionMonths('scope-A',{pendingOnly:true,limit:12})).items).toMatchObject([{latestRevision:2,pendingCount:2,draftCount:2}]);
 });

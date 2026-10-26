@@ -12,7 +12,7 @@
 
 **상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`)·Task8(`e4aa811`) 완료. Task9 기능·통합 검증·운영 문서·최종 독립 재검토 Approved까지 완료했으며 최종 커밋에 이 기록을 포함한다. 보완 후 전체 lint·webpack build·896개 테스트(병렬4)·합성 전체 원장 백업복원·재시작·문서별 출처 전환 QA가 통과했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 인수는 미완료다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 보호51파일 SHA-256은 모두 그대로이며 실제 업무 파일 대신 합성 자료로 검증했다.
 
-**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1의 구현·TDD·독립 검토·QA를 완료했으며 W2부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
+**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1·W2의 구현·TDD·독립 검토·QA를 완료했으며 W3부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
 
 ## Global Constraints
 
@@ -648,14 +648,14 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** ports, SQLite repository(.test). **Consumes:** W1 계약·기존 schema3 원장. **Produces:** §7.2 저장 구조와 CAS/멱등·query/detail·원자 stage/commit/resolve 저장소 port.
 
-- [ ] **RED 작성:** `schema3_upgrade_preserves_every_existing_body_hash_and_head`, `legacy_preview_retry_survives_upgrade`, `unknown_payload_is_rejected`에서 구형 전체 body/hash/ID/시각/명령 결과 보존을 고정한다.
-- [ ] **RED 작성:** `invalid_draft_autosaves_without_derivation_or_head_change`, `draft_revision_cas_rejects_out_of_order_and_two_tab_writes`, `editing_invalidates_current_preview_without_mutating_old_preview`, `confirm_rejects_outdated_draft_revision`, `same_patch_after_edit_requires_current_draft_preview`를 검사한다.
-- [ ] **RED 작성:** `close_and_confirm_are_atomic_and_idempotent`, `already_applied_resolution_is_stable_after_later_head_changes`, `work_list_spans_all_revisions_and_paginates_without_loss`, `month_counts_include_every_page_and_missing_months_are_not_filled`, `completed_detail_read_is_write_free`에서 경쟁/페이지 경계/월별 전체 수/읽기 불변을 검사한다.
-- [ ] **RED 작성:** `old_preview_reflection_cannot_close_edited_draft`, `closed_legacy_preview_cannot_be_newly_confirmed`, `successful_confirmation_retry_precedes_later_resolution_checks`로 최신 초안 소실·구형 종료 우회·멱등 퇴행을 막는다.
-- [ ] **RED 실행:** `npx vitest run src/infrastructure/report-history/sqlite-history-repository.test.ts --maxWorkers=4`에서 새 저장소 계약 실패를 확인한다.
-- [ ] **GREEN:** schema4와 부가3테이블·중립 payload mapping을 원자 추가하고 멱등 receipt·draft CAS·resolution과 commit 원자성을 구현한다. 기존18테이블 행/트리거를 재구성하지 않는다.
-- [ ] **QA/검토:** focused→타입검사, 임시 합성 DB의 migration 실패 rollback/재실행·구버전 거부·FK/integrity·두 연결 경쟁·재시작 복구와 읽기 전용 재열람 쓰기0을 확인한다.
-- [ ] **커밋/컨텍스트:** `feat(history): persist correction drafts and review resolutions`. 실제 업무 DB는 열어 쓰지 않고 합성 QA 증거와 W3를 기록한다.
+- [x] **RED 작성:** `schema3_upgrade_preserves_every_existing_body_hash_and_head`, `legacy_preview_retry_survives_upgrade`, `unknown_payload_is_rejected`에서 구형 전체 body/hash/ID/시각/명령 결과 보존을 고정한다.
+- [x] **RED 작성:** `invalid_draft_autosaves_without_derivation_or_head_change`, `draft_revision_cas_rejects_out_of_order_and_two_tab_writes`, `editing_invalidates_current_preview_without_mutating_old_preview`, `confirm_rejects_outdated_draft_revision`, `same_patch_after_edit_requires_current_draft_preview`를 검사한다.
+- [x] **RED 작성:** `close_and_confirm_are_atomic_and_idempotent`, `already_applied_resolution_is_stable_after_later_head_changes`, `work_list_spans_all_revisions_and_paginates_without_loss`, `month_counts_include_every_page_and_missing_months_are_not_filled`, `completed_detail_read_is_write_free`에서 경쟁/페이지 경계/월별 전체 수/읽기 불변을 검사한다.
+- [x] **RED 작성:** `old_preview_reflection_cannot_close_edited_draft`, `closed_legacy_preview_cannot_be_newly_confirmed`, `successful_confirmation_retry_precedes_later_resolution_checks`로 최신 초안 소실·구형 종료 우회·멱등 퇴행을 막는다.
+- [x] **RED 실행:** `npx vitest run src/infrastructure/report-history/sqlite-history-repository.test.ts --maxWorkers=4`에서 새 저장소 계약 실패를 확인한다.
+- [x] **GREEN:** schema4와 부가3테이블·중립 payload mapping을 원자 추가하고 멱등 receipt·draft CAS·resolution과 commit 원자성을 구현한다. 기존18테이블 행/트리거를 재구성하지 않는다.
+- [x] **QA/검토:** focused→타입검사, 임시 합성 DB의 migration 실패 rollback/재실행·구버전 거부·FK/integrity·두 연결 경쟁·재시작 복구와 읽기 전용 재열람 쓰기0을 확인한다.
+- [x] **커밋/컨텍스트:** `feat(history): persist correction drafts and review resolutions`. 실제 업무 DB는 열어 쓰지 않고 합성 QA 증거와 W3를 기록한다.
 
 ### W3: 파일 없는 편집·재개/종료/복사·기존 계산 재생
 

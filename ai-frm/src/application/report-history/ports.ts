@@ -241,24 +241,67 @@ export type HistoryWorkbookCodec = {
   decode(bytes: Uint8Array, manifest: StoredWorkbookExport): DecodedCorrection;
 };
 export type CorrectionPatch = DecodedCorrection['patch'];
-export type HistoryOperationErrorCode = 'STALE_BASE' | 'STALE_DEPENDENCY' | 'STORAGE_UNAVAILABLE' | 'LIMIT_EXCEEDED' | 'NOT_FOUND' | 'UNSUPPORTED_VERSION' | 'EVALUATION_ZONE_MISMATCH';
+export type HistoryOperationErrorCode = 'STALE_BASE' | 'STALE_DEPENDENCY' | 'STORAGE_UNAVAILABLE' | 'LIMIT_EXCEEDED' | 'NOT_FOUND' | 'UNSUPPORTED_VERSION' | 'EVALUATION_ZONE_MISMATCH' | 'STALE_DRAFT' | 'WORK_CLOSED' | 'IDEMPOTENCY_KEY_REUSED' | 'INVALID_DRAFT';
 export class HistoryOperationError extends Error {
   constructor(readonly code: HistoryOperationErrorCode) { super(code); this.name = 'HistoryOperationError'; }
 }
 export type WorkbookImportWrite = { readonly scopeId: string; readonly importId: string; readonly exportId: string; readonly fileHash: string; readonly patchHash: string | null; readonly patch: CorrectionPatch; readonly status: 'invalid' | 'no-change' | 'validated'; readonly errors: readonly WorkbookCellError[]; readonly receivedAt: string };
 export type StoredWorkbookImport = WorkbookImportWrite;
 export type CorrectionPreviewWrite = { readonly scopeId: string; readonly previewId: string; readonly previewHash: string; readonly importId: string; readonly exportId: string; readonly baseConfirmationId: string; readonly baseRevision: number; readonly inputSnapshotId: string; readonly candidateId: string; readonly dependencyHeads: readonly RevisionToken[]; readonly rawDiff: JsonValue; readonly resultDiff: JsonValue; readonly affectedReports: JsonValue; readonly createdAt: string };
-export type StoredCorrectionPreview = CorrectionPreviewWrite;
+export type StoredCorrectionPreview = CorrectionPreviewWrite | CorrectionPreviewV2Write;
 export type CorrectionConfirmCommand = { readonly previewId: string; readonly previewHash: string; readonly expectedBaseRevision: number; readonly idempotencyKey: string; readonly reason: string };
 export type CorrectionStageWrite = { readonly scopeId: string; readonly expectedBase: RevisionToken; readonly dependencyHeads: readonly RevisionToken[]; readonly evidence: readonly StoredEvidence[]; readonly inputs: readonly StoredInputSnapshot[]; readonly calculations: readonly StoredCalculation[]; readonly candidate: CandidateWrite & { readonly candidateId: string }; readonly import: WorkbookImportWrite; readonly preview: CorrectionPreviewWrite };
 export type ImportResult = { readonly kind: 'invalid'; readonly importId: string | null; readonly errors: readonly WorkbookCellError[] } | { readonly kind: 'no-change'; readonly importId: string; readonly baseConfirmationId: string } | { readonly kind: 'preview'; readonly previewId: string; readonly previewHash: string };
+export type CorrectionDraftMutation = {
+  readonly draft: StoredCorrectionDraft;
+  readonly expectedDraftRevision: number | null;
+  readonly expectedHead: RevisionToken;
+  readonly command: { readonly action: 'copy' | 'reapply'; readonly idempotencyKey: string; readonly requestHash: string };
+};
+export type CorrectionDraftMutationResult = StoredCorrectionDraft | { readonly kind: 'no-change' };
+export type CompleteCorrectionWorkCommand = {
+  readonly scopeId: string;
+  readonly action: 'copy' | 'reapply';
+  readonly idempotencyKey: string;
+  readonly requestHash: string;
+  readonly expectedHead: RevisionToken;
+  readonly ref: CorrectionWorkRef;
+  readonly expectedDraftRevision: number | null;
+};
+/** v2 submissionHash = hash of this exact object; physical workbook_import.patch_hash stores it.
+ * body.patchHash remains the derivation/semantic patch hash. Legacy v1 hashes are unchanged.
+ * previewHash = hash({...previewWithoutPreviewHash, submissionHash}). IDs/timestamps in preview are immutable.
+ */
+export type CorrectionSubmissionIdentity = Pick<CorrectionSubmissionWrite,
+  'basisId' | 'draftId' | 'draftRevision' | 'patch' | 'reason' | 'evidenceNote' |
+  'baseConfirmationId' | 'baseRevision' | 'dependencyHeads'> & {
+    readonly inputSnapshotId: string;
+    readonly calculationIds: CandidateWrite['calculationIds'];
+    readonly historySelectionId: string;
+    readonly documentHash: string;
+};
 export interface HistoryRepository {
+  completeCorrectionWorkCommand(input: CompleteCorrectionWorkCommand): Promise<CorrectionDraftMutationResult>;
+  putCorrectionBasis(input: CorrectionBasisWrite): Promise<StoredCorrectionBasis>;
+  getCorrectionBasis(scopeId: string, id: string): Promise<StoredCorrectionBasis | null>;
+  getCorrectionSubmission(scopeId: string, id: string): Promise<StoredCorrectionSubmission | null>;
+  createCorrectionDraft(scopeId: string, cmd: CreateCorrectionDraftCommand): Promise<StoredCorrectionDraft | null>;
+  saveCorrectionDraft(scopeId: string, cmd: SaveDraftCommand): Promise<StoredCorrectionDraft>;
+  getCorrectionDraft(scopeId: string, id: string): Promise<StoredCorrectionDraft | null>;
+  /** Trusted service prepares semantic copy/reapply; repository atomically checks latest head and writes ACK. */
+  writeCorrectionDraft(input: CorrectionDraftMutation): Promise<CorrectionDraftMutationResult>;
+  getCorrectionWorkCommand(scopeId: string, key: string): Promise<import('../../domain/report-history/correction').CorrectionWorkCommand | null>;
+  getCorrectionResolution(scopeId: string, ref: CorrectionWorkRef): Promise<StoredCorrectionResolution | null>;
+  closeCorrectionWork(scopeId: string, cmd: CloseCorrectionWorkCommand): Promise<CorrectionWorkSummary>;
+  listCorrectionWork(scopeId: string, query: CorrectionWorkQuery): Promise<{ items: readonly CorrectionWorkSummary[]; nextCursor: string | null }>;
+  listCorrectionMonths(scopeId: string, query: CorrectionMonthQuery): Promise<{ items: readonly CorrectionMonthSummary[]; nextCursor: string | null }>;
+  getCorrectionReviewDetail(scopeId: string, ref: CorrectionWorkRef): Promise<CorrectionReviewDetail | null>;
   defaultScopeId(): Promise<string>;
   currentHeads(scopeId: string, cycles: readonly YearMonth[]): Promise<readonly RevisionToken[]>;
   putWorkbookImport(input: WorkbookImportWrite): Promise<StoredWorkbookImport>;
   getWorkbookImport(scopeId: string, id: string): Promise<StoredWorkbookImport | null>;
   getCorrectionPreview(scopeId: string, id: string): Promise<StoredCorrectionPreview | null>;
-  stageCorrection(input: CorrectionStageWrite): Promise<StoredCorrectionPreview>;
+  stageCorrection(input: CorrectionStageWrite | CorrectionStageV2Write): Promise<StoredCorrectionPreview>;
   commitCorrection(scopeId: string, cmd: CorrectionConfirmCommand): Promise<ConfirmationResult>;
   putEvidence(input: EvidenceWrite): Promise<{
     captureId: string;

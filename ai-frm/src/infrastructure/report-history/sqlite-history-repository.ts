@@ -6,6 +6,7 @@ import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSIO
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
 import { HistoryOperationError } from '../../application/report-history/ports';
 import type * as P from '../../application/report-history/ports';
+import { validateDraftContent, isEmptyDraftContent, correctionWorkState, correctionPatchAlreadyApplied, normalizeCorrectionEdits } from '../../domain/report-history/correction';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
 import { backupWithWake } from './sqlite-backup-wake.mjs';
 export { HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
@@ -49,6 +50,32 @@ CREATE TABLE correction_command(scope_id TEXT NOT NULL REFERENCES workspace_scop
 CREATE TRIGGER immutable_correction_command_update BEFORE UPDATE ON correction_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
 CREATE TRIGGER immutable_correction_command_delete BEFORE DELETE ON correction_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
 `;
+const SCHEMA_4 = `
+CREATE TABLE correction_draft(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,basis_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),current_preview_id TEXT,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),FOREIGN KEY(scope_id,basis_id) REFERENCES workbook_export(scope_id,id),FOREIGN KEY(scope_id,current_preview_id) REFERENCES correction_preview(scope_id,id));
+CREATE TABLE correction_work_command(scope_id TEXT NOT NULL REFERENCES workspace_scope,key TEXT NOT NULL,request_hash TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(scope_id,key));
+CREATE TABLE correction_resolution(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,draft_id TEXT,preview_id TEXT,confirmation_id TEXT,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),CHECK((draft_id IS NULL)!=(preview_id IS NULL)),UNIQUE(scope_id,draft_id),UNIQUE(scope_id,preview_id),FOREIGN KEY(scope_id,draft_id) REFERENCES correction_draft(scope_id,id),FOREIGN KEY(scope_id,preview_id) REFERENCES correction_preview(scope_id,id),FOREIGN KEY(scope_id,confirmation_id) REFERENCES monthly_confirmation(scope_id,id));
+CREATE TRIGGER immutable_correction_draft_delete BEFORE DELETE ON correction_draft BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_correction_work_command_update BEFORE UPDATE ON correction_work_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_correction_work_command_delete BEFORE DELETE ON correction_work_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_correction_resolution_update BEFORE UPDATE ON correction_resolution BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_correction_resolution_delete BEFORE DELETE ON correction_resolution BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+`;
+function v2(value: object): value is P.CorrectionPreviewV2Write { return 'payloadVersion' in value && value.payloadVersion === 2; }
+function previewBasisId(preview: P.StoredCorrectionPreview): string { return v2(preview) ? preview.basisId : preview.exportId; }
+function previewSubmissionId(preview: P.StoredCorrectionPreview): string { return v2(preview) ? preview.submissionId : preview.importId; }
+/** Convert only in memory; never rewrite immutable legacy payloads. */
+function neutralBasis(value: P.StoredWorkbookExport | P.CorrectionBasis): P.CorrectionBasis {
+  if ('recordKind' in value) return value;
+  return { recordKind:'correction-basis', payloadVersion:2, basisId:value.exportId, scopeId:value.scopeId, baseConfirmationId:value.baseConfirmationId, baseRevision:value.baseRevision, baseDocumentHash:value.baseDocumentHash, basis:value.basis, inputSnapshotId:value.inputSnapshotId, inputHash:value.inputHash, calculationIds:value.calculationIds, historySelectionId:value.historySelectionId, calculationVersion:value.calculationVersion, templateVersion:value.templateVersion, createdAt:value.createdAt, rows:value.rows.map(row => {
+    const id = row.identityJson as Record<string, P.JsonValue>;
+    const sourceIdentity: P.CorrectionSourceIdentity = row.sourceKind === 'statement'
+      ? {kind:'statement',asOf:id.asOf as {year:number;month:number;day:number},item:String(id.item)}
+      : row.sourceKind === 'ecos' ? {kind:'ecos',indicator:String(id.indicator),statistic:String(id.statistic),items:id.items as string[]}
+      : {kind:'kofia',bond:id.bond as 'publicAaa'|'treasury',maturity:String(id.maturity),measure:'published-three-agency-average'};
+    const unreadable = row.sourceKind === 'statement' && row.originalValue === null;
+    return { rowId:row.rowId, category:row.sourceKind === 'statement' ? 'cashflow' : row.sourceKind === 'ecos' ? 'economic' : 'funding', label:String(id.item ?? id.indicator ?? id.bond), sourceRound:row.sourceKind === 'statement' ? `${(id.asOf as {year:number;month:number}).year}/${String((id.asOf as {year:number;month:number}).month).padStart(2,'0')}` : value.basis.reportCycle, period:String(id.month ?? id.date), unit:row.unit, originalText:row.originalValue === null ? '' : String(row.originalValue), originalState:unreadable ? 'unreadable' : row.originalValue === null ? 'missing' : 'available', allowedActions:row.allowedActions.filter((action): action is 'set'|'set-missing' => action !== 'keep'), sourceRecordId:row.sourceRecordId, fieldPath:row.fieldPath, sourceIdentity, originalValue:row.originalValue };
+  }) };
+}
 function instant(value: string): number { const n = Date.parse(value); if (!Number.isFinite(n))
   throw Error('INVALID_INSTANT'); return n; }
 function assertEvaluationCalendar(input: Pick<P.CalculationWrite, 'evaluationTimeZone' | 'evaluatedAt' | 'evaluatedCalendar'>): void {
@@ -102,10 +129,10 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     try {
       this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
       const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 3)
+      if (version > 4)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (options.readOnly) {
-        if (version !== 1 && version !== 2 && version !== 3)
+        if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
           throw Error('UNSUPPORTED_SCHEMA_VERSION');
       }
       else {
@@ -143,6 +170,11 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
           this.db.prepare('INSERT INTO schema_migration VALUES(3,?)').run(this.now());
           this.db.exec('PRAGMA user_version=3');
         });
+        if (version <= 3) this.transaction(() => {
+          this.db.exec(SCHEMA_4);
+          if(this.db.prepare('INSERT INTO schema_migration VALUES(4,?)').run(this.now()).changes!==1)throw Error('MIGRATION_WRITE_FAILED');
+          this.db.exec('PRAGMA user_version=4');
+        });
         chmodSync(this.databasePath, 0o600);
       }
       if (this.db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok')
@@ -152,6 +184,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (this.db.prepare('SELECT version FROM schema_migration WHERE version=1').get()?.version !== 1)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 2 && this.db.prepare('SELECT version FROM schema_migration WHERE version=2').get()?.version !== 2)
+        throw Error('UNSUPPORTED_SCHEMA_VERSION');
+      if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 4 && [2,3,4].some(version => this.db.prepare('SELECT version FROM schema_migration WHERE version=?').get(version)?.version !== version))
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 3 && [2,3].some(version => this.db.prepare('SELECT version FROM schema_migration WHERE version=?').get(version)?.version !== version))
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
@@ -177,14 +211,27 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   } }
   private scope(scopeId: string): void { if (!scopeId.trim())
     throw Error('INVALID_SCOPE'); this.db.prepare('INSERT OR IGNORE INTO workspace_scope(scope_id) VALUES(?)').run(scopeId); }
-  private read<T>(table: string, scopeId: string, id: string): T | null { const row = this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? AND id=?`).get(scopeId, id); return row ? decodeEvidence<T>(String(row.body)) : null; }
-  private all<T>(table: string, scopeId: string): T[] { return this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? ORDER BY rowid`).all(scopeId).map(row => decodeEvidence<T>(String(row.body))); }
+  private read<T>(table: string, scopeId: string, id: string): T | null { if(!this.tableAvailable(table))return null;const row = this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? AND id=?`).get(scopeId, id); if (!row) return null;
+    const value = decodeEvidence<T>(String(row.body));
+    this.validatePayload(table, value);
+    return value; }
+  private tableAvailable(table: string): boolean { return Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)); }
+  private validatePayload(table: string, value: unknown): void {
+    const kinds: Record<string,string> = {workbook_export:'correction-basis',workbook_import:'correction-submission',correction_preview:'correction-preview'};
+    if (!kinds[table]) return;
+    if (!value || typeof value !== 'object') throw new HistoryOperationError('UNSUPPORTED_VERSION');
+    const body = value as Record<string,unknown>;
+    if ('recordKind' in body || 'payloadVersion' in body) {
+      if (body.recordKind !== kinds[table] || body.payloadVersion !== 2) throw new HistoryOperationError('UNSUPPORTED_VERSION');
+    } else if (table === 'workbook_export' && body.workbookFormatVersion !== 1) throw new HistoryOperationError('UNSUPPORTED_VERSION');
+  }
+  private all<T>(table: string, scopeId: string): T[] { if(!this.tableAvailable(table))return [];return this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? ORDER BY rowid`).all(scopeId).map(row => { const value = decodeEvidence<T>(String(row.body)); this.validatePayload(table,value); return value; }); }
   private require<T>(table: string, scopeId: string, id: string): T { const value = this.read<T>(table, scopeId, id); if (!value)
     throw Error('NOT_FOUND_OR_WRONG_SCOPE'); return value; }
   private parent(table: string, scopeId: string, derivation: P.Derivation): void { if (derivation.kind === 'manual-correction') {
     this.require(table, scopeId, derivation.parentId);
-    const imported = this.require<P.StoredWorkbookImport>('workbook_import', scopeId, derivation.importId);
-    if (imported.status !== 'validated' || imported.patchHash !== derivation.patchHash) throw Error('INVALID_DERIVATION_IMPORT');
+    const imported = this.require<P.StoredWorkbookImport | P.StoredCorrectionSubmission>('workbook_import', scopeId, derivation.importId);
+    if ((!('recordKind' in imported) && imported.status !== 'validated') || imported.patchHash !== derivation.patchHash) throw Error('INVALID_DERIVATION_IMPORT');
     instant(derivation.correctedAt);
     if (!derivation.importId || !derivation.patchHash)
       throw Error('INVALID_DERIVATION');
@@ -354,20 +401,27 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (preview.previewHash !== cmd.previewHash || preview.baseRevision !== cmd.expectedBaseRevision)
         return { kind: 'conflict', reason: 'STALE_BASE' };
       const candidate = this.require<P.StoredCandidate>('report_candidate', scopeId, preview.candidateId);
-      const imported = this.require<P.StoredWorkbookImport>('workbook_import', scopeId, preview.importId);
-      const exported = this.require<P.StoredWorkbookExport>('workbook_export', scopeId, preview.exportId);
+      const imported = this.submission(scopeId,previewSubmissionId(preview));
+      const exported = this.basis(scopeId,previewBasisId(preview));
       const base = this.require<P.StoredConfirmation>('monthly_confirmation', scopeId, preview.baseConfirmationId);
       if (candidate.correctionPreviewId !== preview.previewId || candidate.authoredAt !== preview.createdAt ||
         candidate.inputSnapshotId !== preview.inputSnapshotId || candidate.basis.reportCycle !== base.reportCycle ||
-        imported.status !== 'validated' || imported.exportId !== preview.exportId || !imported.patch.length ||
+        !imported || imported.basisId !== previewBasisId(preview) || !imported.patch.length ||
         exported.baseConfirmationId !== base.confirmationId || exported.baseRevision !== base.revision ||
-        preview.baseRevision !== base.revision || preview.exportId !== imported.exportId)
+        preview.baseRevision !== base.revision || previewBasisId(preview) !== imported.basisId)
         return { kind: 'not-ready', reason: 'INVALID_CORRECTION_LINEAGE' };
       const existing = this.db.prepare('SELECT id,revision FROM monthly_confirmation WHERE scope_id=? AND report_cycle=? AND candidate_id=?').get(scopeId, candidate.basis.reportCycle, candidate.candidateId);
       if (existing) {
         this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, candidate.candidateId, existing.id);
         this.db.prepare('INSERT INTO correction_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, requestHash, existing.id);
         return { kind: 'already-confirmed', confirmationId: String(existing.id), revision: Number(existing.revision) };
+      }
+      const ref:P.CorrectionWorkRef=v2(preview)?{kind:'draft',id:preview.draftId}:{kind:'legacy-preview',id:preview.previewId};
+      if(this.resolution(scopeId,ref))return {kind:'conflict',reason:'WORK_CLOSED'};
+      if(v2(preview)) {
+        const draft=this.read<P.StoredCorrectionDraft>('correction_draft',scopeId,preview.draftId);
+        if(!draft || draft.draftRevision!==preview.draftRevision || draft.currentPreviewId!==preview.previewId || draft.requiresReapply)return {kind:'conflict',reason:'STALE_DRAFT'};
+        if(cmd.reason!==imported.reason)return {kind:'not-ready',reason:'INVALID_CORRECTION_COMMAND'};
       }
       const head = this.head(scopeId, candidate.basis.reportCycle);
       if (head.confirmationId !== preview.baseConfirmationId || head.revision !== preview.baseRevision)
@@ -387,6 +441,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (moved.changes !== 1) throw Error('HEAD_UPDATE_FAILED');
       this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, candidate.candidateId, confirmationId);
       this.db.prepare('INSERT INTO correction_command VALUES(?,?,?,?)').run(scopeId, cmd.idempotencyKey, requestHash, confirmationId);
+      this.reflectWorks(scopeId,preview,exported,imported.patch,confirmationId);
       return { kind: 'confirmed', confirmationId, revision: record.revision };
     }); } catch (error) {
       if (error instanceof HistoryOperationError) throw error;
@@ -417,7 +472,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       return input;
     });
   }
-  async getWorkbookExport(scopeId: string, id: string): Promise<P.StoredWorkbookExport | null> { return this.read('workbook_export', scopeId, id); }
+  async getWorkbookExport(scopeId: string, id: string): Promise<P.StoredWorkbookExport | null> { const value=this.read<P.StoredWorkbookExport|P.CorrectionBasis>('workbook_export',scopeId,id);if(value&&'recordKind' in value)throw new HistoryOperationError('UNSUPPORTED_VERSION');return value; }
   private head(scopeId: string, reportCycle: YearMonth): P.RevisionToken {
     const row = this.db.prepare('SELECT confirmation_id,revision FROM monthly_head WHERE scope_id=? AND report_cycle=?').get(scopeId,reportCycle);
     return { reportCycle, confirmationId: row ? String(row.confirmation_id) : null, revision: Number(row?.revision ?? 0) };
@@ -441,36 +496,289 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     if (input.status === 'validated') throw Error('ATOMIC_STAGE_REQUIRED');
     return this.transaction(() => this.saveImport(input));
   }
-  async getWorkbookImport(scopeId: string, id: string): Promise<P.StoredWorkbookImport | null> { return this.read('workbook_import',scopeId,id); }
+  async getWorkbookImport(scopeId: string, id: string): Promise<P.StoredWorkbookImport | null> { const value=this.read<P.StoredWorkbookImport|P.StoredCorrectionSubmission>('workbook_import',scopeId,id);if(value&&'recordKind' in value)throw new HistoryOperationError('UNSUPPORTED_VERSION');return value; }
   async getCorrectionPreview(scopeId: string, id: string): Promise<P.StoredCorrectionPreview | null> { return this.read('correction_preview',scopeId,id); }
-  async stageCorrection(input: P.CorrectionStageWrite): Promise<P.StoredCorrectionPreview> {
-    try { return this.transaction(() => {
-      const {scopeId,preview,candidate} = input;
-      const manifest = this.require<P.StoredWorkbookExport>('workbook_export',scopeId,input.import.exportId);
-      const old = this.db.prepare('SELECT p.body FROM correction_preview p JOIN workbook_import i ON p.scope_id=i.scope_id AND p.import_id=i.id WHERE p.scope_id=? AND i.export_id=? AND i.patch_hash=?').get(scopeId,input.import.exportId,input.import.patchHash);
-      if (old) {
-        const existing = decodeEvidence<P.StoredCorrectionPreview>(String(old.body));
-        this.checkHeads(scopeId,{reportCycle:manifest.basis.reportCycle,confirmationId:existing.baseConfirmationId,revision:existing.baseRevision},existing.dependencyHeads);
-        return existing;
+  async stageCorrection(input: P.CorrectionStageWrite | P.CorrectionStageV2Write): Promise<P.StoredCorrectionPreview> {
+    return this.writeWork(() => {
+      const {scopeId,preview,candidate}=input, web='submission' in input;
+      const basisId=web?input.submission.basisId:input.import.exportId, manifest=this.basis(scopeId,basisId);
+      const draft=web?this.assertDraft(scopeId,input.draft.draftId,input.draft.draftRevision):null;
+      if(web) {
+        const submission=input.submission;
+        this.validatePayload('workbook_import',submission);this.validatePayload('correction_preview',preview);
+        const valid=normalizeCorrectionEdits(manifest,{basisId,reason:draft!.content.reason,edits:draft!.content.edits.map(edit=>({...edit,evidenceNote:draft!.content.evidenceNote}))});
+        if(draft!.basisId!==basisId || draft!.requiresReapply || valid.kind!=='valid' || !equal(valid.patch,submission.patch) || valid.reason!==submission.reason || draft!.content.evidenceNote.trim()!==submission.evidenceNote ||
+           !v2(preview) || submission.draftId!==draft!.draftId || submission.draftRevision!==draft!.draftRevision || preview.draftId!==draft!.draftId || preview.draftRevision!==draft!.draftRevision || preview.basisId!==basisId || preview.submissionId!==submission.submissionId ||
+           submission.baseConfirmationId!==manifest.baseConfirmationId || submission.baseRevision!==manifest.baseRevision || !equal(submission.dependencyHeads,input.dependencyHeads) || !submission.submissionHash || !submission.patchHash) throw new HistoryOperationError('INVALID_DRAFT');
+        const identity:P.CorrectionSubmissionIdentity={basisId,draftId:submission.draftId,draftRevision:submission.draftRevision,patch:submission.patch,reason:submission.reason,evidenceNote:submission.evidenceNote,baseConfirmationId:submission.baseConfirmationId,baseRevision:submission.baseRevision,dependencyHeads:submission.dependencyHeads,inputSnapshotId:candidate.inputSnapshotId,calculationIds:candidate.calculationIds,historySelectionId:candidate.historySelectionId,documentHash:candidate.document.contentHash};
+        const {previewHash,...previewBody}=preview;
+        if(submission.submissionHash!==hashHistoryValue(identity)||previewHash!==hashHistoryValue({...previewBody,submissionHash:submission.submissionHash}))throw new HistoryOperationError('INVALID_DRAFT');
+        if(draft!.currentPreviewId) {
+          const existing=this.require<P.StoredCorrectionPreview>('correction_preview',scopeId,draft!.currentPreviewId);
+          this.checkHeads(scopeId,{reportCycle:manifest.basis.reportCycle,confirmationId:existing.baseConfirmationId,revision:existing.baseRevision},existing.dependencyHeads);
+          return existing;
+        }
+      } else {
+        const old=this.db.prepare('SELECT p.body FROM correction_preview p JOIN workbook_import i ON p.scope_id=i.scope_id AND p.import_id=i.id WHERE p.scope_id=? AND i.export_id=? AND i.patch_hash=?').get(scopeId,basisId,input.import.patchHash);
+        if(old) {
+          const existing=decodeEvidence<P.StoredCorrectionPreview>(String(old.body));this.validatePayload('correction_preview',existing);
+          this.checkHeads(scopeId,{reportCycle:manifest.basis.reportCycle,confirmationId:existing.baseConfirmationId,revision:existing.baseRevision},existing.dependencyHeads);return existing;
+        }
       }
       this.checkHeads(scopeId,input.expectedBase,input.dependencyHeads);
-      if (input.expectedBase.confirmationId !== manifest.baseConfirmationId || input.expectedBase.revision !== manifest.baseRevision || input.expectedBase.reportCycle !== manifest.basis.reportCycle ||
-        [input.import,preview,candidate,...input.evidence,...input.inputs,...input.calculations].some(record=>record.scopeId!==scopeId) ||
-        input.import.status !== 'validated' || preview.importId !== input.import.importId || preview.exportId !== manifest.exportId || preview.baseConfirmationId !== manifest.baseConfirmationId || preview.baseRevision !== manifest.baseRevision ||
-        preview.candidateId !== candidate.candidateId || candidate.correctionPreviewId !== preview.previewId || preview.inputSnapshotId !== candidate.inputSnapshotId || !equal(preview.dependencyHeads,input.dependencyHeads) || !equal(candidate.basis,manifest.basis) || candidate.historySelectionId !== manifest.historySelectionId) throw Error('INVALID_STAGE');
-      this.saveImport(input.import);
-      for (const record of [...input.evidence,...input.inputs,...input.calculations]) {
-        if (record.derivation.kind !== 'manual-correction' || record.derivation.importId !== input.import.importId || record.derivation.patchHash !== input.import.patchHash) throw Error('INVALID_DERIVATION');
-      }
-      for (const record of input.evidence) this.saveEvidence(record,record.captureId);
-      for (const record of input.inputs) this.saveInputSnapshot(record,record.inputSnapshotId);
-      for (const record of input.calculations) this.saveCalculation(record,record.calculationId);
-      this.db.prepare('INSERT INTO correction_preview VALUES(?,?,?,?,?,?,?)').run(scopeId,preview.previewId,preview.exportId,preview.importId,preview.candidateId,preview.baseConfirmationId,encodeEvidence(preview));
+      const submissionId=web?input.submission.submissionId:input.import.importId, patchHash=web?input.submission.patchHash:input.import.patchHash;
+      if(input.expectedBase.confirmationId!==manifest.baseConfirmationId || input.expectedBase.revision!==manifest.baseRevision || input.expectedBase.reportCycle!==manifest.basis.reportCycle ||
+        [(web?input.submission:input.import),preview,candidate,...input.evidence,...input.inputs,...input.calculations].some(record=>record.scopeId!==scopeId) ||
+        (!web&&(input.import.status!=='validated'||v2(preview)||preview.importId!==submissionId||preview.exportId!==basisId)) ||
+        preview.baseConfirmationId!==manifest.baseConfirmationId || preview.baseRevision!==manifest.baseRevision || preview.candidateId!==candidate.candidateId || candidate.correctionPreviewId!==preview.previewId ||
+        preview.inputSnapshotId!==candidate.inputSnapshotId || !equal(preview.dependencyHeads,input.dependencyHeads) || !equal(candidate.basis,manifest.basis) || candidate.historySelectionId!==manifest.historySelectionId) throw new HistoryOperationError('INVALID_DRAFT');
+      if(web) {
+        instant(input.submission.createdAt);
+        // v1 patch_hash is unchanged. v2 physical dedupe uses identity, not semantic patchHash.
+        this.db.prepare('INSERT INTO workbook_import VALUES(?,?,?,?,?)').run(scopeId,submissionId,basisId,input.submission.submissionHash,encodeEvidence(input.submission));
+      } else this.saveImport(input.import);
+      for(const record of [...input.evidence,...input.inputs,...input.calculations]) if(record.derivation.kind!=='manual-correction'||record.derivation.importId!==submissionId||record.derivation.patchHash!==patchHash)throw Error('INVALID_DERIVATION');
+      for(const record of input.evidence)this.saveEvidence(record,record.captureId);
+      for(const record of input.inputs)this.saveInputSnapshot(record,record.inputSnapshotId);
+      for(const record of input.calculations)this.saveCalculation(record,record.calculationId);
+      this.db.prepare('INSERT INTO correction_preview VALUES(?,?,?,?,?,?,?)').run(scopeId,preview.previewId,basisId,submissionId,preview.candidateId,preview.baseConfirmationId,encodeEvidence(preview));
       this.saveCandidate(candidate,candidate.candidateId);
+      if(draft)this.updateDraft({...draft,currentPreviewId:preview.previewId},draft.draftRevision);
       return preview;
-    }); } catch (error) {
+    });
+  }
+  private writeWork<T>(work: () => T): T {
+    try { return this.transaction(work); } catch (error) {
       if (error instanceof HistoryOperationError) throw error;
       throw new HistoryOperationError('STORAGE_UNAVAILABLE');
+    }
+  }
+  private basis(scopeId: string, id: string): P.StoredCorrectionBasis {
+    const stored = this.read<P.StoredWorkbookExport | P.StoredCorrectionBasis>('workbook_export', scopeId, id);
+    if (!stored) throw new HistoryOperationError('NOT_FOUND');
+    return neutralBasis(stored);
+  }
+  async putCorrectionBasis(input: P.CorrectionBasisWrite): Promise<P.StoredCorrectionBasis> {
+    return this.writeWork(() => {
+      this.validatePayload('workbook_export', input);
+      if (!input.basisId || input.rows.length > 10000) throw new HistoryOperationError('INVALID_DRAFT');
+      const base = this.require<P.StoredConfirmation>('monthly_confirmation', input.scopeId, input.baseConfirmationId);
+      const candidate = this.require<P.StoredCandidate>('report_candidate', input.scopeId, base.candidateId);
+      if (base.revision !== input.baseRevision || base.document.contentHash !== input.baseDocumentHash ||
+          candidate.inputSnapshotId !== input.inputSnapshotId || candidate.inputHash !== input.inputHash ||
+          !equal(candidate.calculationIds,input.calculationIds) || base.historySelectionId !== input.historySelectionId ||
+          !equal(base.basis,input.basis) || candidate.calculationVersion !== input.calculationVersion || base.document.templateVersion !== input.templateVersion)
+        throw new HistoryOperationError('INVALID_DRAFT');
+      instant(input.createdAt);
+      this.db.prepare('INSERT INTO workbook_export VALUES(?,?,?,?,?,?,?,?)').run(input.scopeId,input.basisId,input.baseConfirmationId,input.inputSnapshotId,input.calculationIds.construction,input.calculationIds.funding,input.historySelectionId,encodeEvidence(input));
+      return input;
+    });
+  }
+  async getCorrectionBasis(scopeId: string, id: string): Promise<P.StoredCorrectionBasis | null> {
+    return this.read('workbook_export',scopeId,id) ? this.basis(scopeId,id) : null;
+  }
+  private submission(scopeId: string, id: string): P.StoredCorrectionSubmission | null {
+    const stored = this.read<P.StoredWorkbookImport | P.StoredCorrectionSubmission>('workbook_import',scopeId,id);
+    if (!stored) return null;
+    if ('recordKind' in stored) return stored;
+    if (stored.status !== 'validated' || !stored.patchHash) return null;
+    const basis = this.basis(scopeId,stored.exportId);
+    return {recordKind:'correction-submission',payloadVersion:2,scopeId,submissionId:stored.importId,basisId:stored.exportId,draftId:'',draftRevision:0,submissionHash:stored.patchHash,patchHash:stored.patchHash,patch:stored.patch,reason:stored.patch[0]?.reason ?? '',evidenceNote:'',baseConfirmationId:basis.baseConfirmationId,baseRevision:basis.baseRevision,dependencyHeads:[],createdAt:stored.receivedAt};
+  }
+  async getCorrectionSubmission(scopeId: string, id: string): Promise<P.StoredCorrectionSubmission | null> { return this.submission(scopeId,id); }
+  private command(scopeId: string, key: string, action: P.CorrectionWorkCommand['action'], requestHash: string): P.CorrectionWorkCommand | null {
+    if (!key.trim() || key.length > 2000) throw new HistoryOperationError('INVALID_DRAFT');
+    const row = this.db.prepare('SELECT body FROM correction_work_command WHERE scope_id=? AND key=?').get(scopeId,key);
+    if (!row) return null;
+    const record = decodeEvidence<P.CorrectionWorkCommand>(String(row.body));
+    if (record.action !== action || record.requestHash !== requestHash) throw new HistoryOperationError('IDEMPOTENCY_KEY_REUSED');
+    return record;
+  }
+  private acknowledge(scopeId: string, key: string, action: P.CorrectionWorkCommand['action'], requestHash: string, value: unknown): void {
+    const record: P.CorrectionWorkCommand = {scopeId,idempotencyKey:key,action,requestHash,acknowledgedAt:this.now(),acknowledgement:decodeEvidence<P.JsonValue>(encodeEvidence(value))};
+    if(this.db.prepare('INSERT INTO correction_work_command VALUES(?,?,?,?)').run(scopeId,key,requestHash,encodeEvidence(record)).changes!==1)throw Error('COMMAND_WRITE_FAILED');
+  }
+  async getCorrectionWorkCommand(scopeId: string, key: string): Promise<P.CorrectionWorkCommand | null> {
+    if(!this.tableAvailable('correction_work_command'))return null;
+    const row = this.db.prepare('SELECT body FROM correction_work_command WHERE scope_id=? AND key=?').get(scopeId,key);
+    return row ? decodeEvidence<P.CorrectionWorkCommand>(String(row.body)) : null;
+  }
+  private draft(scopeId: string, id: string): P.StoredCorrectionDraft {
+    const draft = this.read<P.StoredCorrectionDraft>('correction_draft',scopeId,id);
+    if (!draft) throw new HistoryOperationError('NOT_FOUND');
+    return draft;
+  }
+  async getCorrectionDraft(scopeId: string, id: string): Promise<P.StoredCorrectionDraft | null> { return this.read('correction_draft',scopeId,id); }
+  private resolution(scopeId: string, ref: P.CorrectionWorkRef): P.StoredCorrectionResolution | null {
+    if(!this.tableAvailable('correction_resolution'))return null;
+    const row = this.db.prepare(`SELECT body FROM correction_resolution WHERE scope_id=? AND ${ref.kind === 'draft' ? 'draft_id' : 'preview_id'}=?`).get(scopeId,ref.id);
+    return row ? decodeEvidence<P.StoredCorrectionResolution>(String(row.body)) : null;
+  }
+  async getCorrectionResolution(scopeId: string, ref: P.CorrectionWorkRef): Promise<P.StoredCorrectionResolution | null> { return this.resolution(scopeId,ref); }
+  private previewConfirmation(scopeId: string, preview: P.StoredCorrectionPreview | null): P.StoredConfirmation | null {
+    if (!preview) return null;
+    const row = this.db.prepare('SELECT body FROM monthly_confirmation WHERE scope_id=? AND candidate_id=?').get(scopeId,preview.candidateId);
+    return row ? decodeEvidence<P.StoredConfirmation>(String(row.body)) : null;
+  }
+  private assertOpen(scopeId: string, ref: P.CorrectionWorkRef, preview: P.StoredCorrectionPreview | null): void {
+    if (this.resolution(scopeId,ref) || this.previewConfirmation(scopeId,preview)) throw new HistoryOperationError('WORK_CLOSED');
+  }
+  private assertDraft(scopeId: string, id: string, revision: number): P.StoredCorrectionDraft {
+    const draft = this.draft(scopeId,id);
+    this.assertOpen(scopeId,{kind:'draft',id},draft.currentPreviewId ? this.read('correction_preview',scopeId,draft.currentPreviewId) : null);
+    if (!Number.isSafeInteger(revision) || revision !== draft.draftRevision) throw new HistoryOperationError('STALE_DRAFT');
+    return draft;
+  }
+  private insertDraft(draft: P.StoredCorrectionDraft): void {
+    if(this.db.prepare('INSERT INTO correction_draft VALUES(?,?,?,?,?,?)').run(draft.scopeId,draft.draftId,draft.basisId,draft.draftRevision,draft.currentPreviewId,encodeEvidence(draft)).changes!==1)throw Error('DRAFT_WRITE_FAILED');
+  }
+  private updateDraft(draft: P.StoredCorrectionDraft, expected: number): void {
+    const changed = this.db.prepare('UPDATE correction_draft SET basis_id=?,revision=?,current_preview_id=?,body=? WHERE scope_id=? AND id=? AND revision=?').run(draft.basisId,draft.draftRevision,draft.currentPreviewId,encodeEvidence(draft),draft.scopeId,draft.draftId,expected);
+    if (changed.changes !== 1) throw new HistoryOperationError('STALE_DRAFT');
+  }
+  async createCorrectionDraft(scopeId: string, cmd: P.CreateCorrectionDraftCommand): Promise<P.StoredCorrectionDraft | null> {
+    return this.writeWork(() => {
+      const hash = hashHistoryValue({action:'create',...cmd}), old = this.command(scopeId,cmd.idempotencyKey,'create',hash);
+      if (old) return old.acknowledgement as unknown as P.StoredCorrectionDraft | null;
+      const basis = this.basis(scopeId,cmd.basisId);
+      if (validateDraftContent(basis,cmd.content).kind === 'invalid') throw new HistoryOperationError('INVALID_DRAFT');
+      if (isEmptyDraftContent(cmd.content)) { this.acknowledge(scopeId,cmd.idempotencyKey,'create',hash,null); return null; }
+      this.checkHeads(scopeId,{reportCycle:basis.basis.reportCycle,confirmationId:basis.baseConfirmationId,revision:basis.baseRevision},[]);
+      const at=this.now(); instant(at);
+      const draft: P.StoredCorrectionDraft = {draftId:this.nextId(),scopeId,reportCycle:basis.basis.reportCycle,basisId:basis.basisId,draftRevision:1,content:cmd.content,createdAt:at,savedAt:at,currentPreviewId:null,requiresReapply:false,copiedFrom:null,originalBasisId:null,proposedContent:null};
+      this.insertDraft(draft);this.acknowledge(scopeId,cmd.idempotencyKey,'create',hash,draft);return draft;
+    });
+  }
+  async saveCorrectionDraft(scopeId: string, cmd: P.SaveDraftCommand): Promise<P.StoredCorrectionDraft> {
+    return this.writeWork(() => {
+      const hash=hashHistoryValue({action:'save',...cmd}),old=this.command(scopeId,cmd.idempotencyKey,'save',hash);
+      if(old) return old.acknowledgement as unknown as P.StoredCorrectionDraft;
+      const current=this.assertDraft(scopeId,cmd.draftId,cmd.expectedDraftRevision), basis=this.basis(scopeId,current.basisId);
+      if(validateDraftContent(basis,cmd.content).kind==='invalid') throw new HistoryOperationError('INVALID_DRAFT');
+      const next={...current,draftRevision:current.draftRevision+1,content:cmd.content,savedAt:this.now(),currentPreviewId:null};instant(next.savedAt);
+      this.updateDraft(next,current.draftRevision);this.acknowledge(scopeId,cmd.idempotencyKey,'save',hash,next);return next;
+    });
+  }
+  async completeCorrectionWorkCommand(input: P.CompleteCorrectionWorkCommand): Promise<P.CorrectionDraftMutationResult> {
+    return this.writeWork(() => {
+      const old=this.command(input.scopeId,input.idempotencyKey,input.action,input.requestHash);
+      if(old)return old.acknowledgement as unknown as P.CorrectionDraftMutationResult;
+      const work=this.work(input.scopeId,input.ref);if(!work)throw new HistoryOperationError('NOT_FOUND');
+      if(input.action==='copy') {
+        if(work.resolution?.kind!=='closed'||input.expectedDraftRevision!==null)throw new HistoryOperationError('WORK_CLOSED');
+      } else {
+        if(input.ref.kind!=='draft')throw new HistoryOperationError('INVALID_DRAFT');
+        this.assertDraft(input.scopeId,input.ref.id,input.expectedDraftRevision!);
+        if(!work.draft?.requiresReapply)throw new HistoryOperationError('INVALID_DRAFT');
+      }
+      if(input.expectedHead.reportCycle!==work.basis.basis.reportCycle||!equal(this.head(input.scopeId,input.expectedHead.reportCycle),input.expectedHead))throw new HistoryOperationError('STALE_BASE');
+      const result={kind:'no-change' as const};this.acknowledge(input.scopeId,input.idempotencyKey,input.action,input.requestHash,result);return result;
+    });
+  }
+  async writeCorrectionDraft(input: P.CorrectionDraftMutation): Promise<P.CorrectionDraftMutationResult> {
+    return this.writeWork(() => {
+      const {draft,command,expectedHead,expectedDraftRevision}=input;
+      const old=this.command(draft.scopeId,command.idempotencyKey,command.action,command.requestHash);
+      if(old) return old.acknowledgement as unknown as P.CorrectionDraftMutationResult;
+      const basis=this.basis(draft.scopeId,draft.basisId);
+      if(!equal(this.head(draft.scopeId,basis.basis.reportCycle),expectedHead) || expectedHead.confirmationId!==basis.baseConfirmationId || expectedHead.revision!==basis.baseRevision) throw new HistoryOperationError('STALE_BASE');
+      if(validateDraftContent(basis,draft.content).kind==='invalid' || draft.currentPreviewId!==null || draft.reportCycle!==basis.basis.reportCycle) throw new HistoryOperationError('INVALID_DRAFT');
+      if(command.action==='copy') {
+        if(expectedDraftRevision!==null || !draft.copiedFrom || this.resolution(draft.scopeId,draft.copiedFrom)?.kind!=='closed' || !draft.requiresReapply || draft.draftRevision!==1) throw new HistoryOperationError('INVALID_DRAFT');
+        const source=this.work(draft.scopeId,draft.copiedFrom);
+        if(!source||source.basis.basis.reportCycle!==draft.reportCycle||draft.originalBasisId!==source.basis.basisId||!equal(draft.proposedContent,source.content))throw new HistoryOperationError('INVALID_DRAFT');
+        this.insertDraft(draft);
+      } else {
+        const current=this.assertDraft(draft.scopeId,draft.draftId,expectedDraftRevision!);
+        if(!current.requiresReapply || draft.requiresReapply || draft.draftRevision!==current.draftRevision+1 || draft.createdAt!==current.createdAt || !equal(draft.copiedFrom,current.copiedFrom) || draft.originalBasisId!==current.originalBasisId || !equal(draft.proposedContent,current.proposedContent)) throw new HistoryOperationError('INVALID_DRAFT');
+        this.updateDraft(draft,current.draftRevision);
+      }
+      instant(draft.createdAt);instant(draft.savedAt);this.acknowledge(draft.scopeId,command.idempotencyKey,command.action,command.requestHash,draft);return draft;
+    });
+  }
+  private resolve(scopeId: string, ref: P.CorrectionWorkRef, kind: 'closed'|'reflected', preservedContentRef: string, confirmationId: string | null): void {
+    const record: P.StoredCorrectionResolution={resolutionId:this.nextId(),scopeId,ref,kind,resolvedAt:this.now(),preservedContentRef,reflectedConfirmationId:confirmationId};instant(record.resolvedAt);
+    if(this.db.prepare('INSERT INTO correction_resolution VALUES(?,?,?,?,?,?)').run(scopeId,record.resolutionId,ref.kind==='draft'?ref.id:null,ref.kind==='legacy-preview'?ref.id:null,confirmationId,encodeEvidence(record)).changes!==1)throw Error('RESOLUTION_WRITE_FAILED');
+  }
+  async closeCorrectionWork(scopeId: string, cmd: P.CloseCorrectionWorkCommand): Promise<P.CorrectionWorkSummary> {
+    return this.writeWork(() => {
+      const hash=hashHistoryValue({action:'close',...cmd}),old=this.command(scopeId,cmd.idempotencyKey,'close',hash);
+      if(old) return old.acknowledgement as unknown as P.CorrectionWorkSummary;
+      const work=this.work(scopeId,cmd.ref);if(!work) throw new HistoryOperationError('NOT_FOUND');
+      if(cmd.ref.kind==='draft') this.assertDraft(scopeId,cmd.ref.id,cmd.expectedDraftRevision!);
+      else { if(cmd.expectedDraftRevision!==null) throw new HistoryOperationError('INVALID_DRAFT');this.assertOpen(scopeId,cmd.ref,work.preview); }
+      this.resolve(scopeId,cmd.ref,'closed',work.preview?.previewId ?? cmd.ref.id,null);
+      const summary=this.work(scopeId,cmd.ref)!.summary;this.acknowledge(scopeId,cmd.idempotencyKey,'close',hash,summary);return summary;
+    });
+  }
+  private work(scopeId: string, ref: P.CorrectionWorkRef): {summary:P.CorrectionWorkSummary;basis:P.CorrectionBasis;content:P.DraftContent;preview:P.StoredCorrectionPreview|null;draft:P.StoredCorrectionDraft|null;confirmation:P.StoredConfirmation|null;resolution:P.StoredCorrectionResolution|null} | null {
+    const draft=ref.kind==='draft'?this.read<P.StoredCorrectionDraft>('correction_draft',scopeId,ref.id):null;
+    const preview=ref.kind==='draft' ? (draft?.currentPreviewId?this.read<P.StoredCorrectionPreview>('correction_preview',scopeId,draft.currentPreviewId):null) : this.read<P.StoredCorrectionPreview>('correction_preview',scopeId,ref.id);
+    if(ref.kind==='draft'?!draft:!preview||v2(preview)) return null;
+    const basis=this.basis(scopeId,draft?.basisId ?? previewBasisId(preview!));
+    const submission=preview?this.submission(scopeId,previewSubmissionId(preview)):null;
+    const content=(draft?.requiresReapply?draft.proposedContent:null) ?? draft?.content ?? {edits:submission?.patch.map(edit=>({rowId:edit.rowId,action:edit.action,rawValue:edit.value===null?null:String(edit.value)})) ?? [],reason:submission?.reason ?? '',evidenceNote:submission?.evidenceNote ?? ''};
+    const confirmation=this.previewConfirmation(scopeId,preview), resolution=this.resolution(scopeId,ref);
+    const head=this.head(scopeId,basis.basis.reportCycle), current=Boolean(preview && (!draft || (v2(preview)&&preview.draftRevision===draft.draftRevision&&preview.previewId===draft.currentPreviewId)));
+    const stale=head.confirmationId!==basis.baseConfirmationId || head.revision!==basis.baseRevision || Boolean(preview?.dependencyHeads.some(token=>token.reportCycle!==head.reportCycle&&!equal(this.head(scopeId,token.reportCycle),token)));
+    const state=correctionWorkState({confirmationId:confirmation?.confirmationId??null,resolutionKind:resolution?.kind??null,hasPreview:preview!==null,previewIsCurrent:current,stale});
+    const displayBasis=draft?.requiresReapply&&draft.originalBasisId?this.basis(scopeId,draft.originalBasisId):basis;
+    const completed=['closed','reflected','confirmed'].includes(state), first=content.edits[0], row=displayBasis.rows.find(row=>row.rowId===first?.rowId);
+    const summary:P.CorrectionWorkSummary={ref,state,reportCycle:basis.basis.reportCycle,reportTitleMonth:basis.basis.reportTitleMonth,baseRevision:basis.baseRevision,createdAt:draft?.createdAt??preview!.createdAt,savedAt:draft?.savedAt??preview!.createdAt,summary:row&&first?`${row.label} · ${row.period} · ${row.originalText}→${first.action==='set-missing'?'값 없음':first.rawValue} · ${row.unit}${content.edits.length>1?` 외 ${content.edits.length-1}건`:''}`:content.reason.slice(0,120),inputCount:content.edits.length,validChangeCount:current?submission?.patch.length??null:null,capabilities:{resume:ref.kind==='draft'&&!completed,view:true,copy:state==='closed',close:!completed}};
+    return {summary,basis,content,preview,draft,confirmation,resolution};
+  }
+  private workRefs(scopeId: string): P.CorrectionWorkRef[] {
+    return [...this.all<P.StoredCorrectionDraft>('correction_draft',scopeId).map(d=>({kind:'draft' as const,id:d.draftId})),...this.all<P.StoredCorrectionPreview>('correction_preview',scopeId).filter(p=>!v2(p)).map(p=>({kind:'legacy-preview' as const,id:p.previewId}))];
+  }
+  async getCorrectionReviewDetail(scopeId: string, ref: P.CorrectionWorkRef): Promise<P.CorrectionReviewDetail | null> {
+    const work=this.work(scopeId,ref);if(!work)return null;
+    const {summary,content,preview,confirmation,resolution}=work;
+    const basis=work.draft?.requiresReapply&&work.draft.originalBasisId?this.basis(scopeId,work.draft.originalBasisId):work.basis;
+    const patch=preview?this.submission(scopeId,previewSubmissionId(preview))?.patch:null;
+    const head=this.head(scopeId,basis.basis.reportCycle);
+    const currentBasis=this.all<P.StoredWorkbookExport|P.CorrectionBasis>('workbook_export',scopeId).map(neutralBasis).find(b=>b.baseConfirmationId===head.confirmationId)??null;
+    const meaning=(row:P.CorrectionBasisRow)=>({category:row.category,sourceRound:row.sourceRound,period:row.period,unit:row.unit,sourceIdentity:row.sourceIdentity});
+    const current=(row:P.CorrectionBasisRow):P.CorrectionReviewRow['current']=>{
+      const matches=currentBasis?.rows.filter(other=>equal(meaning(row),meaning(other)))??[];
+      return matches.length===1&&basis.rows.filter(other=>equal(meaning(row),meaning(other))).length===1?{originalText:matches[0].originalText,originalState:matches[0].originalState}:null;
+    };
+    return {summary,rows:content.edits.flatMap(edit=>{const row=basis.rows.find(row=>row.rowId===edit.rowId);return row?[{rowId:row.rowId,category:row.category,label:row.label,sourceRound:row.sourceRound,period:row.period,unit:row.unit,originalText:row.originalText,originalState:row.originalState,allowedActions:row.allowedActions,proposedAction:edit.action,proposedText:edit.rawValue,evidenceNote:patch?.find(p=>p.rowId===edit.rowId)?.evidenceNote??content.evidenceNote,current:current(row)}]:[];}),reason:content.reason,evidenceNote:content.evidenceNote,preview:preview?{previewId:preview.previewId,previewHash:preview.previewHash,draftRevision:v2(preview)?preview.draftRevision:null}:null,confirmationId:confirmation?.confirmationId??resolution?.reflectedConfirmationId??null,resolvedAt:resolution?.resolvedAt??null};
+  }
+  async listCorrectionWork(scopeId: string, query: P.CorrectionWorkQuery): Promise<{items:readonly P.CorrectionWorkSummary[];nextCursor:string|null}> {
+    if(query.limit!==20)throw new HistoryOperationError('LIMIT_EXCEEDED');if(query.reportCycle)parseYearMonth(query.reportCycle);
+    const filter={scopeId,reportCycle:query.reportCycle??null,pendingOnly:query.pendingOnly};
+    const ceiling={draft:this.tableAvailable('correction_draft')?Number(this.db.prepare('SELECT coalesce(max(rowid),0) AS n FROM correction_draft WHERE scope_id=?').get(scopeId)?.n):0,preview:this.tableAvailable('correction_preview')?Number(this.db.prepare('SELECT coalesce(max(rowid),0) AS n FROM correction_preview WHERE scope_id=?').get(scopeId)?.n):0};
+    type Cursor={filter:typeof filter;ceiling:typeof ceiling;createdAt:string;last:[string,string,string]};
+    let cursor:Cursor|null=null;try{if(query.cursor)cursor=JSON.parse(Buffer.from(query.cursor,'base64url').toString());if(cursor&&(!equal(cursor.filter,filter)||!Array.isArray(cursor.last)||cursor.last.length!==3||cursor.last.some(value=>typeof value!=='string')||!Number.isFinite(Date.parse(cursor.createdAt))||!cursor.ceiling||!Number.isSafeInteger(cursor.ceiling.draft)||cursor.ceiling.draft<0||!Number.isSafeInteger(cursor.ceiling.preview)||cursor.ceiling.preview<0))throw Error();}catch{throw new HistoryOperationError('INVALID_DRAFT');}
+    const cap=cursor?.ceiling??ceiling;
+    let items=this.workRefs(scopeId).filter(ref=>{const table=ref.kind==='draft'?'correction_draft':'correction_preview',row=this.db.prepare(`SELECT rowid FROM ${table} WHERE scope_id=? AND id=?`).get(scopeId,ref.id);return Number(row?.rowid)<= (ref.kind==='draft'?cap.draft:cap.preview);}).map(ref=>this.work(scopeId,ref)!.summary).filter(s=>(!query.reportCycle||s.reportCycle===query.reportCycle)&&(!query.pendingOnly||!['confirmed','closed','reflected'].includes(s.state)));
+    const tuple=(s:P.CorrectionWorkSummary):[string,string,string]=>[s.createdAt,s.ref.kind,s.ref.id];
+    const compare=(a:readonly string[],b:readonly string[])=>{for(let i=0;i<3;i++){const n=a[i]<b[i]?-1:a[i]>b[i]?1:0;if(n)return n;}return 0;};
+    items.sort((a,b)=>compare(tuple(b),tuple(a)));
+    const createdAt=cursor?.createdAt??items[0]?.createdAt??this.now();items=items.filter(s=>s.createdAt<=createdAt&&(!cursor||compare(tuple(s),cursor.last)<0));
+    const selected=items.slice(0,20),nextCursor=items.length>20?Buffer.from(JSON.stringify({filter,ceiling:cap,createdAt,last:tuple(selected[19])})).toString('base64url'):null;
+    return {items:selected,nextCursor};
+  }
+  async listCorrectionMonths(scopeId: string, query: P.CorrectionMonthQuery): Promise<{items:readonly P.CorrectionMonthSummary[];nextCursor:string|null}> {
+    if(query.limit!==12)throw new HistoryOperationError('LIMIT_EXCEEDED');if(query.fromCycle)parseYearMonth(query.fromCycle);if(query.toCycle)parseYearMonth(query.toCycle);
+    const filter={scopeId,from:query.fromCycle??null,to:query.toCycle??null,pendingOnly:query.pendingOnly};
+    let cursor:{filter:typeof filter;last:string}|null=null;try{if(query.cursor)cursor=JSON.parse(Buffer.from(query.cursor,'base64url').toString());if(cursor&&(!equal(cursor.filter,filter)||typeof cursor.last!=='string'))throw Error();}catch{throw new HistoryOperationError('INVALID_DRAFT');}
+    const works=this.workRefs(scopeId).map(ref=>this.work(scopeId,ref)!.summary),heads=this.db.prepare('SELECT confirmation_id FROM monthly_head WHERE scope_id=?').all(scopeId);
+    const items=heads.map(row=>this.require<P.StoredConfirmation>('monthly_confirmation',scopeId,String(row.confirmation_id))).filter(c=>(!query.fromCycle||c.reportCycle>=query.fromCycle)&&(!query.toCycle||c.reportCycle<=query.toCycle)).map(c=>{
+      const pending=works.filter(w=>w.reportCycle===c.reportCycle&&!['confirmed','closed','reflected'].includes(w.state)),drafts=pending.filter(w=>w.ref.kind==='draft');
+      return {reportCycle:c.reportCycle,reportTitleMonth:c.basis.reportTitleMonth,latestConfirmationId:c.confirmationId,latestRevision:c.revision,confirmedAt:c.confirmedAt,pendingCount:pending.length,draftCount:drafts.length,resumeRef:drafts.length===1?drafts[0].ref:null};
+    }).filter(m=>(!query.pendingOnly||m.pendingCount>0)&&(!cursor||m.reportTitleMonth<cursor.last)).sort((a,b)=>b.reportTitleMonth.localeCompare(a.reportTitleMonth));
+    return {items:items.slice(0,12),nextCursor:items.length>12?Buffer.from(JSON.stringify({filter,last:items[11].reportTitleMonth})).toString('base64url'):null};
+  }
+  private reflectWorks(scopeId: string, winner: P.StoredCorrectionPreview, basis: P.CorrectionBasis, patch: P.NormalizedCorrectionPatch, confirmationId: string): void {
+    const edits=new Map(patch.map(edit=>[edit.rowId,edit]));
+    const current:P.CorrectionBasis={...basis,rows:basis.rows.map(row=>{const edit=edits.get(row.rowId);return edit?{...row,originalValue:edit.value,originalState:edit.action==='set-missing'?'missing':'available',originalText:edit.value===null?'':String(edit.value)}:row;})};
+    for(const ref of this.workRefs(scopeId)) {
+      const work=this.work(scopeId,ref)!;
+      if(!work.preview || work.preview.previewId===winner.previewId || work.confirmation || work.resolution || work.draft?.requiresReapply)continue;
+      if(work.draft&&(!v2(work.preview)||work.preview.draftRevision!==work.draft.draftRevision||work.preview.previewId!==work.draft.currentPreviewId))continue;
+      const submission=this.submission(scopeId,previewSubmissionId(work.preview));
+      if(submission&&correctionPatchAlreadyApplied(work.basis,submission.patch,current))this.resolve(scopeId,ref,'reflected',work.preview.previewId,confirmationId);
     }
   }
   async listConfirmations(scopeId: string, cycle?: YearMonth): Promise<readonly P.ConfirmationSummary[]> { return this.all<P.StoredConfirmation>('monthly_confirmation', scopeId).filter(c => !cycle || c.reportCycle === cycle).map(c => ({ confirmationId: c.confirmationId, reportCycle: c.reportCycle, revision: c.revision, confirmedAt: c.confirmedAt, candidateId: c.candidateId, ...(c.correctionReason ? { correctionReason: c.correctionReason } : {}) })); }
