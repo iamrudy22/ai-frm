@@ -374,3 +374,26 @@ it.each(['t="inlineStr" t="str"', 't="inlineStr" T="str"', 't="unknown"'])('문�
   expect(() => codec.readExportId(zip(entries,true))).toThrow('INVALID_WORKBOOK');
   expect(calls).toBe(0);
 });
+
+it('공통 십진 검증 후에도 typed numeric 셀의 지수 표현과 원래 정밀도를 유지한다', () => {
+  for (const value of [1e21, 1e-7, 1.0000000000000002, -0.5]) {
+    const { bytes, manifest } = editWorkbook(book => Object.assign(book.Sheets['자금자료_정정'], {
+      G2: { t: 's', v: '값수정' }, H2: { t: 'n', v: value }, I2: { t: 's', v: '정밀도 확인' },
+    }));
+    expect(decodeCorrection(bytes, manifest)).toEqual({ patch: [{ rowId: 'row-A', action: 'set', value, reason: '정밀도 확인', evidenceNote: '' }], errors: [] });
+  }
+});
+
+it('OOXML numeric exponent는 허용하지만 같은 문자열 셀은 INVALID_NUMBER다', () => {
+  const { bytes, manifest } = editWorkbook(book => Object.assign(book.Sheets['자금자료_정정'], {
+    G2: { t: 's', v: '값수정' }, H2: { t: 'n', v: 1000 }, I2: { t: 's', v: '숫자 셀 확인' },
+  }));
+  const entries = unpack(bytes);
+  const sheet = entries.find(([name]) => name === 'xl/worksheets/sheet4.xml')!;
+  sheet[1] = Buffer.from(sheet[1].toString().replace(/<c r="H2"[\s\S]*?<\/c>/, '<c r="H2"><v>1e3</v></c>'));
+  expect(decodeCorrection(zip(entries), manifest)).toMatchObject({ errors: [], patch: [{ value: 1000 }] });
+  const stringInput = editWorkbook(book => Object.assign(book.Sheets['자금자료_정정'], {
+    G2: { t: 's', v: '값수정' }, H2: { t: 's', v: '1e3' }, I2: { t: 's', v: '문자열 셀 확인' },
+  }));
+  expect(decodeCorrection(stringInput.bytes, stringInput.manifest)).toMatchObject({ patch: [], errors: [{ code: 'INVALID_NUMBER' }] });
+});

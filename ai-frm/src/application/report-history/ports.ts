@@ -3,6 +3,8 @@ import type { YearMonth } from '../../domain/shared/year-month';
 import type { BondYieldSource, EconomicIndicatorSource, SourceResult, YieldFetch } from '../ports';
 import type { HistoryIndicator, CalculationOrigin, Derivation, JsonValue, ReportBasis, PreparedDocument, ConfirmationCommand, ConfirmationResult } from '../../domain/report-history/report-history';
 export type * from '../../domain/report-history/report-history';
+export type * from '../../domain/report-history/correction';
+import type { CorrectionBasis, CorrectionDraft, CorrectionDraftDto, CorrectionEditorDto, CorrectionEditResult, CorrectionMonthSummary, CorrectionResolution, CorrectionReviewDetail, CorrectionWorkRef, CorrectionWorkSummary, DraftContent, NormalizedCorrectionPatch, SaveDraftCommand } from '../../domain/report-history/correction';
 export type StatementSnapshotDto = {
   readonly asOf: {
     readonly year: number;
@@ -315,12 +317,93 @@ export type HistoryDependencies = {
   readonly replayYields?: (observed: SourceObservation<YieldFetch>) => BondYieldSource;
   readonly isUnsafe: (value: unknown) => boolean;
 };
-export type ReportCorrectionDependencies = HistoryDependencies & {
-  readonly workbookCodec: HistoryWorkbookCodec;
+export type CorrectionDependencies = HistoryDependencies & {
   readonly documentFactory: import('./report-candidate').ReportDocumentFactory;
   readonly nextId: () => string;
   readonly ecosCatalog: readonly { readonly key: string; readonly stat: string; readonly items: readonly string[] }[];
 };
+export type ReportCorrectionDependencies = CorrectionDependencies & { readonly workbookCodec: HistoryWorkbookCodec };
+
+/** Neutral v2 payloads share physical adapters with legacy records without fabricated file metadata. */
+export type CorrectionBasisWrite = CorrectionBasis;
+export type StoredCorrectionBasis = CorrectionBasis;
+export type CorrectionDraftLink = { readonly draftId: string; readonly draftRevision: number };
+export type CorrectionSubmissionWrite = {
+  readonly recordKind: 'correction-submission';
+  readonly payloadVersion: 2;
+  readonly scopeId: string;
+  readonly submissionId: string;
+  readonly basisId: string;
+  readonly draftId: string;
+  readonly draftRevision: number;
+  readonly submissionHash: string;
+  readonly patchHash: string;
+  readonly patch: NormalizedCorrectionPatch;
+  readonly reason: string;
+  readonly evidenceNote: string;
+  readonly baseConfirmationId: string;
+  readonly baseRevision: number;
+  readonly dependencyHeads: readonly RevisionToken[];
+  readonly createdAt: string;
+};
+export type StoredCorrectionSubmission = CorrectionSubmissionWrite;
+export type CorrectionPreviewV2Write = {
+  readonly recordKind: 'correction-preview';
+  readonly payloadVersion: 2;
+  readonly scopeId: string;
+  readonly previewId: string;
+  readonly previewHash: string;
+  readonly submissionId: string;
+  readonly basisId: string;
+  readonly draftId: string;
+  readonly draftRevision: number;
+  readonly baseConfirmationId: string;
+  readonly baseRevision: number;
+  readonly inputSnapshotId: string;
+  readonly candidateId: string;
+  readonly dependencyHeads: readonly RevisionToken[];
+  readonly rawDiff: JsonValue;
+  readonly resultDiff: JsonValue;
+  readonly affectedReports: JsonValue;
+  readonly createdAt: string;
+};
+export type StoredCorrectionPreviewV2 = CorrectionPreviewV2Write;
+export type CorrectionStageV2Write = {
+  readonly scopeId: string;
+  readonly expectedBase: RevisionToken;
+  readonly dependencyHeads: readonly RevisionToken[];
+  readonly draft: CorrectionDraftLink;
+  readonly evidence: readonly StoredEvidence[];
+  readonly inputs: readonly StoredInputSnapshot[];
+  readonly calculations: readonly StoredCalculation[];
+  readonly candidate: CandidateWrite & { readonly candidateId: string };
+  readonly submission: CorrectionSubmissionWrite;
+  readonly preview: CorrectionPreviewV2Write;
+};
+export type StoredCorrectionDraft = CorrectionDraft;
+export type StoredCorrectionResolution = CorrectionResolution;
+export type CreateCorrectionDraftCommand = { readonly basisId: string; readonly idempotencyKey: string; readonly content: DraftContent };
+export type CorrectionWorkQuery = { readonly reportCycle?: string; readonly pendingOnly: boolean; readonly cursor?: string; readonly limit: 20 };
+export type CorrectionMonthQuery = { readonly fromCycle?: string; readonly toCycle?: string; readonly pendingOnly: boolean; readonly cursor?: string; readonly limit: 12 };
+export type CloseCorrectionWorkCommand = { readonly ref: CorrectionWorkRef; readonly expectedDraftRevision: number | null; readonly idempotencyKey: string };
+export type CopyClosedCorrectionWorkCommand = { readonly ref: CorrectionWorkRef; readonly idempotencyKey: string };
+export type ReapplyCorrectionDraftCommand = { readonly draftId: string; readonly expectedDraftRevision: number; readonly expectedLatestConfirmationId: string; readonly idempotencyKey: string };
+export type PreviewCorrectionDraftCommand = { readonly draftId: string; readonly expectedDraftRevision: number };
+/** Signatures fixed before persistence and service implementation in W2/W3. */
+export interface CorrectionWorkServices {
+  prepareCorrectionEditor(deps: CorrectionDependencies, scopeId: string, confirmationId: string): Promise<CorrectionEditorDto>;
+  createCorrectionDraft(deps: CorrectionDependencies, scopeId: string, cmd: CreateCorrectionDraftCommand): Promise<CorrectionDraftDto | 'empty'>;
+  saveCorrectionDraft(deps: CorrectionDependencies, scopeId: string, cmd: SaveDraftCommand): Promise<CorrectionDraftDto>;
+  getCorrectionDraft(repository: HistoryRepository, scopeId: string, draftId: string): Promise<CorrectionDraftDto>;
+  listCorrectionWork(repository: HistoryRepository, scopeId: string, query: CorrectionWorkQuery): Promise<{ readonly items: readonly CorrectionWorkSummary[]; readonly nextCursor: string | null }>;
+  listCorrectionMonths(repository: HistoryRepository, scopeId: string, query: CorrectionMonthQuery): Promise<{ readonly items: readonly CorrectionMonthSummary[]; readonly nextCursor: string | null }>;
+  getCorrectionReviewDetail(repository: HistoryRepository, scopeId: string, ref: CorrectionWorkRef): Promise<CorrectionReviewDetail>;
+  closeCorrectionWork(deps: CorrectionDependencies, scopeId: string, cmd: CloseCorrectionWorkCommand): Promise<CorrectionWorkSummary>;
+  copyClosedCorrectionWork(deps: CorrectionDependencies, scopeId: string, cmd: CopyClosedCorrectionWorkCommand): Promise<CorrectionDraftDto | { readonly kind: 'no-change' }>;
+  reapplyCorrectionDraft(deps: CorrectionDependencies, scopeId: string, cmd: ReapplyCorrectionDraftCommand): Promise<CorrectionDraftDto | { readonly kind: 'no-change' }>;
+  previewCorrectionDraft(deps: CorrectionDependencies, scopeId: string, cmd: PreviewCorrectionDraftCommand): Promise<CorrectionEditResult>;
+  confirmCorrection(deps: CorrectionDependencies, scopeId: string, cmd: CorrectionConfirmCommand): Promise<ConfirmationResult>;
+}
 export type SourceObservation<T> =
   | { readonly kind: 'not-requested' }
   | { readonly kind: 'returned'; readonly value: T }

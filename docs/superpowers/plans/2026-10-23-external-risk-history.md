@@ -4,7 +4,7 @@
 
 **Goal:** 기존 계산식과 보고서 템플릿을 유지하면서 과거 자료와 월별 확정 이력을 자동 보관하고, 사용자가 파일 관리 없이 웹에서 원자료를 수정·검증·정정 확정할 수 있게 한다.
 
-**Architecture:** 원천 캡처·정규화 회차 입력·계산 실행·업무 확정을 분리해 로컬 SQLite에 불변 보관한다. 정정의 중심을 파일 교환에서 서버 발급 편집 기준·수정안·변경 검토로 옮기고, 웹에서 받은 원자료 수정안을 기존 함수로 재계산한 뒤 명시적 정정 확정으로 새 버전을 만든다. 기존 엑셀 정정 자료는 읽기 호환 어댑터로 보존하며 원본 캡처와 이전 확정 문서는 수정하지 않는다.
+**Architecture:** 원천 캡처·정규화 회차 입력·계산 실행·업무 확정을 분리해 로컬 SQLite에 불변 보관한다. 정정의 중심을 파일 교환에서 서버 발급 편집 기준·수정안·변경 검토로 옮기고, 미완성 웹 입력은 별도 가변 초안에 자동 보관하고, 검증된 불변 수정안만 기존 함수로 재계산한 뒤 명시적 정정 확정으로 새 버전을 만든다. 종료 기록과 읽기 전용 조회·새 수정안 복사는 확정본과 분리한다. 기존 엑셀 정정 자료는 읽기 호환 어댑터로 보존하며 원본 캡처와 이전 확정 문서는 수정하지 않는다.
 
 **Tech Stack:** 현행 Next.js 16.3.4·React 19·TypeScript·Astryx 0.5.4·Vitest, 기존 SheetJS `xlsx@0.18.5`, 현재 지원 Node.js v26.12.1의 `node:sqlite`/`DatabaseSync`·`backup`·crypto·zlib. 외부 DB·스프레드시트 연결·새 npm 패키지·스케줄러는 사용하지 않는다.
 
@@ -12,7 +12,7 @@
 
 **상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`)·Task8(`e4aa811`) 완료. Task9 기능·통합 검증·운영 문서·최종 독립 재검토 Approved까지 완료했으며 최종 커밋에 이 기록을 포함한다. 보완 후 전체 lint·webpack build·896개 테스트(병렬4)·합성 전체 원장 백업복원·재시작·문서별 출처 전환 QA가 통과했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 인수는 미완료다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 보호51파일 SHA-256은 모두 그대로이며 실제 업무 파일 대신 합성 자료로 검증했다.
 
-**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. §7의 W1~W5는 새 계획이며 모두 미구현이다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 이번 요청은 계획 재수립이며 앱 코드·DB·서버 설정은 변경하지 않는다.
+**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1의 구현·TDD·독립 검토·QA를 완료했으며 W2부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
 
 ## Global Constraints
 
@@ -30,11 +30,11 @@
 
 ## Review Focus
 
-1. 보고서 제목 월·건설 기준월·조달 판단/관측월·달력 날짜를 혼동하면 한두 달 이동하거나 시간대에 따라 전월로 저장된다. → 기존 Task 2·3·5 및 W2·W4의 월/날짜·자료 식별 테스트.
-2. 같은 회차 정정·늦은 응답·타 scope/변조된 행 ID·수정 중 입력 변경이 새/옛 입력을 섞지 않아야 한다. → W1~W4의 서버 기준 검증·generation·검토 무효화 테스트.
-3. 두 탭 정정·오래된 편집 기준·응답 유실·서버 종료·디스크 오류가 중복/반쪽 확정 또는 거짓 ‘저장됨’을 만들면 안 된다. → W1~W4의 멱등·revision/CAS·장애 테스트.
-4. ECOS 수정치·보완 배치·수기 정정이 과거 문서/작성일/차트를 바꾸거나 다른 보고서를 자동 정정하면 안 된다. → 기존 Task 3·4·5·7·8 및 W2·W4·W5의 출처·영향·무조회 재열람 테스트.
-5. 숫자 자동 보정·빈칸/0/결측·구형 원장 읽기·18개월·저장 실패에서도 산식·템플릿을 보존한다. → W1~W5의 정밀도·호환·회귀 QA.
+1. 보고서 제목 월·건설 기준월·조달 판단/관측월·달력 날짜를 혼동하면 한두 달 이동하거나 시간대에 따라 전월로 저장된다. → 기존 Task2·3·5 및 W1·W3·W5의 월/날짜·자료 식별 테스트.
+2. 같은 회차 정정·늦은 응답·타 scope/변조된 행 ID·수정 중 입력 변경이 새/옛 입력을 섞지 않아야 한다. → W1~W5의 서버 기준 검증·draft CAS·generation·검토 무효화 테스트.
+3. 두 탭 정정·오래된 편집 기준·응답 유실·서버 종료·디스크 오류가 중복/반쪽 확정 또는 거짓 ‘저장됨’을 만들면 안 된다. → W2~W5의 멱등·draft/확정 CAS·종료 경쟁·장애 테스트.
+4. ECOS 수정치·보완 배치·수기 정정이 과거 문서/작성일/차트를 바꾸거나 다른 보고서를 자동 정정하면 안 된다. → 기존 Task3·4·5·7·8 및 W2·W3·W5·W6의 출처·영향·무조회 재열람 테스트.
+5. 숫자 자동 보정·빈칸/0/결측·구형 원장 읽기·18개월·저장 실패에서도 산식·템플릿을 보존한다. → W1~W6의 정밀도·호환·회귀 QA.
 
 ---
 
@@ -505,137 +505,210 @@ interface HistoryRepository {
 - 기존 계산/템플릿을 수정해야만 통과하는 구현이라면 범위를 넓히지 말고 저장·투영·월 대응 버그를 먼저 찾는다. 실제 재무 Excel/PDF/별도 기대값 CSV를 생성·복사·Git 추적하지 않는다. 교환 파일 QA는 합성 자료만 사용한다.
 - 사용자가 보완한 계획의 순차 구현을 승인했다. Task1부터 TDD·독립 검토·QA·커밋·컨텍스트 기록을 완료한 뒤 다음 단계로 진행한다. 미완료를 완료로 표시하지 않으며 원격 push·merge·배포는 수행하지 않는다.
 
-## 7. 웹 원자료 편집·정정 전환 계획 (2026-10-26)
+## 7. 웹 원자료 편집·정정 전환 계획 (2026-10-26, 목업 검토 반영)
 
-### 7.1 변경 명세
+### 7.1 변경 명세와 범위
 
-기존에는 비개발자의 수정을 위해 엑셀 내보내기·수정본 가져오기를 구현했다. 최신 요구에서는 사용자가 기록 파일을 관리하지 않으므로 이 전달 방식은 종료한다. **정정과 불변 이력은 유지하고 편집 수단을 웹으로 바꾼다.** 이번 작업은 확정된 보고서의 원자료 정정에 한정한다. 확정 전 최초 입력을 편집하는 별도 기능과 외부 공개·Tunnel·인증 설정은 포함하지 않는다.
+사용자가 기록 파일을 관리하지 않고 웹에서 값을 수정하도록 기존 엑셀 정정 흐름을 대체한다. 실제 앱은 아직 schema3/XLSX 정정 구현이며, 별도 목업의 자동 보관·검토 종료가 제품에 연결된 상태가 아니다. 기존 W1~W5는 모두 미실행이므로 아래 **W1~W6**으로 재편한다. 기존 Task1~9의 완료 이력과 미완료 수동 QA 기록은 보존한다.
 
-**사용자 흐름:** 월별 확정 이력 → **값 수정** → 원자료 편집·정정 사유 → **변경 내용 확인** → 변경 전후 검토 → **정정 확정** → 새 차수 열기.
+**목표 흐름:** 월별 확정 이력 → 기존 수정안 이어가기/선택 또는 명시적 새 수정안 → 원자료 편집·자동 보관 → 변경 내용 확인 → 명시적 정정 확정 → 새 확정본 열기. 처리한 수정안은 읽기 전용으로 조회하며, 수동 종료한 안은 원본을 보존한 새 수정안으로 다시 검토한다.
 
-- 이력에는 보고월·회차·차수·확정 시각과 `열기`, `값 수정`을 표시한다. 보고월과 자료 회차가 다르면 기존 월 대응대로 구별한다. 과거 차수는 열람만 하고 해당 회차의 최신 확정본에서 수정을 시작한다.
-- 편집 영역은 **자금자료 / 경제지표 / 조달금리**로 나눈다. 행에는 항목·자료 회차·해당 월 또는 평가일·단위·기존 값·수정 값을 표시한다. 필터를 바꿔도 다른 영역의 입력은 유지한다. 긴 설명 대신 행별 제한·검증 오류를 필요한 위치에 표시한다.
-- 정정 사유는 한 번 입력한다(필수, 원문 최대2000자이며 trim 후 비어 있지 않아야 함). 서버는 이 사유를 모든 변경 행의 유효 사유로 사용하며 근거 메모는 선택(최대2000자)이다. 검토된 사유가 바뀌면 다시 검증한다. 신규 웹 정정의 확정 사유는 해당 미리보기에 고정된 사유와 일치해야 한다. 구형 정정의 사유 규칙은 읽기 호환으로 보존한다.
-- 원자료·산출 결과·등급·산출불가 상태의 변경 전후와 기존 범위의 다른 보고서 영향만 보여 준다. 다른 보고서는 자동 변경하지 않는다. 현재 영향 분석이 모든 다른 보고서의 5개 지표를 완전 재계산한다고 표시하지 않는다.
-- 입력 중에는 웹 화면의 임시 상태다. 검증에 성공한 수정안과 미리보기부터 서버가 자동 보관한다. 키 입력마다 서버 초안을 저장하는 기능은 이번 범위가 아니다. 미확정 입력을 버리는 전환·취소에는 폐기 확인을 제공한다. 새로고침/창 닫기에서 지원되는 경우 이탈 경고를 사용하되 브라우저 강제 종료까지 복구를 보장하지 않는다.
-- 저장된 검토안은 해당 회차의 `검토 중인 변경` 목록에서 재개한다(생성 시각·기준 차수·변경 개수, 최근20건). 이미 확정한 안은 완료 상태, 기준이 오래된 안은 재검토가 필요한 상태로 구별한다. 사용자가 previewId 등을 입력하게 하지 않는다.
-- 값·사유·대상을 바꾸면 이전 미리보기와 확정 명령을 즉시 무효화한다. 검증 중/오류/변경 없음 상태에서는 확정하지 않는다. 성공 응답을 받은 뒤에만 새 차수를 저장했다고 표시한다.
-- 기존 정정용 내보내기·다운로드·수정본 업로드·내부 ID 입력과 표시를 일반 화면에서 제거한다. 최초 자금수지표 업로드와 보고서 PDF 저장은 유지한다. 기록·스냅샷·DB는 자동 관리하며 편집 화면에 경로나 파일명을 관리 대상으로 노출하지 않는다.
+**UI/UX 고정 사항:**
+
+- 기본 목록은 저장된 최신 보고월을 끝으로 하는 달력12개월, 연도 선택과 전체 기간 조회를 제공한다. 중간에 자료가 없는 달을 임의 생성하거나 더 오래된 달로 채우지 않는다. `전체 기간 미처리만`은 연도 조건에 가려진 옛 수정안도 찾는다. 월별 최신 확정1행을 표시하고 이전 차수·수정안은 해당 월에서 펼친다.
+- 작성 중 수정안이 하나면 월 행의 대표 동작은 `이어서 작성`이다. 여러 개이거나 선택이 필요하면 `수정안 보기`로 해당 월 목록을 연다. `새 수정안`은 별도 명시적 동작으로 두고 재개 때 새 ID/빈 입력을 만들지 않는다. 확정본 `열기`는 계속 제공한다.
+- 수정안의 첫 식별 정보는 `항목 · 적용 월/평가일 · 변경 전→후 · 단위`다. 여러 행이면 첫 변경과 나머지 건수를 요약하고 사유를 보조 정보로 둔다. 미검증 입력은 변경 확정 개수처럼 표시하지 않는다. 긴 원문·전체 값은 내용 보기에서 확인한다.
+- 편집은 자금자료/경제지표/조달금리 탭으로 구분한다. 탭별 회차·해당 월/평가일·검색어·변경 항목 필터와 다른 탭의 입력을 유지한다. 보고월·자료회차·해당 월/평가일·단위를 일관되게 표시한다.
+- 원장/API의 reportCycle은 기존 자료회차 키이며 화면 보고월은 저장된 ReportBasis.reportTitleMonth다. 목록의 연도/최근12개월은 표시 보고월 기준으로 선택하고 기존 월 정책으로 회차 범위에 매핑한다. reportCycle을 보고월로 재명명하거나 기존 reportTitleMonth=reportCycle-1 규칙을 바꾸지 않는다.
+- **미완성 입력도 로컬 서버의 SQLite에 자동 보관한다.** 기존 계획의 ‘검증 성공 이후만 보관’은 폐기한다. 마지막 입력 후1000ms debounce, 동일 수정안당 저장1건 직렬 실행, 전송 중 바뀐 입력은 최신 상태만 이어서 저장한다. `저장 중/보관됨/저장 실패`를 구분하고 서버 ACK 전에는 보관됐다고 표시하지 않는다.
+- `목록으로`·검토 요청 전에는 남은 저장을 기다린다. 실패하면 입력을 유지한 채 재시도를 제공하고 전환하지 않는다. 미전송 입력이 있을 때만 지원되는 브라우저의 이탈 경고를 사용한다. 서버 ACK 전 강제 종료까지 복구를 보장하지 않는다. 제품 저장에 sessionStorage를 원장처럼 사용하지 않는다.
+- 검토 성공한 특정 초안 버전에만 `확정 대기`를 표시한다. 값·사유·근거 변경은 기존 미리보기와 확정 명령의 현재 연결을 해제하지만 저장된 미리보기 자체는 바꾸지 않는다. 오류/검증 중/변경 없음/저장 중/충돌 상태에서는 확정하지 않는다.
+- `검토 종료`는 작업 목록에서 정리하는 동작이며 정정 확정과 구별한다. 대상 항목·사유 요약을 확인창에 보여 주고, 확정본은 바꾸지 않는다. 같은 원자료 값이 이미 확정된 검증안은 `이미 반영됨`으로 처리 기록에 남기며 새 차수를 만들지 않는다.
+- 모든 수정안에 읽기 전용 `내용 보기`를 제공한다. 시작값·제안값·자료 식별·사유·근거·상태를 보관 당시 기준으로 보여 주고, 조회 때문에 자동 저장/상태 변경/기준 발급/원천 조회를 실행하지 않는다.
+- 수동 종료한 안의 `새 수정안으로 다시 검토`는 원본을 보존하고 새 작업을 만든다. 원래 시작값/최신값/제안값을 비교한 뒤 명시적 재적용과 재검증을 거친다. 과거 행ID만으로 자동 병합하지 않는다. 이미 동일한 값이면 변경 없음 안내만 하고 새 확정 차수는 만들지 않는다.
+- 정정용 엑셀 내보내기·수정본 업로드·내부 ID/파일 경로 입력을 일반 UI에서 제거한다. 최초 자금수지표 업로드, 보고서 열기·PDF 다운로드와 과거 보완 기능은 유지한다. 이력 제어부는 보고서 용지 밖/인쇄 제외다.
+- Astryx 실제 컴포넌트만 사용한다. 현재 `@astryxdesign/core/@astryxdesign/cli/@astryxdesign/theme-neutral` 0.5.4를 재사용하고 다른 UI 라이브러리나 임의 복제 컴포넌트를 추가하지 않는다. 원래 ThemeProvider·global CSS·리포트 폰트는 바꾸지 않는다.
 
 **편집 범위와 숫자 의미:**
 
-| 대상 | 웹에서 편집할 값 | 유지할 제약 |
+| 대상 | 수정 가능한 원자료 | 변경 금지 |
 |---|---|---|
-| 자금자료 | 저장된 각 회차의 기초시재·수입계·수입·분양회수·기타수입·지출의 기존 월별 금액(억원) | 회차·기준일·월 구조 고정. 수입계는 기존과 같은 독립 입력이며 새 합계식으로 바꾸지 않는다. 개별 결측 처리/새 월 추가 금지. 판독불가 항목 복구는 그 항목의 모든 기존 월 값을 입력한다. |
-| 경제지표 | 기존 건설 산출에 쓰인 ECOS 9종의 기준월·비교월 원값 | 단위·통계/항목 코드·월 고정. 저장된 유효 계열과 단위가 있는 행만 수정/명시적 결측 처리 가능. 조회 실패 원천을 임의 생성하지 않는다. |
-| 조달금리 | 저장된 관측월 평가일별 공사채 AAA 1년·국고채 1년 공표 3사 평균 금리(%) | 날짜·채권·만기·기관별 참고값 고정. 기관별 값을 다시 평균 내지 않는다. 허용 행만 명시적 결측 처리 가능. |
-| 파생 결과 | 직접 수정하지 않음 | 변화율·점수·가중치·지수·스프레드·등급·차트·보고서 문구는 기존 함수/템플릿을 사용한다. |
+| 자금자료 | 저장된 각 회차의 기존 월별 기초시재·수입계·수입·분양회수·기타수입·지출(억원) | 수입계는 기존 독립 입력 그대로. 새 합계식·개별 결측·새 월 추가 금지. 판독불가 항목 복구는 모든 기존 월 값을 입력 |
+| 경제지표 | 저장된 유효 ECOS9종의 기준월·비교월 원값, 허용 행의 명시적 값 없음 | 단위·통계/항목 코드·월 고정. 조회 실패 계열의 임의 생성 금지 |
+| 조달금리 | 저장된 관측월 평가일별 공사채AAA1년·국고채1년 공표3사 평균(%) | 기관별 참고값 재평균 금지. 날짜·채권·만기·기관별 참고값 고정 |
+| 파생 결과 | 편집하지 않음 | 변화율·가중치·지수·점수·등급·차트·문구는 기존 함수와 템플릿을 호출만 함 |
 
-숫자는 Astryx `TextInput`의 문자열 상태로 편집하며 자동 반올림·최솟값/최댓값 보정·휠 증감을 하지 않는다. 미수정은 원래 저장값을 그대로 쓰고, 빈 수정 칸은 변경 없음이며 0/결측으로 바꾸지 않는다. `0`·음수·기존 정밀도를 보존한다. 결측은 허용 행의 명시적 동작으로만 선택한다. 변경된 수는 기존 십진 문자열 문법을 서버에서 검증하며 쉼표·통화기호·%·과학표기·수식·비유한 값·overflow/underflow를 거부한다.
+숫자는 Astryx TextInput 문자열로 다룬다. 빈 수정 칸=변경 없음, 숫자0/음수/허용된 명시적 값 없음은 별개다. 미수정 저장값과 정밀도는 보존하고 자동 반올림·범위 보정·휠 증감을 하지 않는다. 미완성 초안에는 잘못된 숫자 문자열·빈 사유도 보관하지만 검증/확정 시에는 기존 십진 문법·유한 값·overflow/underflow·사유 규칙을 모두 검사한다. 전체 사유는 원문 최대2000자·trim 후 비어 있지 않음, 근거 메모는 선택·최대2000자다.
 
-### 7.2 DDD 경계·기존 데이터 호환
+### 7.2 DDD 경계·저장·동시성
 
-1. **업무 모델:** `CorrectionBasis`(서버가 고정한 편집 기준), `CorrectionSubmission`(정규화 수정안), `CorrectionPreview`(재계산·차이), `CorrectionConfirmCommand`(명시적 확정)를 중심에 둔다. `sheet/cell/fileHash/exportId/importId`는 신규 웹 계약에서 제외한다. 신규 도메인의 `submissionId`와 기존 저장 필드 `importId`는 호환 어댑터에서 명시적으로 연결한다.
-2. **검증:** 기존 XLSX codec에 들어 있는 숫자·허용 동작·행 식별·사유·no-change 제거·정렬 검증을 파일과 무관한 순수 함수로 추출한다. 서버는 저장된 기준의 rowId로 경로를 결정한다. 브라우저가 보내는 원값·단위·fieldPath·scope·월·버전·결과는 받아들이지 않는다.
-3. **계산:** 기존 재생 경로를 재사용해 전체 자금 입력·저장 원천·원래 Clock trace/달력/시간대·고정 history selection으로 재계산한다. 실제 ECOS/KOFIA 재조회·공식 수정 공표로의 위장·원본 엑셀 변경은 없다. 원자적 stage, 대상/의존 head CAS와 기존 멱등 명령을 유지한다.
-4. **저장소:** 기존 `workbook_export/import` 물리 테이블과 FK는 저장소 내부 호환 매핑으로 재사용한다. 새 body는 명시적 `recordKind`와 `payloadVersion:2`를 가진 중립 기준/수정안/미리보기로 기록한다. 새 웹 자료에 가짜 워크시트·파일 hash·XLSX bytes를 만들지 않는다. 구형 body는 기존 버전 디코더가 메모리에서만 변환하며 기존 행은 수정하지 않는다.
-5. **버전:** body 해석 계약 변경이므로 schema4를 원자 적용한다. 테이블/기존 행 재구성은 하지 않는다. 구버전 실행 파일은 schema4를 거부해야 한다. 읽기 전용 열기·기존 마이그레이션·백업/복구 검증도 schema4를 지원한다. 알 수 없는 payload는 추정하지 않고 거부한다.
-6. **불변식:** 구형 body 문자열·문서/patch/preview/명령 hash·ID·revision·head·작성/확정 시각을 재작성하지 않는다. 신규 preview의 hash에는 payload 버전·정규화 patch·사유·계산/문서·기준/의존 head를 포함한다. 구형 미리보기 확정/응답 유실 재시도는 원래 hash 규칙을 사용한다. 원래 일반 확정 API를 통한 정정 후보 우회는 계속 금지한다.
-7. **화면:** 기존 `CorrectionPreviewDetails`의 비교 기능을 재사용하되 내부 ID와 엑셀 용어를 없앤다. 정정 성공 후 목록·현재 보고서 후보·현재 이력 selection cache를 무효화한다. 이미 보관한 확정 문서는 새 이력과 합치지 않고 그대로 연다.
+1. **CorrectionBasis:** 서버가 저장된 최신 확정본에서 만든 불변 편집 기준. rowId→실제 원자료 경로·단위·회차·기간·허용 동작은 서버가 소유한다. 브라우저의 원값/단위/fieldPath/scope/산출 결과를 신뢰하지 않는다.
+2. **CorrectionDraft:** 가변 작업이며 `draftId/scopeId/reportCycle/basisId/draftRevision/rawEdits/reason/evidenceNote/createdAt/savedAt/currentPreviewId`를 가진다. createdAt은 고정하고 savedAt만 갱신한다. raw 문자열을 저장해도 계산·candidate·preview·업무 revision/head를 만들지 않는다. 완전히 빈 새 작업은 저장하지 않으며, 기존 작업을 비운 경우 명시적 검토 종료 경로를 제공한다.
+3. **CorrectionSubmission/Preview:** 특정 draftRevision의 정규화 patch·검증 사유·기준/의존 head·계산·문서를 불변 기록한다. 기존 XLSX 숫자/허용 행 검증을 순수 도메인 함수로 분리하고, 실제 재계산은 기존 `replayCalculation`/documentFactory·Clock trace·달력·시간대·고정 history selection을 재사용한다. ECOS/KOFIA 재조회와 파일 codec 호출은0이다.
+4. **CorrectionResolution:** 수동 종료/이미 반영됨의 별도 append-only 기록. 확정 완료는 실제 confirmation 연결이 근거다. 완료된 안을 이후 head 변경 때문에 다시 미처리/stale로 취급하지 않는다. 불변 preview나 이전 확정본의 body를 상태 저장용으로 UPDATE하지 않는다.
+5. **초안 CAS/재시도:** 모든 저장은 expectedDraftRevision·멱등키·요청hash를 사용한다. 동일 키/동일 요청은 이전 ACK를 반환하고 상태를 되돌리지 않는다. 같은 키/다른 요청 또는 두 탭의 오래된 버전은409·쓰기0이다. 프런트는 늦은 ACK가 새 입력/대상을 덮지 않도록 generation을 검사한다. 같은 draft의 유효 ACK는 해당 저장 queue의 서버 revision만 진전시키며 최신 입력 문자열을 응답 값으로 덮지 않는다. 실패한 요청을 동일 키로 재확인하기 전 다음 버전을 추정해 보내지 않는다. 요청 abort를 서버 쓰기 취소로 추정하지 않는다.
+6. **검토/확정 경쟁:** stage는 열린 초안의 현재 draftRevision을 CAS로 확인하고 현재 preview 연결까지 한 트랜잭션으로 게시한다. 신규 웹 확정은 열린 상태·현재 draftRevision/currentPreviewId·기준/의존 head를 검사한다. 구형 preview의 신규 확정도 resolution을 확인해 수동 종료/이미 반영됨 처리를 우회하지 못하게 한다. 이미 성공한 확정의 동일 요청 재시도는 기존 멱등 receipt를 먼저 반환하며 이후 head를 되돌리지 않는다. 종료와 신규 확정은 한쪽만 승리한다. 확정 wire는 기존 CorrectionConfirmCommand를 유지하고 새 연결은 서버 preview metadata에서 검사한다.
+7. **동일값 정리:** 웹에서는 **현재 draftRevision/currentPreviewId와 일치하는 검증안만** 자동 종료 대상이다. 과거 preview와 달라진 입력을 자동 보관 중이면 옛 preview가 반영됐어도 최신 draft를 닫지 않는다. 구형은 미종료·미확정 preview 자체가 대상이다. 대상의 전체 변경에 대해 원자료 의미(계열/회차/기간/단위)와 정규화 숫자/명시적 결측을 대조한다. 일부 행만 같거나 의미 대응이 불명확하면 이미 반영됨으로 닫지 않는다. 정정 확정 시 같은 트랜잭션에서 완전히 반영된 안의 resolution을 기록하고 나머지 오래된 안은 비교 필요로 남긴다. 미검증 draft를 추정 확정/자동 종료하지 않는다.
+8. **종료안 복사/충돌:** 원본은 그대로 두고 새 draft·최신 basis를 발급한다. 과거 제안은 적용 대기 상태로 보존하며 명시적 재적용 전에는 검증/확정할 수 없다. 서버가 항목·원천 의미·회차·기간·단위를 매핑하고 사라진/편집 불가 행은 오류로 표시한다. 비교 이후 최신 head가 바뀌면409로 다시 비교한다. 전부 이미 같으면 no-change이며 빈 draft/candidate/새 차수를 만들지 않는다.
+9. **호환과 schema4:** 실제 원장은 schema3이고 schema4는 아직 계획이다. schema4에 중립 payload와 아래 부가 테이블을 함께 원자 적용한다. 기존18테이블의 행/body/hash/ID/revision/head/시각과 불변 트리거를 재작성하지 않는다. 기존 물리 workbook_export/import와 FK는 중립 basis/submission의 저장 어댑터 내부에서 재사용하되, 신규 body는 `recordKind/payloadVersion:2`로 구분하며 가짜 XLSX bytes/시트/fileHash를 생성하지 않는다. 구형 body는 읽을 때만 메모리 변환한다.
 
-### 7.3 파일별 책임과 인터페이스
+| schema4 부가 테이블 | 책임·제약 |
+|---|---|
+| `correction_draft` | 가변 작업 head와 raw 입력·version·basis/currentPreview 연결. scope 포함 키, version CAS. 종료/확정 후 쓰기 거부 |
+| `correction_work_command` | create/save/copy/close/reapply의 멱등키·요청hash·ACK. 기존 confirmation 전용 idempotent_command를 오용하지 않음 |
+| `correction_resolution` | draft 또는 구형 preview 참조 중 정확히 하나, 수동 종료/이미 반영됨·종료 시각·보존 내용 참조. append-only/FK·scope 검사 |
 
-경로는 저장소 루트 기준이다. 신규 파일은 업무 검증과 웹 편집의 책임 분리에 필요한 것만 만든다.
+새 초안/이벤트는 기존 불변 원장과 구분한다. 구버전 실행 파일의 schema4 거부, 읽기 전용 열기·마이그레이션 실패 rollback/재실행·온라인 backup/restore도 검증한다. 알 수 없는 recordKind/payloadVersion은 거부한다. 원래 일반 확정 API로 정정 후보를 우회 확정하는 금지는 유지한다.
+
+**새 hash 규칙:** v2 submission/preview의 식별 hash에는 draftId·draftRevision·정규화 patch·사유·근거·기준/의존 head와 계산/문서 참조를 포함한다. 같은 현재 draftRevision의 재시도만 같은 preview를 반환한다. 편집 후 숫자가 우연히 같은 patch로 돌아와도 옛 draftRevision의 preview를 현재 검증으로 재사용하지 않는다. 순수 의미 동일값 판정용 hash와 저장 식별 hash를 구분하고 기존 v1 patch/preview/명령 hash는 바꾸지 않는다.
+
+### 7.3 파일 책임·계약
+
+경로는 저장소 루트 기준이다. 새 파일은 편집 업무 규칙·초안 lifecycle·UI 상태 분리에 필요한 것만 추가한다.
 
 | 파일 | 책임 |
 |---|---|
-| 신규 `ai-frm/src/domain/report-history/correction.ts` + `.test.ts` | 파일과 무관한 편집 행·문자열 수정안 검증, 정규화, no-change, 필드 오류 |
-| 기존 `ai-frm/src/application/report-history/ports.ts` | 중립 DTO/저장 계약, 레거시 읽기 계약 구분 |
-| 기존 `ai-frm/src/application/report-history/report-correction.ts` + `.test.ts` | 편집 기준 준비·수정안 검증·기존 함수 재생·미리보기·확정 orchestration |
-| 기존 `ai-frm/src/infrastructure/report-history/sqlite-history-repository.ts` + `.test.ts` | schema4, 버전별 body 매핑, lineage·FK·원자성·멱등 및 검토안 조회 |
-| 기존 `ai-frm/src/infrastructure/report-history/history-workbook.ts` + `.test.ts` | 구형 XLSX 어댑터와 공통 검증 연결. 웹 경로에서는 호출하지 않음 |
-| 신규 `ai-frm/src/app/api/_lib/report-history-editor-handlers.ts` + `.test.ts`, 신규 `ai-frm/src/app/api/report-history/editor/route.ts` | 웹 JSON 편집 API와 오류/출처/크기 경계 |
-| 기존 `ai-frm/src/app/api/report-history/corrections/route.ts`, `_lib/composition.ts`, `_lib/report-history-exchange-handlers.ts` + 관련 테스트 | 파일 codec 없는 provider, 공통 확정, 구형 교환 API 종료 |
-| 신규 `ai-frm/src/app/aifrm/report-correction-editor.tsx` + `.test.tsx` | 선택한 확정본에 귀속된 웹 편집·검토·재시도 상태 |
-| 기존 `ai-frm/src/app/aifrm/page.tsx`, `report-history-controls.tsx`, `report-confirmation-state.ts`, `use-report-history.ts` + 관련 테스트 | 편집 진입/이탈, 파일·ID UI 제거, 비교표 재사용, generation/cache 관리 |
-| 기존 `ai-frm/README.md`, 이 문서, `docs/superpowers/plans/2026-10-21-ui-ux.md` | 웹 사용법·운영 버전·단계별 근거와 재개 지점 |
+| 신규 `ai-frm/src/domain/report-history/correction.ts` + `.test.ts` | 편집 행/문자열 검증·정규화·초안 입력 경계·의미 식별·상태/동일값 판정 |
+| 기존 `ai-frm/src/application/report-history/ports.ts` | 중립 기준/수정안/preview, draft/command/resolution, 읽기 DTO와 저장소 port |
+| 기존 `ai-frm/src/infrastructure/report-history/sqlite-history-repository.ts` + `.test.ts` | schema4·불변 payload 호환·draft CAS/멱등·종료/확정 원자성·cursor 조회 |
+| 기존 `ai-frm/src/infrastructure/report-history/history-workbook.ts` + `.test.ts` | 구형 XLSX codec와 순수 검증 연결, 신규 웹 경로에서는 호출하지 않음 |
+| 신규 `ai-frm/src/application/report-history/correction-work.ts` + `.test.ts` | 초안 생성/자동 보관/재개/종료/복사·목록/읽기 전용 조회 |
+| 기존 `ai-frm/src/application/report-history/report-correction.ts` + `.test.ts` | 파일 없는 기준 준비·기존 함수 재생·미리보기/확정·동일값 처리 연결 |
+| 신규 `ai-frm/src/app/api/_lib/report-history-editor-handlers.ts` + `.test.ts`, `api/report-history/{editor,drafts,reviews}/route.ts` | bounded JSON/서버 scope/HTTP 계약과 공통 오류 |
+| 기존 corrections/exchange routes·handlers·`_lib/composition.ts` + 관련 테스트 | 공통 확정 provider 연결, 기존 파일 교환410, 구형 preview 호환 |
+| 신규 `ai-frm/src/app/aifrm/report-correction-editor.tsx` + `.test.tsx` | 편집/검토/읽기 모드의 실제 Astryx 컴포넌트 |
+| 신규 `ai-frm/src/app/aifrm/report-correction-state.ts` + `.test.ts`, `use-report-correction.ts` + `.test.ts` | UI 상태 기계·직렬 자동저장·generation·복구. fake timer/주입 client로 DOM 모사 없이 의미 검증 |
+| 기존 page/history-controls/confirmation-state/use-report-history + 관련 테스트 | 월별 목록/재개·파일UI 제거·캐시 무효화. 기존 과거 보완 흐름과 문서 열람은 보존 |
+| 기존 README·이 문서·`2026-10-21-ui-ux.md` | 사용법·운영/schema4·증거/커밋/재개 지점 |
 
-**W1에서 고정해 이후 단계가 재사용할 계약:**
+**W1에서 고정하는 타입/인터페이스:** 아래 서비스의 `deps`는 CorrectionDependencies, `repository`는 HistoryRepository다. 서버만 scope를 선택한다.
 
-- `CorrectionEdit = { rowId:string; action:'set'|'set-missing'; rawValue:string|null; evidenceNote:string }`. 변경 없는 행은 전송하지 않는다.
-- `CorrectionEditRequest = { basisId:string; reason:string; edits:readonly CorrectionEdit[] }`.
-- `CorrectionFieldError = { rowId:string|null; field:'request'|'action'|'value'|'reason'|'evidenceNote'; code:string; message:string }`.
-- `CorrectionEditorDto = { basisId:string; baseConfirmationId:string; baseRevision:number; basis:ReportBasis; rows:readonly CorrectionEditorRow[] }`. `CorrectionEditorRow`는 `rowId/category/label/period/unit/originalText/originalState/allowedActions`만 제공한다. `category`는 `cashflow|economic|funding`, `originalState`는 `available|missing|unreadable`, 기준 숫자는 왕복 가능한 문자열이다. 실제 sourceRecordId/fieldPath는 서버 기준에만 둔다.
-- `normalizeCorrectionEdits(basis:CorrectionBasis, request:CorrectionEditRequest):CorrectionValidation`. `CorrectionValidation`은 `invalid(errors)` / `no-change` / `valid(patch,reason)` 판별 공용체다. patch는 기존 계산에 필요한 number/null이며 행별 유효 사유와 근거를 포함한다.
-- `prepareCorrectionEditor(deps:CorrectionDependencies, scopeId:string, confirmationId:string):Promise<CorrectionEditorDto>`.
-- `previewCorrectionEdits(deps:CorrectionDependencies, scopeId:string, request:CorrectionEditRequest):Promise<CorrectionEditResult>`. 결과는 `invalid(errors)` / `no-change` / `preview(previewId,previewHash)`다.
-- `getCorrectionPreview(repository,scopeId,previewId)`는 구형/신형을 중립 읽기 모델로 반환한다. `listCorrectionPreviews(scopeId,confirmationId,limit:20)`는 서버가 해당 확정본의 reportCycle을 찾아 **그 회차의 모든 차수에 속한** 최근20건의 생성 시각·변경 개수·미확정/확정/기준만료 상태를 반환한다. 이미 확정한 candidate가 연결된 안은 현재 head 여부와 무관하게 완료 상태다. 구형 차수의 만료 검토안도 최신 차수 화면에서 찾아야 한다.
-- `confirmCorrection(deps:CorrectionDependencies,scopeId:string,cmd:CorrectionConfirmCommand):Promise<ConfirmationResult>`는 현재 `previewId/previewHash/expectedBaseRevision/idempotencyKey/reason` wire 계약을 유지한다. `CorrectionDependencies`는 현재 `ReportCorrectionDependencies`에서 workbookCodec 의존성을 뺀 공통 재생 의존성이다.
+- `CorrectionEdit = {rowId:string;action:'set'|'set-missing';rawValue:string|null;evidenceNote:string}`. 공란 수정 칸은 편집 DTO에서 빠진다. draft 저장에는 아직 유효하지 않은 숫자 문자열도 허용하며 submission 변환 때 엄격 검사한다.
+- `CorrectionEditRequest = {basisId:string;reason:string;edits:readonly CorrectionEdit[]}`; `normalizeCorrectionEdits(basis:CorrectionBasis,request:CorrectionEditRequest):CorrectionValidation` → invalid(errors)/no-change/valid(patch,reason).
+- `CorrectionFieldError = {rowId:string|null;field:'request'|'action'|'value'|'reason'|'evidenceNote';code:string;message:string}`.
+- `CorrectionEditorDto = {basisId:string;baseConfirmationId:string;baseRevision:number;basis:ReportBasis;rows:readonly CorrectionEditorRow[]}`. row는 rowId/category(cashflow|economic|funding)/label/sourceRound/period/unit/originalText/originalState(available|missing|unreadable)/allowedActions를 제공한다. sourceRecordId/fieldPath는 서버에만 둔다.
+- `CorrectionWorkRef = {kind:'draft'|'legacy-preview';id:string}`. `CorrectionWorkState = 'draft'|'pending'|'stale'|'confirmed'|'closed'|'reflected'`. DB 수명 상태와 현재 head 대비 freshness를 읽기 모델에서 합성한다.
+- `DraftEdit = {rowId:string;action:'set'|'set-missing';rawValue:string|null}`; `DraftContent = {edits:readonly DraftEdit[];reason:string;evidenceNote:string}`; `SaveDraftCommand = {draftId:string;expectedDraftRevision:number;idempotencyKey:string;content:DraftContent}`. 웹의 근거 메모는 한 번 입력하며 제출 어댑터가 모든 변경행의 CorrectionEdit.evidenceNote로 전달한다. 구형 자료의 행별 메모는 읽기 호환으로 보존한다. create는 basisId/멱등키/최초 content를 받고 완전히 빈 새 요청이면 empty 결과다.
+- `CorrectionDraftDto = {draftId:string;draftRevision:number;editor:CorrectionEditorDto;content:DraftContent;createdAt:string;savedAt:string;currentPreviewId:string|null;requiresReapply:boolean}`. copied-from와 원래 시작값/제안값 참조는 서버에 보존한다.
+- `CorrectionWorkSummary`는 ref/state/보고월/기준차수/수정시각/서버 생성 요약/입력수/유효 변경수/capabilities(resume,view,copy,close)를 제공한다. 숫자를 확정값처럼 변환하지 않고 초안/검증된 변경 개수를 구분한다.
+- `CorrectionReviewDetail`은 summary와 저장 당시 원값·제안값·자료 식별·사유·근거·선택적 preview/확정 연결·종료 시각을 제공한다. 현재 최신값은 비교용 별도 필드이며 시작값 대신 사용하지 않는다.
+- `prepareCorrectionEditor(deps:CorrectionDependencies,scopeId:string,confirmationId:string):Promise<CorrectionEditorDto>`.
+- `createCorrectionDraft(deps:CorrectionDependencies,scopeId:string,cmd:{basisId:string;idempotencyKey:string;content:DraftContent}):Promise<CorrectionDraftDto|'empty'>`.
+- `saveCorrectionDraft(deps:CorrectionDependencies,scopeId:string,cmd:SaveDraftCommand):Promise<CorrectionDraftDto>`; `getCorrectionDraft(repository,scopeId,draftId):Promise<CorrectionDraftDto>`.
+- `listCorrectionWork(repository,scopeId,query:{reportCycle?:string;pendingOnly:boolean;cursor?:string;limit:20}):Promise<{items:readonly CorrectionWorkSummary[];nextCursor:string|null}>`. 전체 기간 또는 같은 보고회차의 전체 차수를 대상으로 고정 createdAt+kind+id 내림차순의 cursor를 사용한다. cursor에 최초 조회의 생성시각 상한을 고정하고 클라이언트는 ref로 중복 제거한다. 저장 때 바뀌는 savedAt을 cursor 정렬에 쓰지 않는다. 새 작업은 목록 새로고침으로 확인한다.
+- `CorrectionMonthSummary`는 reportCycle/reportTitleMonth/latestConfirmationId/latestRevision/confirmedAt 및 미처리 전체 수·작성 중 수·대표 재개 ref를 제공한다. 자료회차 표시는 reportCycle, 보고월 표시는 보관된 reportTitleMonth를 사용한다. 첫20건만 세어 전체 건수처럼 표시하지 않는다. `listCorrectionMonths(repository,scopeId,query:{fromCycle?:string;toCycle?:string;pendingOnly:boolean;cursor?:string;limit:12}):Promise<{items:readonly CorrectionMonthSummary[];nextCursor:string|null}>`는 보고월 내림차순으로 월별 head를 한 번씩 반환한다. 전체 기간도 페이지를 끝까지 조회할 수 있다.
+- `getCorrectionReviewDetail(repository,scopeId,ref:CorrectionWorkRef):Promise<CorrectionReviewDetail>`은 읽기 전용이다. `closeCorrectionWork(deps,scopeId,cmd:{ref:CorrectionWorkRef;expectedDraftRevision:number|null;idempotencyKey:string}):Promise<CorrectionWorkSummary>`는 명시적 동작이다.
+- `copyClosedCorrectionWork(deps,scopeId,cmd:{ref:CorrectionWorkRef;idempotencyKey:string}):Promise<CorrectionDraftDto|{kind:'no-change'}>`. 수동 종료 원본만 복사하고 원래 기록을 다시 열어 쓰지 않는다.
+- `reapplyCorrectionDraft(deps,scopeId,cmd:{draftId:string;expectedDraftRevision:number;expectedLatestConfirmationId:string;idempotencyKey:string}):Promise<CorrectionDraftDto|{kind:'no-change'}>`. 현재 비교가 가리킨 최신 head가 같은지 확인하고 저장된 제안을 의미가 같은 최신 행으로 명시 재적용한다.
+- `previewCorrectionDraft(deps,scopeId,cmd:{draftId:string;expectedDraftRevision:number}):Promise<CorrectionEditResult>` → invalid(errors)/no-change/preview(previewId,previewHash,draftRevision). 브라우저 미저장 patch로 검토하지 않는다.
+- `confirmCorrection(deps:CorrectionDependencies,scopeId:string,cmd:CorrectionConfirmCommand):Promise<ConfirmationResult>`는 기존 previewId/previewHash/expectedBaseRevision/idempotencyKey/reason wire를 유지한다. `CorrectionDependencies`는 현행 ReportCorrectionDependencies에서 workbookCodec를 뺀 공통 재생 의존성이며 legacy adapter만 codec를 가진다.
+- Repository의 기존 getCorrectionPreview/stageCorrection/commitCorrection를 중립 union/선택적 draft linkage로 확장하고 draft/create/save/get/list/detail/resolve/copy에 대응하는 port를 추가한다. 구형 draft linkage가 없는 preview에는 기존 hash·멱등 규칙을 적용한다. 웹 확정 사유는 검증된 사유와 동일해야 한다.
 
 **HTTP 계약:**
 
-- `POST /api/report-history/editor`: `{action:'open',confirmationId}`로 기준 발급, `{action:'preview',basisId,reason,edits}`로 검증/미리보기. 각 변형의 허용 필드 외 입력은 거부한다.
-- `GET /api/report-history/editor?confirmationId=...`: 해당 확정본의 검토안 목록. `?previewId=...`: 선택 검토안 조회. 두 쿼리를 섞지 않는다. 내부 ID는 API 통신에만 사용한다.
-- `POST /api/report-history/corrections`: 기존 명시적 확정 명령. 원장 자체를 직접 수정하는 PATCH/PUT API는 만들지 않는다.
-- 기존 `/api/report-history/exchange`의 파일 생성·가져오기·다운로드는 `410 EXCHANGE_RETIRED`로 종료한다. 구형 저장 preview는 새 editor 조회와 corrections 확정으로 계속 열고 처리할 수 있어야 한다.
-- 기존 loopback/Host/Origin 검사와 서버 scope 선택을 유지한다. 모든 조회는 `no-store`다. 잘못된 요청/값·미지원 버전은422, 대상없음/타scope404, 기준/의존 충돌409, 크기초과413, 저장장애503+Retry-After로 구별한다.
-- editor POST는 Content-Length 유무와 관계없이 실제 스트림 **6MiB** 상한, 최대10000개 편집, 행ID·값·사유·근거 각2000자 상한을 검사한다. UTF-8 바이트와 문자열 길이를 혼동하지 않는다. 프런트 제한만으로 검증을 대신하지 않는다.
+| 경로 | 계약 |
+|---|---|
+| `POST /api/report-history/editor` | action:open(confirmationId), preview(draftId,expectedDraftRevision). 허용 필드 외 거부 |
+| `POST /api/report-history/drafts` | action:create(basisId,key,content), save(draftId,expectedDraftRevision,key,content). key는 idempotencyKey |
+| `GET /api/report-history/drafts?draftId=...` | 기존 초안 재개. 같은 ID/내용/저장버전을 반환하고 새 작업을 만들지 않음 |
+| `GET /api/report-history/reviews` | refKind/refId로 읽기 전용 detail, 또는 reportCycle?/pendingOnly/cursor?/limit=20으로 목록. detail/목록 쿼리 혼용 거부 |
+| `GET /api/report-history/reviews?view=months` | fromCycle?/toCycle?/pendingOnly/cursor?/limit=12로 월별 head와 전체 미처리 수 조회. detail/수정안 목록 쿼리와 혼용 거부 |
+| `POST /api/report-history/reviews` | action:close(ref,expectedDraftRevision,key), copy(ref,key), reapply(draftId,expectedDraftRevision,expectedLatestConfirmationId,key) |
+| `POST /api/report-history/corrections` | 기존 명시적 확정 명령. 기존 일반 confirmations 경로 우회 금지 |
+| `/api/report-history/exchange` | 생성/가져오기/다운로드410 EXCHANGE_RETIRED. 구형 preview는 reviews 조회와 corrections 확정으로 호환 |
 
-### W1: 공통 편집 규칙·중립 저장 계약·schema4 호환
+모든 조회 no-store, 서버가 scope 선택, 기존 loopback/Host/Origin 검사를 유지한다. 잘못된 요청/값/버전422, 없음/타scope404, 충돌409, 크기413, 저장장애503+Retry-After다. JSON POST는 Content-Length 유무와 관계없이 실제 스트림6MiB, 최대10000행, 행ID/숫자문자열/사유/근거 각2000자 상한을 적용한다. 초안은 숫자 문법만 느슨하게 보관하고 행 식별·허용 동작·타입·크기 경계는 엄격히 검사한다. 원장 직접수정용 범용 PATCH/PUT나 multipart 우회는 만들지 않는다.
 
-**Files:** §7.3의 domain correction, ports, SQLite repository 및 각 테스트. **Consumes:** 기존 원시 수정 허용 규칙·schema3 원장. **Produces:** 중립 타입·`normalizeCorrectionEdits`·버전별 기준/수정안/preview 저장·조회 계약.
+### 7.4 Astryx 구성 계약
 
-- [ ] **RED:** `decimal_zero_negative_precision_and_missing_are_distinct`에서 0/음수/고정밀도 보존, 공란=set 오류, 명시적 결측 제한을 검증한다. `unknown_duplicate_protected_row_is_rejected`에서 위조/중복행·알 수 없는 속성·사유 누락·overflow/underflow를 거부한다. `unchanged_patch_is_noop`에서 같은 수·순서 차이를 정규화한다.
-- [ ] **RED:** `schema3_upgrade_preserves_every_existing_body_hash_and_head`와 `legacy_preview_retry_survives_upgrade`에서 구형 전체 합성 원장·미확정/확정 preview·멱등 결과 불변을 고정한다. `mixed_payload_and_wrong_scope_are_rejected`는 잘못된 참조/버전·신형자료의 Workbook 오독을 차단한다. 신규 hash 규칙과 레거시 규칙을 분리 검증한다.
-- [ ] **GREEN:** 기존 행을 옮기지 않는 schema4 버전 전환, 신규 `recordKind/payloadVersion:2` 및 구형 읽기 매핑을 구현한다. 저장소의 parent/stage/commit 모두 같은 중립 reader를 사용한다. 테이블명 변경이나 가짜 파일 구조 생성으로 우회하지 않는다.
-- [ ] **QA:** domain/SQLite focused 테스트 → 타입검사. 실제 임시 합성 DB에서 마이그레이션 실패 rollback·재실행·구버전 거부·FK/integrity·불변 트리거를 확인한다. 실제 업무 DB를 QA에 사용하지 않는다.
-- [ ] **검토·커밋·컨텍스트:** 독립 검토 후 `refactor(history): separate correction rules from workbook transport`. 보호51파일 hash/diff0와 근거·미완료 항목을 진행 기록에 남긴다.
+공식 안내 `https://astryx.atmeta.com/docs/getting-started`와 설치 CLI의 getting-started/build/layout/Table/AlertDialog 문서를 확인했다. 웹 페이지는 검색 도구에서 접근 실패하여 동일 공식 패키지의 CLI 문서로 검증했다. 설치가 이미 되어 있으므로 재설치/라이브러리 교체를 계획의 전제로 두지 않는다.
 
-### W2: 파일 없는 편집 기준 준비·기존 계산 재생·불변 검토안
+| 화면 역할 | 실제 사용할 Astryx 구성 |
+|---|---|
+| 업무 화면 틀/고정 동작 | 기존 AppShell·Layout·LayoutHeader/Content/Footer·HStack/VStack, 기존 Theme/i18n |
+| 월별 이력/수정안/비교 | Table·useTableRowExpansion·useTableStickyColumns. dense rows 유지, 고정 식별 열은 pixel helper |
+| 기간/탭/검색/문자열 원값 | Selector·TabList/Tab·TextInput·TextArea·CheckboxInput |
+| 상태/오류/처리 기록 | Token·Banner·Collapsible·Text/Heading |
+| 명시적 동작/검토 종료 확인 | Button·AlertDialog. 종료 대상 요약 표시 |
 
-**Files:** application report-correction/ports와 테스트, 레거시 workbook 어댑터/테스트. **Consumes:** W1 중립 규칙/저장 계약. **Produces:** §7.3의 prepare/preview/get/list/confirm 서비스와 파일 codec 없는 `CorrectionDependencies`.
+CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatToolCalls·추가 Card/대시보드는 넣지 않는다. component prop/token을 우선하며 raw div/span 레이아웃·임의 색/자체 CSS·style 덮어쓰기로 복제하지 않는다. 작은 화면에서는 공식 useMediaQuery와 슬롯 구성으로 보조 열을 접고 자료 식별을 고정 열에 보존한다. TextInput 숫자 문자열과 유효한 label/고유 접근 이름, 오류 초점, 모달 초점 복귀를 검사한다.
 
-- [ ] **RED:** `web_edit_replays_original_sources_and_clock_without_codec`에서 `workbookCodec.structure/encode/decode`와 실제 원천 호출이 모두0인지 확인한다. 전체 입력의 판독불가 복구 성공/부분 실패, ECOS 실패 원천 생성 거부, KOFIA 공표평균·독립 수입계 유지도 검증한다.
-- [ ] **RED:** `preview_changes_inputs_but_not_heads_or_other_reports`에서 수정 원자료·5개 결과 차이를 표시하고 기존 확정본/head/다른 달은 불변임을 검증한다. 무수정은 파생 산출/revision을 만들지 않고 같은 기준+정규화 patch는 같은 preview를 반환한다.
-- [ ] **RED:** `reason_change_invalidates_web_preview_confirmation`과 두 탭 base/dependency 충돌·응답 유실 재시도·일반 확정 우회 거부를 검증한다. 검토안 목록의 최근20건·미확정/확정/만료 판정, 다른 차수에서 만든 만료안의 최신 차수 화면 조회, 재시작 조회를 고정한다.
-- [ ] **GREEN:** 기존 `exportCorrectionWorkbook`의 원자료 기준 구성과 `validateCorrectionWorkbook`의 재생/stage를 중립 서비스로 분리한다. XLSX의 숫자 검증을 공통 계층으로 옮기되 레거시 의미를 바꾸지 않는다. 현재 계산 함수와 documentFactory는 호출만 한다.
-- [ ] **QA:** `npx vitest run src/application/report-history/report-correction.test.ts src/infrastructure/report-history/history-workbook.test.ts --maxWorkers=4` 통과와 타입검사, 원자 stage 실패 시 전체 rollback 및 재시작 재개를 확인한다.
-- [ ] **검토·커밋·컨텍스트:** 독립 검토 후 `feat(history): prepare and preview corrections without files`. 원본/hash 불변·원천/codec0 호출 근거와 다음 W3 진입점을 기록한다.
+### W1: 공통 원자료 검증·초안/검토 상태 계약
 
-### W3: 웹 JSON API·구형 파일 교환 종료
+**Files:** domain correction(.test), ports, legacy history-workbook(.test). **Consumes:** 현재 XLSX 업무 검증/원자료 허용 범위. **Produces:** §7.3 타입·normalizeCorrectionEdits·초안 입력 경계·의미 동일값/상태 규칙.
 
-**Files:** editor handlers/route/테스트, corrections route, composition, exchange handlers/테스트. **Consumes:** W2 서비스. **Produces:** §7.3 HTTP 계약.
+- [x] **RED 작성:** `decimal_zero_negative_precision_and_missing_are_distinct`, `unknown_duplicate_protected_row_is_rejected`, `unchanged_patch_is_noop`에서 원래 정밀도·0/음수·공란/결측·위조/중복·사유·overflow/underflow를 고정한다.
+- [x] **RED 작성:** `draft_accepts_invalid_numeric_text_but_rejects_unknown_rows`는 미완성 숫자/사유 저장과 엄격한 행/크기 경계를 구분한다. `already_applied_requires_all_changes_and_semantic_identity`는 다른 월/회차/단위·부분 반영을 같은 값으로 닫지 않는다.
+- [x] **RED 실행:** `npx vitest run src/domain/report-history/correction.test.ts src/infrastructure/report-history/history-workbook.test.ts --maxWorkers=4`에서 새 계약 부재의 실패를 확인한다.
+- [x] **GREEN:** 파일 검사와 업무 검증을 분리하고 codec adapter를 공통 규칙에 연결한다. 새 계산·수입계 합산·반올림을 추가하지 않는다.
+- [x] **QA/검토:** 같은 focused 명령과 `npx tsc --noEmit`, 기존 위험/정밀도 회귀를 확인하고 독립 검토한다.
+- [x] **커밋/컨텍스트:** `refactor(history): define web correction and draft rules`. 보호51파일 diff/hash0, 근거와 W2 재개 지점을 기록한다.
 
-- [ ] **RED:** 편집 기준 발급→원시 문자열 patch→차이 조회→확정의 HTTP 흐름과 구형 preview 재개를 테스트한다. 요청 위조·다른 scope·추가 필드·누락/중복 행·무변경·422/404/409/413/503·no-store·외부 Origin/Host 거부를 고정한다.
-- [ ] **RED:** `streamed_editor_body_is_bounded_without_content_length`와 최대 행/문자 경계를 검사한다. `exchange_is_retired_and_web_basis_is_never_encoded`에서 모든 구형 파일 경로가410이며 새 웹 요청에 codec/파일 생성이 없음을 검증한다.
-- [ ] **GREEN:** bounded JSON 읽기·서버 scope·공통 오류 매핑을 연결하고 확정 wire 계약을 유지한다. 파일 bytes·multipart를 받아 web patch로 우회하는 API를 만들지 않는다.
-- [ ] **QA:** API focused 테스트·타입검사 후 임시 합성 Next 서버에서 실제 HTTP의 성공/충돌/응답 유실 재시도·서버 재시작을 확인한다. 업무 원장·실제 키·외부 API는 사용하지 않는다.
-- [ ] **검토·커밋·컨텍스트:** 독립 검토 후 `feat(history): expose web correction editor API`. 새 API·종료 경로·오류 계약·재개 증거를 기록한다.
+### W2: 로컬 초안 자동 보관·불변 검토 호환·schema4
 
-### W4: Astryx 웹 편집 화면·검토·확정·캐시 갱신
+**Files:** ports, SQLite repository(.test). **Consumes:** W1 계약·기존 schema3 원장. **Produces:** §7.2 저장 구조와 CAS/멱등·query/detail·원자 stage/commit/resolve 저장소 port.
 
-**Files:** report-correction-editor/테스트, 기존 page/history-controls/confirmation-state/use-report-history와 테스트. **Consumes:** W3 API 및 중립 읽기 DTO. **Produces:** 파일/ID 관리 없는 사용자 흐름.
+- [ ] **RED 작성:** `schema3_upgrade_preserves_every_existing_body_hash_and_head`, `legacy_preview_retry_survives_upgrade`, `unknown_payload_is_rejected`에서 구형 전체 body/hash/ID/시각/명령 결과 보존을 고정한다.
+- [ ] **RED 작성:** `invalid_draft_autosaves_without_derivation_or_head_change`, `draft_revision_cas_rejects_out_of_order_and_two_tab_writes`, `editing_invalidates_current_preview_without_mutating_old_preview`, `confirm_rejects_outdated_draft_revision`, `same_patch_after_edit_requires_current_draft_preview`를 검사한다.
+- [ ] **RED 작성:** `close_and_confirm_are_atomic_and_idempotent`, `already_applied_resolution_is_stable_after_later_head_changes`, `work_list_spans_all_revisions_and_paginates_without_loss`, `month_counts_include_every_page_and_missing_months_are_not_filled`, `completed_detail_read_is_write_free`에서 경쟁/페이지 경계/월별 전체 수/읽기 불변을 검사한다.
+- [ ] **RED 작성:** `old_preview_reflection_cannot_close_edited_draft`, `closed_legacy_preview_cannot_be_newly_confirmed`, `successful_confirmation_retry_precedes_later_resolution_checks`로 최신 초안 소실·구형 종료 우회·멱등 퇴행을 막는다.
+- [ ] **RED 실행:** `npx vitest run src/infrastructure/report-history/sqlite-history-repository.test.ts --maxWorkers=4`에서 새 저장소 계약 실패를 확인한다.
+- [ ] **GREEN:** schema4와 부가3테이블·중립 payload mapping을 원자 추가하고 멱등 receipt·draft CAS·resolution과 commit 원자성을 구현한다. 기존18테이블 행/트리거를 재구성하지 않는다.
+- [ ] **QA/검토:** focused→타입검사, 임시 합성 DB의 migration 실패 rollback/재실행·구버전 거부·FK/integrity·두 연결 경쟁·재시작 복구와 읽기 전용 재열람 쓰기0을 확인한다.
+- [ ] **커밋/컨텍스트:** `feat(history): persist correction drafts and review resolutions`. 실제 업무 DB는 열어 쓰지 않고 합성 QA 증거와 W3를 기록한다.
 
-- [ ] **RED:** 확정 이력의 `값 수정` 진입·최신 차수 제한, 세 영역의 허용 입력·원값·단위·행 오류·사유 한 번 입력·변경 전후·명시적 확정을 테스트한다. `수정본`, `내보내기 ID`, `미리보기 ID`, 정정 파일 input/다운로드가 사용자 조작에 나타나지 않아야 한다.
-- [ ] **RED:** A→B→A 늦은 응답 폐기·입력 변경 후 preview/명령 무효화·오류/no-change 확정 불가·확정 중 중복 클릭·503/응답 불명 시 동일 명령 재시도·미확정 입력 이탈 취소/폐기를 검증한다. 검토안 목록을 통한 새로고침/재시작 후 복구도 포함한다.
-- [ ] **GREEN:** 설치된 Astryx CLI로 layout/Table/TextInput/TextArea/탭/AlertDialog 계약을 확인하고 실제 컴포넌트만 사용한다. 입력값과 UI generation을 관리하며 자체 CSS·임의 NumberInput 보정·리포트 용지 안 편집기를 추가하지 않는다.
-- [ ] **GREEN:** `useReportHistory.invalidateSelection():void`로 cache 비우기와 selectionRevision 증가를 함께 제공한다. 정정 성공 시 목록/현재 후보를 갱신하고 새 확정본을 연다. 이미 열린 이전 확정본의 문서/차트에는 새 selection을 적용하지 않는다.
-- [ ] **QA:** `correction_success_refreshes_current_history_but_preserves_archived_document` 회귀와 UI focused 테스트를 실행한다. 409에서는 기존 초안을 별도로 보존하고 원값·내 수정값·최신값을 비교한다. 항목·회차·월/평가일·단위가 같은 최신 행에 사용자가 명시적으로 재적용한 뒤 새로 검증하도록 하며 rowId만으로 자동 병합하지 않는다. 자동 rebase/덮어쓰기/확정은 금지하고 사라지거나 편집 불가가 된 행은 오류로 표시한다. 키보드·오류 초점·좁은 화면·인쇄 제외를 실제 합성 화면에서 확인한다.
-- [ ] **검토·커밋·컨텍스트:** 독립 검토 후 `feat(ui): edit confirmed report inputs in the browser`. 화면 증거·확정/캐시/충돌 결과와 미완료 수동 검수를 기록한다.
+### W3: 파일 없는 편집·재개/종료/복사·기존 계산 재생
 
-### W5: 전체 회귀·운영 문서·인수 QA
+**Files:** 신규 correction-work(.test), 기존 report-correction(.test), ports, legacy adapter. **Consumes:** W1/W2. **Produces:** §7.3의 prepare/create/save/get/list/detail/close/copy/reapply/preview/confirm 서비스.
 
-**Files:** 기존 관련 통합 테스트, README·계획·UI 진행 기록. **Consumes:** W1~W4 완료 결과. **Produces:** 검증된 웹 정정 흐름과 복구 안내.
+- [ ] **RED 작성:** `web_edit_replays_original_sources_and_clock_without_codec`에서 codec/원천 호출0·수입계 독립값·공표평균·완전 판독불가 복구/부분 실패·ECOS 실패 계열 생성 거부를 고정한다. `preview_changes_inputs_but_not_heads_or_other_reports`는 기존 문서/5개 계산/다른 달 보존을 확인한다.
+- [ ] **RED 작성:** `draft_resume_keeps_identity_and_unsaved_state_distinct`, `empty_new_draft_is_not_persisted`, `preview_uses_acknowledged_exact_draft_revision`, `closed_review_copy_preserves_source_and_requires_explicit_reapply`를 검사한다.
+- [ ] **RED 작성:** `editor_open_requires_latest_head_but_legacy_detail_is_readable`와 `same_current_draft_preview_retry_is_idempotent`에서 과거 차수 수정 진입과 최신 버전/저장 식별을 구분한다.
+- [ ] **RED 작성:** `copy_all_equal_is_no_change`, `copy_rejects_unmapped_or_changed_semantic_rows`, `copy_invalid_draft_remains_unvalidated`, `read_only_detail_preserves_baseline_and_calls_no_writers`, `reason_change_invalidates_confirmation` 및 레거시 완료/만료 안 조회와 동일 확정 재시도를 검사한다.
+- [ ] **RED 실행:** `npx vitest run src/application/report-history/correction-work.test.ts src/application/report-history/report-correction.test.ts --maxWorkers=4`에서 새 서비스 부재 실패를 확인한다.
+- [ ] **GREEN:** 기존 exportCorrectionWorkbook의 기준 구성과 validateCorrectionWorkbook의 재생/stage를 파일과 분리한다. 새 초안 업무는 correction-work가 맡고 기존 계산·documentFactory는 호출만 한다. 무변경은 파생 기록/차수0이다.
+- [ ] **QA/검토:** focused→타입검사, 저장 단계 실패 전체 rollback·재시작 재개·copy 원본 hash 보존·목록 전체 차수/cursor를 합성 자료로 독립 검토한다.
+- [ ] **커밋/컨텍스트:** `feat(history): manage browser correction work without files`. 원천/codec0·원본 불변·다음 W4를 기록한다.
 
-- [ ] **QA:** 구형/신형이 섞인 합성 원장에서 조회→웹 수정→변경 검토→명시적 확정→이전/새 차수 열기→다른 달 불변→재시작→온라인 백업/복구를 한 흐름으로 확인한다. 새 data 파일은 자동 관리되고 원본 XLSX/기존 원장 행은 변경되지 않아야 한다.
-- [ ] **QA:** 보호51파일의 SHA-256/diff0, 3용지/5차트·본문/서체/참고표·보고서 용지 내 편집 제어부0을 확인한다. 전체 `npm run lint` → `npm run build -- --webpack` → `npm run verify -- --maxWorkers=4`를 순차 실행한다. 테스트 수는 실제 결과로 기록하며 과거896개를 새 결과로 복사하지 않는다.
-- [ ] **문서:** README를 웹 정정 사용법과 schema4 백업/복구에 맞춘다. 구형 XLSX·파일 선택기 QA는 종료된 기능의 과거 미완료 기록으로 보존하고 새 기능의 인수 조건으로 요구하지 않는다. 실제 PDF 저장/200% 확대 등 유지 기능의 수동 검수 한계는 계속 분리해 표시한다.
-- [ ] **검토·커밋·컨텍스트:** 전체 변경 독립 검토 후 `docs(history): document browser corrections and archive compatibility`. 오류를 수정했다면 해당 RED→GREEN·재검토 뒤 필요한 QA만 반복한다. 커밋·증거·정확한 재개 지점·남은 제한을 갱신한다. 외부 배포·Tunnel·접근 권한은 이 단계에서 변경하지 않는다.
+### W4: JSON API·입력 경계·구형 파일 교환 종료
 
-### 7.4 계획 검토·완료 기준
+**Files:** editor handlers(.test), editor/drafts/reviews routes, corrections/exchange handlers·composition와 관련 테스트. **Consumes:** W3 서비스. **Produces:** §7.3 HTTP 계약.
 
-- 사용자가 알아야 하는 것은 보고월·차수·수정 값·사유·검토·확정이다. 정정 XLSX/DB 파일/내부 식별자를 요구하는 단계가 하나라도 남으면 사용자 흐름은 미완료다.
-- 파일 형식과 업무 정정 분리(W1), 저장 원천 기반 재계산(W2), 서버 입력 경계(W3), 직접 편집/충돌/캐시(W4), 데이터/리포트 보존 및 복구(W5)로 요구를 배정했다. 기존 Task1~9는 재구현하지 않는다.
-- 이번 계획 단계에서는 문서·계약 일관성·상대 링크·diff 및 앱 변경0만 검사한다. 신규 기능 TDD·빌드·DB 마이그레이션·화면 QA를 실행 완료했다고 기록하지 않는다.
-- 독립 계획 검토에서 이전 차수의 만료 검토안이 목록에서 사라질 수 있는 P2를 확인해 동일 회차 전체 차수 조회와 완료 판정·회귀 테스트로 보완했다. 해당 수정의 재검토에서 추가 수정 요청·중요한 미결정은 없었다.
-- 다음 구현은 **W1부터 순서대로 TDD → 독립 검토 → QA → 커밋 → 컨텍스트 기록**이다. 실패·미완료를 닫지 않고 계산식/리포트 보호 범위를 넓히지 않는다.
+- [ ] **RED 작성:** 기준 준비→초안 저장/재개→preview→명시적 확정→readonly detail, 종료→새 복사→비교/재적용의 HTTP 흐름과 레거시 preview 호환을 검사한다.
+- [ ] **RED 작성:** 추가 필드/행 위조/중복·타scope·Host/Origin·422/404/409/413/503·no-store를 검사한다. `streamed_editor_body_is_bounded_without_content_length`, `exchange_is_retired_and_web_basis_is_never_encoded`를 고정한다.
+- [ ] **RED 실행:** `npx vitest run src/app/api/_lib/report-history-editor-handlers.test.ts src/app/api/_lib/report-history-handlers.test.ts --maxWorkers=4`에서 미구현 경로 실패를 확인한다.
+- [ ] **GREEN:** 엄격한 action별 DTO/bounded JSON·서버 scope·공통 오류를 연결하고 기존 corrections 명령 wire를 유지한다. 일반 확정 우회/가짜 파일 전달은 금지한다.
+- [ ] **QA/검토:** API focused→타입검사, 임시 합성 Next 서버에서 실제 HTTP의 응답 유실·재시도·저장 실패·닫기/확정 경쟁·서버 재시작을 확인한다. 업무 자료/키·외부 원천을 사용하지 않는다.
+- [ ] **커밋/컨텍스트:** `feat(history): expose browser correction work APIs`. 오류/호환/기록 파일 비노출 근거와 W5를 기록한다.
+
+### W5: Astryx 월별 목록·편집·검토·읽기 전용/복사 화면
+
+**Files:** 신규 editor/state/use-report-correction와 테스트, 기존 page/history-controls/confirmation-state/use-report-history와 관련 테스트. **Consumes:** W4 API. **Produces:** §7.1 UI/UX와 §7.4 공식 컴포넌트 구성.
+
+- [ ] **RED 작성:** `existing_draft_is_resumed_by_primary_action`, `new_draft_requires_explicit_action`, `summary_identifies_item_period_before_after`, `closed_detail_is_read_only_and_copy_is_separate`를 고정한다. 미처리 수·이전 차수·처리 기록과 내용 보기 상태는 서로 구분한다.
+- [ ] **RED 작성:** fake timer/client로 `autosave_debounces_1000ms_and_serializes_writes`, `create_before_ack_coalesces_to_one_draft`, `late_ack_advances_queue_revision_without_replacing_new_text`, `late_ack_cannot_replace_other_month`, `leave_and_preview_wait_for_ack`, `failed_save_keeps_text_and_requires_retry`를 검증한다. 보관됨은 ACK 이후다.
+- [ ] **RED 작성:** `edit_invalidates_preview_and_confirmation_command`, `readonly_view_never_autosaves`, `tab_filters_and_hidden_edits_survive_switch`, `copied_proposal_requires_comparison_and_revalidation`, no-change/오류/충돌 확정 불가·응답 불명 동일 명령 재시도를 고정한다.
+- [ ] **RED 작성:** `report_title_year_filter_preserves_source_cycle_mapping`에서2025년12월 보고서가2026년1월 자료회차로 표시·조회되고, 연도 필터가 자료회차 연도로 바뀌지 않음을 확인한다. 기존 월 함수는 수정하지 않는다.
+- [ ] **RED 실행:** `npx vitest run src/app/aifrm/report-correction-state.test.ts src/app/aifrm/use-report-correction.test.ts src/app/aifrm/report-correction-editor.test.tsx src/app/aifrm/report-history-controls.test.tsx --maxWorkers=4`. 단순 구현 복제 테스트 대신 순서 뒤집힌 응답·상태 전이를 검사한다.
+- [ ] **GREEN:** §7.4 컴포넌트/CLI에 따라 목록/요약/대표 재개/명시적 새 작성·자동 보관·에러·비교·내용 보기·종료/복사를 구현하고 엑셀 정정/ID UI만 제거한다. 추가 현황판·줄글 설명·리포트 양식 미리보기는 만들지 않는다.
+- [ ] **GREEN:** `useReportHistory.invalidateSelection():void`는 cache 비우기+selectionRevision 증가다. 정정 성공 시 월별 목록/현재 후보/현재 selection을 갱신하고 새 보관 확정본을 연다. 이미 열린 과거 문서에 최신 selection을 섞지 않는다.
+- [ ] **QA/검토:** 실제 합성 화면에서 5년치/같은사유 다수/20건 초과/연말/미처리0/0과값없음/키보드·오류초점·닫기초점복귀/712·1280px 및200% 확대/인쇄 제외를 확인한다. 고정 식별 열과 자료 식별을 유지한다. `correction_success_refreshes_current_history_but_preserves_archived_document` 회귀와 독립 검토를 수행한다.
+- [ ] **커밋/컨텍스트:** `feat(ui): manage report corrections with Astryx`. 화면 증거·저장/검증/확정 구분·캐시/복구·미완료 수동 항목과 W6를 기록한다.
+
+### W6: 보존 회귀·백업/복구·운영 안내·인수
+
+**Files:** 기존 통합 테스트·README·이 문서·UI 진행 기록. **Consumes:** W1~W5. **Produces:** 검증된 웹 정정과 로컬 자동 보관/복구 안내.
+
+- [ ] **통합 QA:** 구형/신형 합성 원장에서 새 수정안→자동 보관→재시작/재개→검토→명시적 확정→이전/새 차수 읽기→다른 달 불변, 종료→readonly→새 복사→재검증, 같은값 자동 정리·두 탭·응답 유실·디스크 실패·전체테이블 온라인 백업/복원을 연결한다.
+- [ ] **회귀 QA:** 보호51파일 SHA-256/diff0, 3용지/5차트·본문/서체/참고표·용지 안 제어부0·실제 저장 PDF 페이지 경계를 확인한다. 전체 `npm run lint` → `npm run build -- --webpack` → `npm run verify -- --maxWorkers=4` 순차 실행. 실제 결과만 기록하고 과거896개를 재사용하지 않는다.
+- [ ] **운영 문서:** ACK 전후 보관 의미, 실패 시 입력 보존/재시도, 기존안 재개와 새작성, 종료와 정정 확정, readonly 내용/새복사, schema4 백업/복구를 README에 반영한다. 원장 파일은 사용자 편집 대상으로 노출하지 않는다.
+- [ ] **인수 한계:** 구형 Excel 저장/파일선택기 QA는 종료한 기능의 과거 미완료 기록으로 유지하고 새 기능의 필수 인수로 요구하지 않는다. 실제 PDF/200% 등 유지 기능의 미검수는 이번 자동 테스트 통과와 구분해 남긴다. 기존 보호 SVG 라벨 겹침은 수정하지 않는다.
+- [ ] **독립 검토·커밋·컨텍스트:** 전체 변경을 독립 검토하고 필요한 수정의 RED→GREEN/재검토 후 `docs(history): document browser editing and recovery`. 단계별 커밋·증거·한계·정확한 재개 지점을 기록한다. 외부 공개·Tunnel·인증·push·merge·배포는 이 계획 범위에 없다.
+
+### 7.5 계획 검토·완료 기준
+
+- 사용자에게 필요한 대상은 보고월·자료회차·적용 월/평가일·단위·수정값·사유·보관/검토/확정 상태다. 원장/스냅샷 파일·경로·내부 식별자 관리가 사용자 작업에 남으면 미완료다.
+- 최근 검토의3건(대표 재개·변경 요약·처리안 readonly/새복사)을 W3~W5에, 기존 목업의 자동 보관/정리/누적 탐색/탭조건/식별열을 W1~W5에 배정했다. 확정본·계산/문서 보존은 전 단계와 W6에 적용한다.
+- 이전 계획과 충돌하던 ‘초안 저장 제외’와 ‘최근20건까지만 조회’는 위 명세로 교체했다. 미완성 draft/불변 preview/명시적 confirmation/종료 event를 구분하고 copy는 자동 재적용·확정이 아니다.
+- 이번 계획 작업에서는 문서·계약·요구 대응·diff와 앱 소스 변경0만 검사한다. 신규 기능 TDD/DB 마이그레이션/빌드/실제 제품 UI QA를 완료했다고 보고하지 않는다. 별도 목업의 검사 결과는 제품 완료로 옮기지 않는다.
+- 다음 실제 구현은 **W1→W6, 각 단계 TDD → 독립 검토 → QA → 커밋 → 컨텍스트 기록**이다. 실패·미완료를 숨기거나 계산식/템플릿 보호 범위를 넓히지 않는다.

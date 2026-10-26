@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { normalizeCorrectionRowEdit, parseCorrectionDecimal } from '../../domain/report-history/correction';
 import { inflateRawSync } from 'node:zlib';
 import type { DecodedCorrection, WorkbookCellError, ExportRow, HistoryWorkbookCodec, StoredWorkbookExport, WorkbookExportWrite, WorkbookSheetStructure, WorkbookStructure } from '../../application/report-history/ports';
 
@@ -318,7 +319,7 @@ function inspectXml(xml: Map<string, string>): void {
         const inline = (cell[2] ?? '').match(/<(?:\w+:)?is\b[^>]*>([\s\S]*?)<\/(?:\w+:)?is>/)?.[1] ?? '';
         assertTextLimit(restoredRichText(inline));
       }
-      if ((!type || type === 'n') && raw !== undefined && (!/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(raw) || !Number.isFinite(Number(raw)) || (Number(raw) === 0 && /[1-9]/.test(raw.split(/[eE]/)[0])))) fail('INVALID_WORKBOOK');
+      if ((!type || type === 'n') && raw !== undefined && parseCorrectionDecimal(raw, { allowExponent: true }) === null) fail('INVALID_WORKBOOK');
     }
   }
   if (rows > 10000 || cells > 200000) fail('LIMIT_EXCEEDED');
@@ -395,7 +396,7 @@ function decode(bytes: Uint8Array, manifest: StoredWorkbookExport, reader: typeo
       }
       const action = ({ '유지': 'keep', '값수정': 'set', '결측처리': 'set-missing' } as const)[valueAt(r, 6) as '유지'];
       const reason = valueAt(r, 8).trim(), evidenceNote = valueAt(r, 9).trim(), raw = valueAt(r, 7);
-      if (!action || !row.allowedActions.includes(action)) {
+      if (!action || (action === 'keep' && !row.allowedActions.includes(action))) {
         error(spec.name, r + 1, 6, 'INVALID_ACTION');
         continue;
       }
@@ -403,20 +404,11 @@ function decode(bytes: Uint8Array, manifest: StoredWorkbookExport, reader: typeo
         if (raw !== '' || reason !== '' || evidenceNote !== '') error(spec.name, r + 1, 7, 'KEEP_NOT_EMPTY');
         continue;
       }
-      if (!reason) error(spec.name, r + 1, 8, 'REQUIRED_REASON');
-      let value: number | null = null;
-      if (action === 'set') {
-        const cell = cellAt(r, 7);
-        if (!raw || (cell?.t !== 'n' && !/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(raw)) || !Number.isFinite(Number(raw)) || (Number(raw) === 0 && /[1-9]/.test(raw.split(/[eE]/)[0]))) {
-          error(spec.name, r + 1, 7, 'INVALID_NUMBER');
-          continue;
-        }
-        value = Number(raw);
-      } else if (raw !== '') {
-        error(spec.name, r + 1, 7, 'INVALID_NUMBER');
-        continue;
-      }
-      if (value !== row.originalValue) patch.push({ rowId: row.rowId, action, value, reason, evidenceNote });
+      const normalized = normalizeCorrectionRowEdit(row, { rowId: row.rowId, action, rawValue: raw, evidenceNote }, reason, { allowExponent: cellAt(r, 7)?.t === 'n' });
+      if (normalized.kind === 'invalid') {
+        const columns = { action: 6, value: 7, reason: 8, evidenceNote: 9, request: 0 } as const;
+        for (const issue of normalized.errors) error(spec.name, r + 1, columns[issue.field], issue.code);
+      } else if (normalized.kind === 'valid') patch.push(normalized.edit);
     }
     if (seen.size !== expectedRows.size) error(spec.name, null, spec.keyColumn, 'ROW_MISMATCH');
   }
