@@ -61,7 +61,13 @@ import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
 import { withExternalRiskHistory } from './report-history-projection';
 import { useReportHistory } from './use-report-history';
-import { ReportHistoryControls } from './report-history-controls';
+import { ReportControlSurface, ReportHistoryControls } from './report-history-controls';
+import { snapshotStatement, type PreparedCandidate } from '@/application/report-history/report-candidate';
+import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
+import { TextInput } from '@astryxdesign/core/TextInput';
+import type { FinancialReport } from './report-model';
+import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, fetchArchivedDocument, revisionForCycle,
+  type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -98,7 +104,36 @@ export default function AifrmDashboardPage() {
   const committedSource = loaded === null ? ''
     : `${roundsText(loaded.rounds.map((round) => round.round))} 회차의 ${loaded.rounds.map((round) => round.file).join(' · ')} 파일`;
   const [reportOpenedAt, setReportOpenedAt] = useState<Date | null>(null);
+  const [archived, setArchived] = useState<{ id: string; document: PreparedDocument } | null>(null);
+  const [confirmations, setConfirmations] = useState<readonly { confirmationId: string; reportCycle: YearMonth; revision: number; confirmedAt: string }[]>([]);
+  const [confirmationsLoaded, setConfirmationsLoaded] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
+  const [confirmationBusy, setConfirmationBusy] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [candidateState, setCandidateState] = useState<AcceptedCandidate | null>(null);
+  const [candidatePreparingKey, setCandidatePreparingKey] = useState<string | null>(null);
+  const [confirmationAttempt, setConfirmationAttempt] = useState<ConfirmationAttempt | null>(null);
+  const [confirmationConflictKey, setConfirmationConflictKey] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<{ key: string; id: string } | null>(null);
+  const [appliedGeneration, setAppliedGeneration] = useState(0);
+  const confirmationKeyRef = useRef<string | null>(null);
+  const confirmationBusyRef = useRef(false);
+  const candidatePreparationRef = useRef<string | null>(null);
+  const loadConfirmations = useCallback(async () => {
+    setConfirmationsLoaded(false);
+    try {
+      const response = await fetch('/api/report-history/confirmations', { cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok) throw Error(body.code ?? 'STORAGE_UNAVAILABLE');
+      setConfirmations(body.confirmations);
+      setConfirmationsLoaded(true);
+      setConfirmationConflictKey(null);
+      return true;
+    } catch { setConfirmationError('확정 이력을 불러오지 못했습니다. 다시 조회할 수 있습니다.'); return false; }
+  }, []);
+  useEffect(() => { queueMicrotask(() => void loadConfirmations()); }, [loadConfirmations]);
   const reportWasOpen = useRef(false);
+  const archiveWasOpen = useRef(false);
   useEffect(() => {
     if (reportOpenedAt !== null) {
       reportWasOpen.current = true;
@@ -108,6 +143,15 @@ export default function AifrmDashboardPage() {
       document.getElementById('report-entry')?.focus();
     }
   }, [reportOpenedAt]);
+  useEffect(() => {
+    if (archived !== null) {
+      archiveWasOpen.current = true;
+      document.getElementById('report-view-heading')?.focus();
+    } else if (archiveWasOpen.current) {
+      archiveWasOpen.current = false;
+      document.getElementById('report-entry')?.focus();
+    }
+  }, [archived]);
   // 유동성 Gap·적정 시재의 기준월(3개월 창의 첫 달). 건설경기 인식 지수의 기준월과 따로다.
   const [gapMonth, setGapMonth] = useState<YearMonth | null>(null);
   // 읽는 중에 파일을 다시 고르면 앞선 읽기의 결과를 버린다.
@@ -143,12 +187,13 @@ export default function AifrmDashboardPage() {
     }
   }, []);
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = () => {
     if (prepared.kind !== 'ready' || loaded === prepared.rounds) return;
     resultsFocusPending.current = true;
     dispatchUpload({ type: 'apply' });
+    setAppliedGeneration(value => value + 1);
     setGapMonth(prepared.rounds.latest.round);
-  }, [prepared, loaded]);
+  };
 
   const restorePrevious = useCallback(() => {
     dispatchUpload({ type: 'restore', id: nextReadId() });
@@ -167,9 +212,9 @@ export default function AifrmDashboardPage() {
   }, [loaded, baseMonth]);
 
   // 위쪽 요약과 아래 카드가 같은 결과를 쓴다. 산출 전에는 부르지 않는다.
-  const perception = usePerception(loaded?.latest.statement ?? null, loaded?.rounds ?? null);
+  const perception = usePerception(archived === null ? loaded?.latest.statement ?? null : null, archived === null ? loaded?.rounds ?? null : null);
   // 판단월 = 최신 회차의 달(대금 회수 위험과 같다). 금리는 그 전달 마지막 평가일 값이다.
-  const fundingRisk = useFundingRisk(loaded?.latest.round ?? null);
+  const fundingRisk = useFundingRisk(archived === null ? loaded?.latest.round ?? null : null);
   const readiness = dashboard === null ? null
     : reportReadiness(dashboard, perception.response, perception.isLoading, fundingRisk.response);
 
@@ -196,12 +241,145 @@ export default function AifrmDashboardPage() {
   }, [loaded]);
   const constructionAnchor = loaded === null ? null : perception.selectedMonth ?? addMonths(loaded.latest.round, -2);
   const history = useReportHistory({ reportCycle: loaded?.latest.round ?? null, constructionAnchor, gapMonth, rounds: loaded === null ? null : historyInput.entries,
-    unreadableRounds: historyInput.unreadable, reportOpen: reportOpenedAt !== null });
+    unreadableRounds: historyInput.unreadable, reportOpen: reportOpenedAt !== null && archived === null });
   const projectedReport = useMemo(() => report && history.view && constructionAnchor && loaded
     ? withExternalRiskHistory(report, history.view, { construction: constructionAnchor, funding: addMonths(loaded.latest.round, -1) })
     : report, [report, history.view, constructionAnchor, loaded]);
 
-  if (projectedReport !== null) {
+  const basis: ReportBasis | null = loaded && gapMonth && constructionAnchor ? {
+    reportCycle: loaded.latest.round, reportTitleMonth: addMonths(loaded.latest.round, -1), constructionBaseMonth: constructionAnchor,
+    fundingJudgedMonth: loaded.latest.round, fundingObservedMonth: addMonths(loaded.latest.round, -1), gapMonth,
+  } : null;
+  const constructionReceipt = perception.response?.history;
+  const fundingReceipt = fundingRisk.response?.history;
+  const readyToConfirm = archived === null && projectedReport !== null && loaded !== null && basis !== null && history.view !== null &&
+    !perception.isLoading && constructionReceipt?.captureStatus === 'saved' && fundingReceipt?.captureStatus === 'saved' &&
+    basis.constructionBaseMonth === addMonths(basis.reportCycle, -2) && basis.gapMonth === basis.reportCycle;
+  const statements = loaded?.rounds.map(round => snapshotStatement(round.statement)) ?? [];
+  const confirmationKey = readyToConfirm ? JSON.stringify({ generation: appliedGeneration, statements, basis,
+    constructionId: constructionReceipt.calculationId, fundingId: fundingReceipt.calculationId,
+    selectionId: history.view!.historySelectionId, authoredAt: reportOpenedAt?.toISOString(), report: projectedReport }) : null;
+  useEffect(() => { confirmationKeyRef.current = confirmationKey; }, [confirmationKey]);
+  const activeCandidate = candidateState?.key === confirmationKey ? candidateState : null;
+  useEffect(() => {
+    if (!readyToConfirm || !confirmationKey || !basis || !loaded || !reportOpenedAt || !history.view ||
+      constructionReceipt?.captureStatus !== 'saved' || fundingReceipt?.captureStatus !== 'saved' || activeCandidate) return;
+    const controller = new AbortController();
+    const key = confirmationKey;
+    const selectionId = history.view.historySelectionId;
+    candidatePreparationRef.current = key;
+    queueMicrotask(() => { if (!controller.signal.aborted) setCandidatePreparingKey(key); });
+    void (async () => {
+      try {
+        const response = await fetch('/api/report-history/confirmations', { method: 'POST', cache: 'no-store', signal: controller.signal,
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'prepare', basis, statements,
+            sourceMetadata: { files: loaded.rounds.map(round => round.file) }, constructionCalculationId: constructionReceipt.calculationId,
+            fundingCalculationId: fundingReceipt.calculationId, historySelectionId: selectionId,
+            authoredAt: reportOpenedAt.toISOString(), inputGeneration: String(appliedGeneration) }) });
+        const body = await response.json();
+        if (!response.ok) throw Error(body.code ?? 'STORAGE_UNAVAILABLE');
+        if (controller.signal.aborted || confirmationKeyRef.current !== key) return;
+        const candidate = body.candidate as PreparedCandidate;
+        const accepted = acceptPreparedCandidate(confirmationKeyRef.current, key, candidate, projectedReport, () => crypto.randomUUID());
+        if (!accepted) return;
+        setCandidateState(accepted);
+        if (accepted.previewRequired) setConfirmationError('저장할 문서가 표시 중인 내용과 다릅니다. 새 후보를 확인한 뒤 확정해 주세요.');
+      } catch (error) {
+        if (!controller.signal.aborted && confirmationKeyRef.current === key) setConfirmationError(error instanceof Error ? `보관 실패 · 재시도: ${error.message}` : '보관 실패 · 재시도');
+      } finally {
+        if (candidatePreparationRef.current === key) candidatePreparationRef.current = null;
+        if (!controller.signal.aborted) setCandidatePreparingKey(current => current === key ? null : current);
+      }
+    })();
+    return () => { controller.abort(); if (candidatePreparationRef.current === key) candidatePreparationRef.current = null; };
+  // The string key contains every semantic input; an unchanged rerender must not create another immutable candidate.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmationKey, readyToConfirm, activeCandidate?.key]);
+  const currentRevision = revisionForCycle(confirmations, confirmationsLoaded, basis?.reportCycle ?? null);
+  const activeAttempt = confirmationAttempt?.key === confirmationKey ? confirmationAttempt : null;
+  const candidatePreparing = confirmationKey !== null && candidatePreparingKey === confirmationKey;
+  const displayReport = archived?.document.json as FinancialReport | undefined ??
+    (activeCandidate?.previewRequired ? activeCandidate.candidate.document.json as FinancialReport : projectedReport);
+
+  const openConfirmation = async (id: string) => {
+    setConfirmationError(null);
+    try {
+      const document = await fetchArchivedDocument(id, history.cancel);
+      setArchived({ id, document });
+      setReportOpenedAt(null);
+      window.scrollTo({ top: 0 });
+    } catch { setConfirmationError('확정본을 열지 못했습니다. 저장소와 버전을 확인해 주세요.'); }
+  };
+  const confirmReport = async () => {
+    if (!readyToConfirm || !confirmationKey || !basis || !loaded || !reportOpenedAt || !history.view ||
+      constructionReceipt?.captureStatus !== 'saved' || fundingReceipt?.captureStatus !== 'saved' || confirmationBusyRef.current ||
+      candidatePreparationRef.current === confirmationKey || candidatePreparing || confirmationConflictKey === confirmationKey ||
+      (currentRevision === null && activeAttempt === null)) return;
+    if (!activeAttempt && currentRevision !== null && currentRevision > 0 && !correctionReason.trim()) { setConfirmationError('기존 확정본을 정정하려면 사유를 입력해 주세요.'); return; }
+    confirmationBusyRef.current = true; setConfirmationBusy(true); setConfirmationError(null);
+    const key = confirmationKey;
+    try {
+      let state = activeCandidate;
+      if (!state) {
+        const response = await fetch('/api/report-history/confirmations', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'prepare', basis, statements, sourceMetadata: { files: loaded.rounds.map(round => round.file) },
+            constructionCalculationId: constructionReceipt.calculationId, fundingCalculationId: fundingReceipt.calculationId,
+            historySelectionId: history.view.historySelectionId, authoredAt: reportOpenedAt.toISOString(), inputGeneration: String(appliedGeneration) }) });
+        const body = await response.json();
+        if (!response.ok) throw Error(body.code ?? 'STORAGE_UNAVAILABLE');
+        if (confirmationKeyRef.current !== key) return;
+        const candidate = body.candidate as PreparedCandidate;
+        state = acceptPreparedCandidate(confirmationKeyRef.current, key, candidate, projectedReport, () => crypto.randomUUID());
+        if (!state) return;
+        setCandidateState(state);
+        if (state.previewRequired) { setConfirmationError('저장할 문서가 표시 중인 내용과 다릅니다. 새 후보를 확인하고 다시 확정을 눌러 주세요.'); return; }
+      }
+      const attempt = confirmationAttemptForClick(activeAttempt, key, state.candidate.candidateId, currentRevision ?? activeAttempt!.expectedRevision,
+        state.idempotencyKey, correctionReason);
+      if (!activeAttempt) setConfirmationAttempt(attempt);
+      const response = await fetch('/api/report-history/confirmations', { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm', candidateId: attempt.candidateId, expectedRevision: attempt.expectedRevision,
+          idempotencyKey: attempt.idempotencyKey, ...(attempt.correctionReason ? { correctionReason: attempt.correctionReason } : {}) }) });
+      const body = await response.json();
+      if (confirmationKeyRef.current !== key) return;
+      if (response.status === 409) {
+        setConfirmationAttempt(null);
+        setConfirmationConflictKey(key);
+        setConfirmationError('다른 확정이 먼저 저장되었습니다. 확정 이력을 다시 조회하고 변경된 이력을 확인한 뒤 다시 확정해 주세요.');
+        return;
+      }
+      if (!response.ok || !body.ok) {
+        setConfirmationAttempt(current => current?.key === key ? attemptAfterFailureResponse(current, response.status) : current);
+        throw Error(body.result?.reason ?? body.code ?? 'STORAGE_UNAVAILABLE');
+      }
+      setConfirmationAttempt(null);
+      setConfirmed({ key, id: body.result.confirmationId });
+      await loadConfirmations();
+    } catch (error) { if (confirmationKeyRef.current === key) setConfirmationError(error instanceof Error ? `보관 실패 · 재시도: ${error.message}` : '보관 실패 · 재시도'); }
+    finally { confirmationBusyRef.current = false; setConfirmationBusy(false); }
+  };
+
+  const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="월별 확정 이력" className="report-controls" gap={2} align="start">
+    <Heading level={3}>월별 확정 이력</Heading>
+    <Button label="확정 이력 다시 조회" variant="ghost" size="sm" onClick={() => void loadConfirmations()} />
+    {confirmationsLoaded && confirmations.length === 0 && <Text type="supporting">저장된 확정본이 없습니다.</Text>}
+    {confirmations.map(item => <HStack gap={2} vAlign="center" wrap="wrap" key={item.confirmationId}>
+      <Text>{item.reportCycle} · 확정 {item.revision}차 · {new Date(item.confirmedAt).toLocaleString('ko-KR')}</Text>
+      <Button label="확정본 열기" variant="secondary" size="sm" onClick={() => void openConfirmation(item.confirmationId)} />
+    </HStack>)}
+    {inReport && archived === null && <VStack gap={2} align="start">
+      {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}
+      <Button label={confirmationBusy ? '확정 중' : candidatePreparing ? '후보 준비 중' : currentRevision !== null && currentRevision > 0 ? '정정 확정' : '보고서 확정'} variant="secondary"
+        isLoading={confirmationBusy || candidatePreparing} isDisabled={!readyToConfirm || (currentRevision === null && activeAttempt === null) || confirmationConflictKey === confirmationKey} onClick={() => void confirmReport()} />
+      {currentRevision === null && activeAttempt === null && <Text type="supporting">확정 이력을 조회해야 현재 월의 확정 차수를 확인할 수 있습니다.</Text>}
+      {!readyToConfirm && <Text type="supporting">{basis && (basis.constructionBaseMonth !== addMonths(basis.reportCycle, -2) || basis.gapMonth !== basis.reportCycle)
+        ? '선택한 월은 열람할 수 있지만 월별 확정의 기본 월 조합이 아닙니다.' : '산출 응답과 이력 선택의 보관이 끝나면 확정할 수 있습니다.'}</Text>}
+      {confirmed?.key === confirmationKey && <Text role="status">확정됨 · {confirmed.id}</Text>}
+    </VStack>}
+    {confirmationError && <Banner status="warning" title="확정 이력 안내" description={confirmationError} />}
+  </VStack>;
+
+  if (displayReport !== null && displayReport !== undefined) {
     return (
       <DocumentThemeProvider>
         <Layout
@@ -211,8 +389,11 @@ export default function AifrmDashboardPage() {
           content={
             <LayoutContent isScrollable={false}>
               <VStack gap={3}>
-                <ReportHistoryControls history={history} />
-                <FinancialReportPreview report={projectedReport} onBack={() => setReportOpenedAt(null)} />
+                <ReportControlSurface>
+                  <ReportHistoryControls history={history} />
+                  {confirmationControls(true)}
+                </ReportControlSurface>
+                <FinancialReportPreview report={displayReport} onBack={() => { setArchived(null); setReportOpenedAt(null); }} />
               </VStack>
             </LayoutContent>
           }
@@ -230,6 +411,7 @@ export default function AifrmDashboardPage() {
           <VStack gap={6}>
             <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
             <ReportHistoryControls history={history} />
+            {confirmationControls(false)}
 
             <UploadPanel
               files={files}

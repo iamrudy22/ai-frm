@@ -23,8 +23,8 @@ export function localOrigin(request: Request): boolean {
   }
   catch { return false; }
 }
-export async function bodyOf(request: Request): Promise<Record<string, unknown>> {
-  if (Number(request.headers.get('content-length') ?? 0) > 1_000_000) throw Error('BODY_TOO_LARGE');
+export async function bodyOf(request: Request, maxBytes = 1_000_000): Promise<Record<string, unknown>> {
+  if (Number(request.headers.get('content-length') ?? 0) > maxBytes) throw Error('BODY_TOO_LARGE');
   const reader = request.body?.getReader();
   if (!reader) throw Error('INVALID_BODY');
   const parts: Uint8Array[] = []; let size = 0;
@@ -32,7 +32,7 @@ export async function bodyOf(request: Request): Promise<Record<string, unknown>>
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 1_000_000) { await reader.cancel(); throw Error('BODY_TOO_LARGE'); }
+    if (size > maxBytes) { await reader.cancel(); throw Error('BODY_TOO_LARGE'); }
     parts.push(value);
   }
   let data: unknown;

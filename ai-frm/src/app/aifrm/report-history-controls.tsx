@@ -1,6 +1,8 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Button } from '@astryxdesign/core/Button';
+import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -11,6 +13,10 @@ import { VStack } from '@astryxdesign/core/VStack';
 import type { useReportHistory } from './use-report-history';
 
 type Controller = ReturnType<typeof useReportHistory>;
+export function ReportControlSurface({ children }: { readonly children: ReactNode }) {
+  return <Card variant="default" className="report-controls"><VStack gap={3}>{children}</VStack></Card>;
+}
+
 export function ReportHistoryControls({ history }: { readonly history: Controller }) {
   const selected = history.batches.find(batch => batch.batchId === history.selectedBatchId);
   const completed = selected?.completedCycles.length ?? 0;

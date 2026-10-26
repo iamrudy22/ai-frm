@@ -250,7 +250,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         throw Error('CALCULATION_CONTEXT_MISMATCH');
     }
     const selection = this.require<P.ExternalHistorySelection>('history_selection', input.scopeId, input.historySelectionId);
-    if (selection.calculationVersion !== input.calculationVersion || selection.anchors.construction !== input.basis.constructionBaseMonth || selection.anchors.funding !== input.basis.fundingObservedMonth || !equal(selection.historyCalculationIds, input.document.historyCalculationIds))
+    if (selection.calculationVersion !== input.calculationVersion || !selection.basis || !equal(selection.basis, input.basis) || selection.anchors.construction !== input.basis.constructionBaseMonth || selection.anchors.funding !== input.basis.fundingObservedMonth || !equal(selection.historyCalculationIds, input.document.historyCalculationIds))
       throw Error('HISTORY_SELECTION_MISMATCH');
     if (input.document.templateVersion !== HISTORY_TEMPLATE_VERSION)
       throw Error('UNSUPPORTED_TEMPLATE_VERSION');
@@ -379,7 +379,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         .filter(h => h.reportCycle <= query.basis.reportCycle && Object.values(h.canonicalCurrentCalculationIds).some(id => selectedIds.has(id)))
         .map(h => ({ reportCycle: h.reportCycle, confirmationId: h.confirmationId, revision: h.revision }))
         .sort((a, b) => a.reportCycle.localeCompare(b.reportCycle));
-      const selection: P.ExternalHistorySelection = { historySelectionId: this.nextId(), scopeId: query.scopeId, calculationVersion: query.calculationVersion, anchors: { construction: query.basis.constructionBaseMonth, funding: query.basis.fundingObservedMonth }, cutoff: query.asOf, selectedBackfillBatchId: query.selectedBackfillBatchId, headRevisions, calculations, historyCalculationIds: calculations.map(c => c.calculationId) };
+      const selection: P.ExternalHistorySelection = { historySelectionId: this.nextId(), scopeId: query.scopeId, basis: query.basis, calculationVersion: query.calculationVersion, anchors: { construction: query.basis.constructionBaseMonth, funding: query.basis.fundingObservedMonth }, cutoff: query.asOf, selectedBackfillBatchId: query.selectedBackfillBatchId, headRevisions, calculations, historyCalculationIds: calculations.map(c => c.calculationId) };
       this.db.prepare('INSERT INTO history_selection VALUES(?,?,?)').run(query.scopeId, selection.historySelectionId, encodeEvidence(selection));
       return selection;
     });

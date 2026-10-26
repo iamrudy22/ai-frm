@@ -424,14 +424,14 @@ interface HistoryRepository {
 **Files:** domain/application 확정 서비스, report-history HTTP handlers/routes, app view/controls/page와 기존 훅의 receipt 노출.
 **Interfaces:** `prepareReportCandidate(deps: HistoryDependencies, input: PrepareCandidateInput, documentFactory: ReportDocumentFactory): Promise<PreparedCandidate>`, `confirmMonthlyReport(deps: HistoryDependencies, scopeId: string, cmd: ConfirmationCommand): Promise<ConfirmationResult>`, `openConfirmedReport(repository: HistoryRepository, scopeId: string, id: string): Promise<PreparedDocument>`. 준비/입력 오류는 도메인·검증 사유로 반환하며 HTTP 경계가422/503으로 변환한다.
 
-- [ ] 실패 테스트: Statement 달력 DTO의 KST/UTC 월초·연초 round-trip 후 회차/계산 동일. 같은 이름의 수정 내용은 새 입력, 이름만 다른 동일 내용은 같은 핵심 입력 해시. 수정 ledger+옛 construction calculationId는 거부.
-- [ ] 후보 준비에서 전체 입력 스냅샷을 영속 저장·inputSnapshotId로 연결하고, 해시만 보관한 후보/다른 scope 입력 참조를 거부한다. 저장 후 createStatement 복원 결과와 원래 dashboard/ledger를 deepEqual 검증한다.
-- [ ] 보고서 열기 전에는 산출 기록만 보관하고 document candidate는 없음. 후보 준비 시 서버가 기존 dashboard 계산·기존 문서 factory·선택된 historySelectionId를 재사용하고 외부 조회0회. `authoredAt`을 보존해 자정 전 열고 다음 날 확정해도 작성일 불변. 과거 회차를 지금 확정해도 confirmedAt은 실제 현재 시각.
-- [ ] pending/receipt 미보관/다른 scope·월·버전은 확정 차단. 종료된 일부 불가 후보는 당시 사유 그대로 확정 가능. 커스텀 실효 월은 기본월로 변경하지 않고 월별 확정 불가만 안내.
-- [ ] A 준비 중 B 파일 적용/선택월 변경/늦은 A 응답이면 자동 확정 중단. 표시 hash가 다르면 새 후보를 보여 주고 재클릭 필요. 같은 클릭의 중복 전송·503 후 재시도·두 탭 경합은 §2.3대로 처리.
-- [ ] 확정본 재열람 시 외부 API0회·이력 재선택0회. 후일 ECOS 수정/새 보완 batch/다음날 재열람에도 문서 JSON/hash·값·차트·작성일 동일. unsupported template/schema version은 재계산으로 대체하지 않음.
-- [ ] ‘확정 중/확정됨/보관 실패·재시도/정정 사유/확정본 열기’는 용지 밖 UI에만 추가. 기존 산출·파일 복원·HTML 열기·인쇄·포커스는 유지.
-- [ ] 대상 테스트 RED→GREEN·전체 verify·관련 lint·독립 리뷰·합성 서버 재시작/오프라인 저장소/동시 탭 QA 후 `feat(history): confirm and reopen monthly report snapshots` 커밋·진행 기록.
+- [x] 실패 테스트: Statement 달력 DTO의 KST/UTC 월초·연초 round-trip 후 회차/계산 동일. 같은 이름의 수정 내용은 새 입력, 이름만 다른 동일 내용은 같은 핵심 입력 해시. 수정 ledger+옛 construction calculationId는 거부.
+- [x] 후보 준비에서 전체 입력 스냅샷을 영속 저장·inputSnapshotId로 연결하고, 해시만 보관한 후보/다른 scope 입력 참조를 거부한다. 저장 후 createStatement 복원 결과와 원래 dashboard/ledger를 deepEqual 검증한다.
+- [x] 보고서 열기 전에는 산출 기록만 보관하고 document candidate는 없음. 후보 준비 시 서버가 기존 dashboard 계산·기존 문서 factory·선택된 historySelectionId를 재사용하고 외부 조회0회. `authoredAt`을 보존해 자정 전 열고 다음 날 확정해도 작성일 불변. 과거 회차를 지금 확정해도 confirmedAt은 실제 현재 시각.
+- [x] pending/receipt 미보관/다른 scope·월·버전은 확정 차단. 종료된 일부 불가 후보는 당시 사유 그대로 확정 가능. 커스텀 실효 월은 기본월로 변경하지 않고 월별 확정 불가만 안내.
+- [x] A 준비 중 B 파일 적용/선택월 변경/늦은 A 응답이면 자동 확정 중단. 표시 hash가 다르면 새 후보를 보여 주고 재클릭 필요. 같은 클릭의 중복 전송·503 후 재시도·두 탭 경합은 §2.3대로 처리.
+- [x] 확정본 재열람 시 외부 API0회·이력 재선택0회. 후일 ECOS 수정/새 보완 batch/다음날 재열람에도 문서 JSON/hash·값·차트·작성일 동일. unsupported template/schema version은 재계산으로 대체하지 않음.
+- [x] ‘확정 중/확정됨/보관 실패·재시도/정정 사유/확정본 열기’는 용지 밖 UI에만 추가. 기존 산출·파일 복원·HTML 열기·인쇄·포커스는 유지.
+- [x] 대상 테스트 RED→GREEN·전체 verify·관련 lint·독립 리뷰·합성 서버 재시작/오프라인 저장소/동시 탭 QA 후 `feat(history): confirm and reopen monthly report snapshots` 커밋·진행 기록.
 
 ### Task 6: 정정용 엑셀 내보내기와 서버 기준 명세
 

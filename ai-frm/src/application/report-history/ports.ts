@@ -107,6 +107,8 @@ export type RevisionToken = {
 export type ExternalHistorySelection = {
   readonly historySelectionId: string;
   readonly scopeId: string;
+  /** New selections carry their exact basis; older read-only selections lack it and cannot prepare a candidate. */
+  readonly basis?: ReportBasis;
   readonly calculationVersion: string;
   readonly anchors: {
     readonly construction: YearMonth;
