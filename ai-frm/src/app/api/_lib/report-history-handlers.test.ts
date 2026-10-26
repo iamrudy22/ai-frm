@@ -76,28 +76,19 @@ describe('backfill HTTP boundary', () => {
   });
 });
 
-it('exchange export uses the local origin and returns a saved download URL', async () => {
+it('exchange export/download/preview/validate are retired before provider or body access', async () => {
   const { handleExchangePost, handleExchangeGet } = await import('./report-history-exchange-handlers');
-  const exportId = '22222222-2222-4222-8222-222222222222';
-  const confirmationId = '11111111-1111-4111-8111-111111111111';
-  const manifest = { scopeId: 'scope-A', exportId, workbookFormatVersion: 1, baseConfirmationId: confirmationId, baseRevision: 2,
-    baseDocumentHash: 'hash', basis: { reportCycle: '2026/08', reportTitleMonth: '2026/07' }, inputSnapshotId: 'input-1', inputHash: 'input-hash',
-    calculationIds: { construction: 'c', funding: 'f' }, historySelectionId: 'selection-1', calculationVersion: 'risk-policy-2026-09-28@e3a8f9e',
-    templateVersion: 'report@e3a8f9e', createdAt: '2026-10-23T00:00:00.000Z', rows: [], history: [], result: [] };
-  let providerCalls = 0;
-  const ready = async () => { providerCalls++; return { scopeId: 'scope-A', deps: { repository: { getWorkbookExport: async () => manifest },
-    calculationVersion: 'risk-policy-2026-09-28@e3a8f9e', workbookCodec: { encode: () => new Uint8Array([1, 2, 3]) } } } as never; };
-  const foreign = new Request('http://localhost:3000/api/report-history/exchange', { method: 'POST', headers: { origin: 'https://other.test' }, body: JSON.stringify({ action: 'export', confirmationId }) });
-  expect((await handleExchangePost(foreign, ready)).status).toBe(403);
-  expect(providerCalls).toBe(0);
-  expect((await handleExchangePost(post({ action: 'export', confirmationId: 'bad' }), ready)).status).toBe(400);
-  expect(providerCalls).toBe(0);
-  const downloaded = await handleExchangeGet(new Request(`http://localhost:3000/api/report-history/exchange?exportId=${exportId}`), ready);
-  expect(downloaded.status).toBe(200);
-  expect(downloaded.headers.get('content-type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  expect(downloaded.headers.get('content-disposition')).toContain('aifrm-history-202607-r2-22222222.xlsx');
-  expect(downloaded.headers.get('cache-control')).toBe('no-store');
-  expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  let calls = 0;
+  const ready = async (): Promise<never> => { calls++; throw Error('CODEC_OR_PROVIDER_CALLED'); };
+  for (const body of [JSON.stringify({ action: 'export', confirmationId: 'bad' }), 'invalid-json']) {
+    const request = new Request('http://localhost:3000/api/report-history/exchange', { method: 'POST', body });
+    const response = await handleExchangePost(request, ready);
+    expect(response.status).toBe(410); expect(await response.json()).toEqual({ ok: false, code: 'EXCHANGE_RETIRED' });
+    expect(response.headers.get('cache-control')).toBe('no-store'); expect(request.bodyUsed).toBe(false);
+  }
+  for (const query of ['exportId=old', 'previewId=old']) expect((await handleExchangeGet(new Request(`http://localhost:3000/api/report-history/exchange?${query}`), ready)).status).toBe(410);
+  const foreign = new Request('http://localhost:3000/api/report-history/exchange', { method: 'POST', headers: { origin: 'https://other.test' }, body: '{}' });
+  expect((await handleExchangePost(foreign, ready)).status).toBe(403); expect(calls).toBe(0);
 });
 it('corrections POST는 ID·hash·기준차수·키·전체사유만 받아 명시 확정 결과를 반환한다',async()=>{
   const {handleCorrectionPost}=await import('./report-history-exchange-handlers');
@@ -120,21 +111,4 @@ it('corrections POST는 저장소 CAS 충돌을 409, 저장 실패를 재시도 
   expect(conflict.status).toBe(409);expect(await conflict.json()).toMatchObject({ok:false,result:{reason:'STALE_DEPENDENCY'}});
   const failed=await handleCorrectionPost(request(),async()=>({scopeId:'scope-A',deps:{repository:{commitCorrection:async()=>{throw Error('SQL file path secret');}}}}) as never);
   expect(failed.status).toBe(503);expect(failed.headers.get('retry-after')).toBe('1');expect(await failed.json()).toEqual({ok:false,code:'STORAGE_UNAVAILABLE'});
-});
-
-it('exchange validate streams multipart limits and returns structured invalid file errors',async()=>{
-  const {handleExchangePost}=await import('./report-history-exchange-handlers');
-  const form=new FormData();form.set('command','validate');form.set('file',new File(['not-xlsx'],'synthetic.xlsx'));
-  const ready=async()=>({scopeId:'scope',deps:{workbookCodec:{readExportId:()=>{throw Error('INVALID_WORKBOOK');}}}} as never);
-  const response=await handleExchangePost(new Request('http://localhost:3000/api/report-history/exchange',{method:'POST',body:form}),ready);
-  expect(response.status).toBe(422);expect(await response.json()).toMatchObject({result:{kind:'invalid',importId:null,errors:[{sheet:null,row:null,column:null}]}});
-  const oversize=new Request('http://localhost:3000/api/report-history/exchange',{method:'POST',headers:{'content-type':'multipart/form-data; boundary=x'},body:new ReadableStream({start(controller){controller.enqueue(new Uint8Array(6*1024*1024+1));controller.close();}}),duplex:'half'} as RequestInit);
-  expect((await handleExchangePost(oversize,provider)).status).toBe(413);
-});
-it('exchange preview reopens saved immutable data in the server scope',async()=>{
-  const {handleExchangeGet}=await import('./report-history-exchange-handlers');
-  const id='22222222-2222-4222-8222-222222222222';
-  const ready=async()=>({scopeId:'scope',deps:{repository:{getCorrectionPreview:async(scope:string,preview:string)=>scope==='scope'&&preview===id?{previewId:id,baseRevision:2}:null}}} as never);
-  const response=await handleExchangeGet(new Request(`http://localhost:3000/api/report-history/exchange?previewId=${id}`),ready);
-  expect(response.status).toBe(200);expect(await response.json()).toMatchObject({preview:{previewId:id,baseRevision:2}});
 });

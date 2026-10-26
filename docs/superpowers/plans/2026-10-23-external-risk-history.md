@@ -12,7 +12,7 @@
 
 **상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`)·Task8(`e4aa811`) 완료. Task9 기능·통합 검증·운영 문서·최종 독립 재검토 Approved까지 완료했으며 최종 커밋에 이 기록을 포함한다. 보완 후 전체 lint·webpack build·896개 테스트(병렬4)·합성 전체 원장 백업복원·재시작·문서별 출처 전환 QA가 통과했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 인수는 미완료다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 보호51파일 SHA-256은 모두 그대로이며 실제 업무 파일 대신 합성 자료로 검증했다.
 
-**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1~W3의 구현·TDD·독립 검토·QA를 완료했으며 W4부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
+**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1~W4의 구현·TDD·독립 검토·QA를 완료했으며 W5부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
 
 ## Global Constraints
 
@@ -674,12 +674,12 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** editor handlers(.test), editor/drafts/reviews routes, corrections/exchange handlers·composition와 관련 테스트. **Consumes:** W3 서비스. **Produces:** §7.3 HTTP 계약.
 
-- [ ] **RED 작성:** 기준 준비→초안 저장/재개→preview→명시적 확정→readonly detail, 종료→새 복사→비교/재적용의 HTTP 흐름과 레거시 preview 호환을 검사한다.
-- [ ] **RED 작성:** 추가 필드/행 위조/중복·타scope·Host/Origin·422/404/409/413/503·no-store를 검사한다. `streamed_editor_body_is_bounded_without_content_length`, `exchange_is_retired_and_web_basis_is_never_encoded`를 고정한다.
-- [ ] **RED 실행:** `npx vitest run src/app/api/_lib/report-history-editor-handlers.test.ts src/app/api/_lib/report-history-handlers.test.ts --maxWorkers=4`에서 미구현 경로 실패를 확인한다.
-- [ ] **GREEN:** 엄격한 action별 DTO/bounded JSON·서버 scope·공통 오류를 연결하고 기존 corrections 명령 wire를 유지한다. 일반 확정 우회/가짜 파일 전달은 금지한다.
-- [ ] **QA/검토:** API focused→타입검사, 임시 합성 Next 서버에서 실제 HTTP의 응답 유실·재시도·저장 실패·닫기/확정 경쟁·서버 재시작을 확인한다. 업무 자료/키·외부 원천을 사용하지 않는다.
-- [ ] **커밋/컨텍스트:** `feat(history): expose browser correction work APIs`. 오류/호환/기록 파일 비노출 근거와 W5를 기록한다.
+- [x] **RED 작성:** 기준 준비→초안 저장/재개→preview→명시적 확정→readonly detail, 종료→새 복사→비교/재적용의 HTTP 흐름과 레거시 preview 호환을 검사한다.
+- [x] **RED 작성:** 추가 필드/행 위조/중복·타scope·Host/Origin·422/404/409/413/503·no-store를 검사한다. `streamed_editor_body_is_bounded_without_content_length`, `exchange_is_retired_and_web_basis_is_never_encoded`를 고정한다.
+- [x] **RED 실행:** `npx vitest run src/app/api/_lib/report-history-editor-handlers.test.ts src/app/api/_lib/report-history-handlers.test.ts --maxWorkers=4`에서 미구현 경로 실패를 확인한다.
+- [x] **GREEN:** 엄격한 action별 DTO/bounded JSON·서버 scope·공통 오류를 연결하고 기존 corrections 명령 wire를 유지한다. 일반 확정 우회/가짜 파일 전달은 금지한다.
+- [x] **QA/검토:** API focused→타입검사, 임시 합성 Next 서버에서 실제 HTTP의 응답 유실·재시도·저장 실패·닫기/확정 경쟁·서버 재시작을 확인한다. 업무 자료/키·외부 원천을 사용하지 않는다.
+- [x] **커밋/컨텍스트:** `feat(history): expose browser correction work APIs`. 오류/호환/기록 파일 비노출 근거와 W5를 기록한다.
 
 ### W5: Astryx 월별 목록·편집·검토·읽기 전용/복사 화면
 

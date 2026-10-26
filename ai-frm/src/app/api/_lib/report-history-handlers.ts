@@ -32,7 +32,10 @@ export async function bodyOf(request: Request, maxBytes = 1_000_000): Promise<Re
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > maxBytes) { await reader.cancel(); throw Error('BODY_TOO_LARGE'); }
+    if (size > maxBytes) {
+      try { await reader.cancel(); } catch { /* Cancellation failure must not hide the bounded-body error. */ }
+      throw Error('BODY_TOO_LARGE');
+    }
     parts.push(value);
   }
   let data: unknown;
