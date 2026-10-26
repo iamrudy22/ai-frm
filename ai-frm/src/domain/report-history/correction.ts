@@ -198,7 +198,7 @@ function identityParts(row: CorrectionBasisRow): readonly unknown[] {
     : [source.kind, source.bond, source.maturity, source.measure];
   return [row.category, row.sourceRound, row.unit, ...identity];
 }
-const semanticKey = (row: CorrectionBasisRow): string => JSON.stringify([...identityParts(row), row.period]);
+export const correctionRowSemanticKey = (row: CorrectionBasisRow): string => JSON.stringify([...identityParts(row), row.period]);
 
 export function normalizeCorrectionEdits(basis: CorrectionBasis, request: CorrectionEditRequest): CorrectionValidation {
   if (!object(request) || !keys(request, ['basisId', 'reason', 'edits']) || request.basisId !== basis.basisId) return { kind: 'invalid', errors: [fieldError(null, 'request', 'BASIS_MISMATCH')] };
@@ -234,11 +234,11 @@ export function correctionPatchAlreadyApplied(original: CorrectionBasis, patch: 
   const currentMeanings = new Map<string, CorrectionBasisRow[]>();
   for (const row of original.rows) {
     originals.set(row.rowId, [...(originals.get(row.rowId) ?? []), row]);
-    const meaning = semanticKey(row);
+    const meaning = correctionRowSemanticKey(row);
     originalMeanings.set(meaning, (originalMeanings.get(meaning) ?? 0) + 1);
   }
   for (const row of current.rows) {
-    const meaning = semanticKey(row);
+    const meaning = correctionRowSemanticKey(row);
     currentMeanings.set(meaning, [...(currentMeanings.get(meaning) ?? []), row]);
   }
   return patch.every(edit => {
@@ -246,7 +246,7 @@ export function correctionPatchAlreadyApplied(original: CorrectionBasis, patch: 
     seen.add(edit.rowId);
     const source = originals.get(edit.rowId);
     if (source?.length !== 1 || !source[0].allowedActions.includes(edit.action)) return false;
-    const meaning = semanticKey(source[0]);
+    const meaning = correctionRowSemanticKey(source[0]);
     if (originalMeanings.get(meaning) !== 1) return false;
     const matching = currentMeanings.get(meaning);
     if (matching?.length !== 1 || !matching[0].allowedActions.includes(edit.action)) return false;

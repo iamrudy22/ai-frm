@@ -12,7 +12,7 @@
 
 **상태:** Task1(`14648d1`)·Task2(`d2b862c`)·Task3(`44a2db9`)·Task4(`4423ee3`)·Task5(`1d859db`)·Task6(`aff91c6`)·Task7(`e40b0ea`)·Task8(`e4aa811`) 완료. Task9 기능·통합 검증·운영 문서·최종 독립 재검토 Approved까지 완료했으며 최종 커밋에 이 기록을 포함한다. 보완 후 전체 lint·webpack build·896개 테스트(병렬4)·합성 전체 원장 백업복원·재시작·문서별 출처 전환 QA가 통과했다. 실제 Excel 저장 왕복·기본 파일 선택기·PDF/200% 수동 인수는 미완료다. 시작 커밋 `19673b1`, 보호 계산/템플릿 기준 `e3a8f9e`, 최초 계획 `89db12a`. 보호51파일 SHA-256은 모두 그대로이며 실제 업무 파일 대신 합성 자료로 검증했다.
 
-**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1·W2의 구현·TDD·독립 검토·QA를 완료했으며 W3부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
+**현재 재개 지점(2026-10-26):** 구현 기준 HEAD는 `7216b59`다. 현재 Git HEAD는 문서 커밋 `666e6ef`이며 §7의 W1~W6는 최신 목업 검토를 반영한 계획이며 W1~W3의 구현·TDD·독립 검토·QA를 완료했으며 W4부터 순서대로 진행한다. 과거 엑셀 교환 구현을 재실행하거나 웹 정정이 이미 제공된다고 설명하지 않는다. 최신 사용자 승인에 따라 W1부터 실제 구현을 시작한다. 단계별 TDD·독립 검토·QA·커밋·컨텍스트 기록 후 W6까지 순서대로 진행한다.
 
 ## Global Constraints
 
@@ -661,14 +661,14 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** 신규 correction-work(.test), 기존 report-correction(.test), ports, legacy adapter. **Consumes:** W1/W2. **Produces:** §7.3의 prepare/create/save/get/list/detail/close/copy/reapply/preview/confirm 서비스.
 
-- [ ] **RED 작성:** `web_edit_replays_original_sources_and_clock_without_codec`에서 codec/원천 호출0·수입계 독립값·공표평균·완전 판독불가 복구/부분 실패·ECOS 실패 계열 생성 거부를 고정한다. `preview_changes_inputs_but_not_heads_or_other_reports`는 기존 문서/5개 계산/다른 달 보존을 확인한다.
-- [ ] **RED 작성:** `draft_resume_keeps_identity_and_unsaved_state_distinct`, `empty_new_draft_is_not_persisted`, `preview_uses_acknowledged_exact_draft_revision`, `closed_review_copy_preserves_source_and_requires_explicit_reapply`를 검사한다.
-- [ ] **RED 작성:** `editor_open_requires_latest_head_but_legacy_detail_is_readable`와 `same_current_draft_preview_retry_is_idempotent`에서 과거 차수 수정 진입과 최신 버전/저장 식별을 구분한다.
-- [ ] **RED 작성:** `copy_all_equal_is_no_change`, `copy_rejects_unmapped_or_changed_semantic_rows`, `copy_invalid_draft_remains_unvalidated`, `read_only_detail_preserves_baseline_and_calls_no_writers`, `reason_change_invalidates_confirmation` 및 레거시 완료/만료 안 조회와 동일 확정 재시도를 검사한다.
-- [ ] **RED 실행:** `npx vitest run src/application/report-history/correction-work.test.ts src/application/report-history/report-correction.test.ts --maxWorkers=4`에서 새 서비스 부재 실패를 확인한다.
-- [ ] **GREEN:** 기존 exportCorrectionWorkbook의 기준 구성과 validateCorrectionWorkbook의 재생/stage를 파일과 분리한다. 새 초안 업무는 correction-work가 맡고 기존 계산·documentFactory는 호출만 한다. 무변경은 파생 기록/차수0이다.
-- [ ] **QA/검토:** focused→타입검사, 저장 단계 실패 전체 rollback·재시작 재개·copy 원본 hash 보존·목록 전체 차수/cursor를 합성 자료로 독립 검토한다.
-- [ ] **커밋/컨텍스트:** `feat(history): manage browser correction work without files`. 원천/codec0·원본 불변·다음 W4를 기록한다.
+- [x] **RED 작성:** `web_edit_replays_original_sources_and_clock_without_codec`에서 codec/원천 호출0·수입계 독립값·공표평균·완전 판독불가 복구/부분 실패·ECOS 실패 계열 생성 거부를 고정한다. `preview_changes_inputs_but_not_heads_or_other_reports`는 기존 문서/5개 계산/다른 달 보존을 확인한다.
+- [x] **RED 작성:** `draft_resume_keeps_identity_and_unsaved_state_distinct`, `empty_new_draft_is_not_persisted`, `preview_uses_acknowledged_exact_draft_revision`, `closed_review_copy_preserves_source_and_requires_explicit_reapply`를 검사한다.
+- [x] **RED 작성:** `editor_open_requires_latest_head_but_legacy_detail_is_readable`와 `same_current_draft_preview_retry_is_idempotent`에서 과거 차수 수정 진입과 최신 버전/저장 식별을 구분한다.
+- [x] **RED 작성:** `copy_all_equal_is_no_change`, `copy_rejects_unmapped_or_changed_semantic_rows`, `copy_invalid_draft_remains_unvalidated`, `read_only_detail_preserves_baseline_and_calls_no_writers`, `reason_change_invalidates_confirmation` 및 레거시 완료/만료 안 조회와 동일 확정 재시도를 검사한다.
+- [x] **RED 실행:** `npx vitest run src/application/report-history/correction-work.test.ts src/application/report-history/report-correction.test.ts --maxWorkers=4`에서 새 서비스 부재 실패를 확인한다.
+- [x] **GREEN:** 기존 exportCorrectionWorkbook의 기준 구성과 validateCorrectionWorkbook의 재생/stage를 파일과 분리한다. 새 초안 업무는 correction-work가 맡고 기존 계산·documentFactory는 호출만 한다. 무변경은 파생 기록/차수0이다.
+- [x] **QA/검토:** focused→타입검사, 저장 단계 실패 전체 rollback·재시작 재개·copy 원본 hash 보존·목록 전체 차수/cursor를 합성 자료로 독립 검토한다.
+- [x] **커밋/컨텍스트:** `feat(history): manage browser correction work without files`. 원천/codec0·원본 불변·다음 W4를 기록한다.
 
 ### W4: JSON API·입력 경계·구형 파일 교환 종료
 

@@ -1030,3 +1030,16 @@ it('work list retains drafts from every revision and month head counts all of th
   const list=await f.r.listCorrectionWork('scope-A',{pendingOnly:true,limit:20});expect(list.items.map(w=>w.ref.id).sort()).toEqual([old.draftId,current.draftId].sort());expect(list.items.map(w=>w.baseRevision).sort()).toEqual([1,2]);
   expect((await f.r.listCorrectionMonths('scope-A',{pendingOnly:true,limit:12})).items).toMatchObject([{latestRevision:2,pendingCount:2,draftCount:2}]);
 });
+
+it('copying a closed unapplied copy retains its original source basis and raw proposal',async()=>{
+ const f=await webFixture(),d=await createWebDraft(f),ref={kind:'draft' as const,id:d.draftId};
+ await f.r.closeCorrectionWork('scope-A',{ref,expectedDraftRevision:1,idempotencyKey:'nested-close-original'});
+ const basis={...f.neutral,basisId:crypto.randomUUID()};await f.r.putCorrectionBasis(basis);
+ const copied={...d,draftId:crypto.randomUUID(),basisId:basis.basisId,content:{edits:[],reason:'',evidenceNote:''},copiedFrom:ref,originalBasisId:f.neutral.basisId,proposedContent:d.content,requiresReapply:true};
+ await f.r.writeCorrectionDraft({draft:copied,expectedDraftRevision:null,expectedHead:(await f.r.currentHeads('scope-A',[month]))[0],command:{action:'copy',idempotencyKey:'nested-first',requestHash:'nested-first'}});
+ const copiedRef={kind:'draft' as const,id:copied.draftId};await f.r.closeCorrectionWork('scope-A',{ref:copiedRef,expectedDraftRevision:1,idempotencyKey:'nested-close-copy'});
+ const before=await f.r.getCorrectionDraft('scope-A',copied.draftId),next={...copied,draftId:crypto.randomUUID(),copiedFrom:copiedRef};
+ const input={draft:next,expectedDraftRevision:null,expectedHead:(await f.r.currentHeads('scope-A',[month]))[0],command:{action:'copy' as const,idempotencyKey:'nested-second',requestHash:'nested-second'}};
+ expect(await f.r.writeCorrectionDraft(input)).toEqual(next);expect(await f.r.getCorrectionDraft('scope-A',copied.draftId)).toEqual(before);
+ expect(await f.r.writeCorrectionDraft({...input,expectedHead:{...input.expectedHead,revision:99}})).toEqual(next);
+});

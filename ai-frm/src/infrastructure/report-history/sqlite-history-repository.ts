@@ -686,7 +686,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if(command.action==='copy') {
         if(expectedDraftRevision!==null || !draft.copiedFrom || this.resolution(draft.scopeId,draft.copiedFrom)?.kind!=='closed' || !draft.requiresReapply || draft.draftRevision!==1) throw new HistoryOperationError('INVALID_DRAFT');
         const source=this.work(draft.scopeId,draft.copiedFrom);
-        if(!source||source.basis.basis.reportCycle!==draft.reportCycle||draft.originalBasisId!==source.basis.basisId||!equal(draft.proposedContent,source.content))throw new HistoryOperationError('INVALID_DRAFT');
+        if(!source||source.basis.basis.reportCycle!==draft.reportCycle||draft.originalBasisId!==(source.draft?.requiresReapply?source.draft.originalBasisId:source.basis.basisId)||!equal(draft.proposedContent,source.content))throw new HistoryOperationError('INVALID_DRAFT');
         this.insertDraft(draft);
       } else {
         const current=this.assertDraft(draft.scopeId,draft.draftId,expectedDraftRevision!);
