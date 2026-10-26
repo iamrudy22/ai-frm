@@ -51,7 +51,7 @@ async function draft(f:Awaited<ReturnType<typeof correctionFixture>>, content?:D
   const result=await work.createCorrectionDraft(f.deps,f.scopeId,{basisId:editor.basisId,idempotencyKey:crypto.randomUUID(),content:content??{edits:[{rowId:editor.rows.find(r=>r.category==='cashflow')!.rowId,action:'set',rawValue:'0'}],reason:'합성 정정',evidenceNote:''}});
   if(result==='empty')throw Error('expected draft');return result;
 }
-it('web_edit_replays_original_sources_and_clock_without_codec; preview_changes_inputs_but_not_heads_or_other_reports',async()=>{
+it('web_edit_replays_original_sources_and_clock_without_codec; preview_changes_cashflow_without_confirming',async()=>{
  const f=await correctionFixture(),d=await draft(f),before=f.counts();
  const reviewed=await correction.previewCorrectionDraft(f.deps,f.scopeId,{draftId:d.draftId,expectedDraftRevision:1});
  expect(reviewed.kind).toBe('preview');if(reviewed.kind!=='preview')throw Error('preview');
@@ -59,6 +59,91 @@ it('web_edit_replays_original_sources_and_clock_without_codec; preview_changes_i
  expect(input!.statements[0].amounts.기초시재).toEqual([0,...Array(11).fill(100)]);expect(input!.statements[0].amounts.수입계).toEqual(Array(12).fill(50));
  for(const indicator of ['construction','funding'] as const){const old=await f.r.getCalculation(f.scopeId,f.candidate.document? (await f.r.getCandidate(f.scopeId,f.candidate.candidateId))!.calculationIds[indicator]:'');const next=await f.r.getCalculation(f.scopeId,c!.calculationIds[indicator]);expect(next!.evaluationClockTrace).toEqual(old!.evaluationClockTrace);expect(next!.resultJson).toEqual(old!.resultJson);}
  expect(f.counts().monthly_confirmation).toBe(before.monthly_confirmation);expect(f.counts().monthly_head).toBe(before.monthly_head);expect(f.calls()).toBe(0);
+});
+it('web_shared_capture_preview_and_confirmation_preserve_other_report_head_document_and_calculations', async () => {
+  // Catch mutating shared immutable evidence or implicitly replacing another month's confirmed report.
+  const f = await correctionFixture();
+  const { captureConstruction, captureFunding } = await import('../../application/report-history/report-history');
+  const { prepareReportCandidate, restoreStatement } = await import('../../application/report-history/report-candidate');
+  const { ledgerOf } = await import('../../domain/cashflow/forecast-ledger');
+  const { roundEntryOf } = await import('../../domain/cashflow/round-entry');
+  const original = (await f.r.getCandidate(f.scopeId, f.candidate.candidateId))!;
+  const construction = (await f.r.getCalculation(f.scopeId, original.calculationIds.construction))!;
+  const funding = (await f.r.getCalculation(f.scopeId, original.calculationIds.funding))!;
+  const economic = (await f.r.getEvidence(f.scopeId, construction.captureIds[0]))!;
+  const bond = (await f.r.getEvidence(f.scopeId, funding.captureIds[0]))!;
+  const repository = new Proxy(f.r, { get(target, key) {
+    if (key === 'putEvidence') return async (input: { sourceKind: string }) => ({ captureId: input.sourceKind === 'ecos' ? economic.captureId : bond.captureId });
+    const value = Reflect.get(target, key);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const deps = { ...f.deps, repository, clock: () => new Date(now),
+    indicators: f.deps.replayIndicators!(f.deps.decode!(economic.payloadJson)),
+    yields: f.deps.replayYields!(f.deps.decode!(bond.payloadJson)) };
+  const earlierBasis = { reportCycle: yearMonth(2026,8), reportTitleMonth: yearMonth(2026,7), constructionBaseMonth: yearMonth(2026,6),
+    fundingJudgedMonth: yearMonth(2026,8), fundingObservedMonth: yearMonth(2026,7), gapMonth: yearMonth(2026,8) };
+  const statements = f.statements.slice(0, 2), ledger = ledgerOf(statements.map(restoreStatement).map(roundEntryOf));
+  const c = await captureConstruction(deps, f.scopeId, { reportMonth: earlierBasis.reportCycle }, ledger);
+  const y = await captureFunding(deps, f.scopeId, { judgedMonth: earlierBasis.fundingJudgedMonth });
+  if (c.history.captureStatus !== 'saved' || y.history.captureStatus !== 'saved') throw Error('fixture capture');
+  const constructionId = c.history.calculationId, fundingId = y.history.calculationId;
+  const selection = await f.r.createHistorySelection({ scopeId: f.scopeId, basis: earlierBasis, calculationVersion: version, asOf: now, selectedBackfillBatchId: null });
+  const otherCandidate = await prepareReportCandidate(deps, { scopeId: f.scopeId, basis: earlierBasis, statements, sourceMetadata: {},
+    constructionCalculationId: constructionId, fundingCalculationId: fundingId, historySelectionId: selection.historySelectionId,
+    authoredAt: now, inputGeneration: 'shared-capture' }, f.deps.documentFactory);
+  const other = await f.r.commitConfirmation(f.scopeId, { candidateId: otherCandidate.candidateId, expectedRevision: 0, idempotencyKey: 'shared-capture' });
+  expect(other).toMatchObject({ kind: 'confirmed', revision: 1 });
+  if (other.kind !== 'confirmed') throw Error('fixture confirmation');
+  expect(earlierBasis.reportCycle).not.toBe(basis.reportCycle);
+  expect((await f.r.getCandidate(f.scopeId, otherCandidate.candidateId))!.scopeId).toBe(f.scopeId);
+  expect((await f.r.getCalculation(f.scopeId, constructionId))!.captureIds).toEqual(construction.captureIds);
+  expect((await f.r.getCalculation(f.scopeId, fundingId))!.captureIds).toEqual(funding.captureIds);
+  const preserved = async () => ({
+    head: await f.r.currentHeads(f.scopeId, [earlierBasis.reportCycle]),
+    confirmation: await f.r.getConfirmation(f.scopeId, other.confirmationId),
+    candidate: await f.r.getCandidate(f.scopeId, otherCandidate.candidateId),
+    construction: await f.r.getCalculation(f.scopeId, constructionId),
+    funding: await f.r.getCalculation(f.scopeId, fundingId),
+    economic: await f.r.getEvidence(f.scopeId, economic.captureId), bond: await f.r.getEvidence(f.scopeId, bond.captureId),
+    previousConfirmation: await f.r.getConfirmation(f.scopeId, f.confirmed.confirmationId),
+    previousCandidate: await f.r.getCandidate(f.scopeId, f.candidate.candidateId),
+    previousConstruction: await f.r.getCalculation(f.scopeId, construction.calculationId),
+    previousFunding: await f.r.getCalculation(f.scopeId, funding.calculationId),
+  });
+  const editor = await correction.prepareCorrectionEditor(f.deps, f.scopeId, f.confirmed.confirmationId);
+  const row = editor.rows.find(row => row.category === 'economic' && row.period === yearMonth(2026,6) && row.allowedActions.includes('set'))!;
+  expect(row.originalText).toBe('100');
+  const d = await draft(f, { edits: [{ rowId: row.rowId, action: 'set', rawValue: '101' }], reason: '공유 원자료 검증', evidenceNote: '' });
+  const before = structuredClone(await preserved());
+  const beforeHeads = await f.r.currentHeads(f.scopeId, [basis.reportCycle, earlierBasis.reportCycle]);
+  const reviewed = await correction.previewCorrectionDraft(f.deps, f.scopeId, { draftId: d.draftId, expectedDraftRevision: 1 });
+  expect(reviewed).toMatchObject({ kind: 'preview', draftRevision: 1 });
+  if (reviewed.kind !== 'preview') throw Error('preview');
+  const preview = (await f.r.getCorrectionPreview(f.scopeId, reviewed.previewId))!;
+  expect(preview.previewHash).toBe(reviewed.previewHash);
+  const patchedCandidate = (await f.r.getCandidate(f.scopeId, preview.candidateId))!;
+  const patchedCalculation = (await f.r.getCalculation(f.scopeId, patchedCandidate.calculationIds.construction))!;
+  const patchedEvidence = (await f.r.getEvidence(f.scopeId, patchedCalculation.captureIds[0]))!;
+  expect(patchedEvidence.payloadJson).not.toEqual(economic.payloadJson);
+  const patched = f.deps.decode!<{ value: Record<string, { values: Map<string, number> }> }>(patchedEvidence.payloadJson);
+  expect(patched.value[row.label].values.get('2026/06')).toBe(101);
+  const comparison = (await work.getCorrectionReviewDetail(f.r,f.scopeId,{kind:'draft',id:d.draftId})).preview!;
+  expect(comparison.rawDiff).toEqual(preview.rawDiff);
+  expect(comparison.resultDiff).toHaveLength(5);
+  expect(comparison.affectedReports).toHaveLength((preview.affectedReports as unknown[]).length);
+  expect(comparison.affectedReports).toEqual(expect.arrayContaining([expect.objectContaining({reportCycle:earlierBasis.reportCycle,indicator:'construction',status:'recalculated'})]));
+  expect(JSON.stringify(comparison)).not.toMatch(/sourceRecordId|sourceIdentity|fieldPath|confirmationId|schemaVersion/);
+  expect(preview.affectedReports).toEqual(expect.arrayContaining([expect.objectContaining({ reportCycle: earlierBasis.reportCycle, indicator: 'construction', status: 'recalculated' })]));
+  expect(await f.r.currentHeads(f.scopeId, [basis.reportCycle, earlierBasis.reportCycle])).toEqual(beforeHeads);
+  expect(await preserved()).toEqual(before);
+  expect(f.calls()).toBe(0);
+  const confirmed = await correction.confirmCorrection(f.deps, f.scopeId, { previewId: reviewed.previewId, previewHash: reviewed.previewHash,
+    expectedBaseRevision: 1, idempotencyKey: 'confirm-shared-source', reason: d.content.reason });
+  expect(confirmed).toMatchObject({ kind: 'confirmed', revision: 2 });
+  if (confirmed.kind !== 'confirmed') throw Error('confirmation');
+  expect(await f.r.currentHeads(f.scopeId, [basis.reportCycle])).toEqual([{ reportCycle: basis.reportCycle, revision: 2, confirmationId: confirmed.confirmationId }]);
+  expect(await preserved()).toEqual(before);
+  expect(f.calls()).toBe(0);
 });
 it('draft_resume_keeps_identity_and_unsaved_state_distinct; empty_new_draft_is_not_persisted',async()=>{
  const f=await correctionFixture(),editor=await correction.prepareCorrectionEditor(f.deps,f.scopeId,f.confirmed.confirmationId),before=f.counts();
@@ -173,4 +258,21 @@ it('reapply whole-equal returns receipt-only no-change and retries before newer 
  const cmd={draftId:copy.draftId,expectedDraftRevision:1,expectedLatestConfirmationId:confirmed.confirmationId,idempotencyKey:'reapply-equal'},before=f.counts();expect(await work.reapplyCorrectionDraft(f.deps,f.scopeId,cmd)).toEqual({kind:'no-change'});expect(f.counts()).toEqual(before);
  await work.closeCorrectionWork(f.deps,f.scopeId,{ref:{kind:'draft',id:copy.draftId},expectedDraftRevision:1,idempotencyKey:'close-copied'});
  expect(await work.reapplyCorrectionDraft({...f.deps,nextId:()=>{throw Error('NEW_ID');}},f.scopeId,cmd)).toEqual({kind:'no-change'});
+});
+
+it('review DTO returns exact stored five-metric comparison on read-only reopen without source/codec or writes', async () => {
+  const f = await correctionFixture(), d = await draft(f);
+  const result = await correction.previewCorrectionDraft(f.deps,f.scopeId,{draftId:d.draftId,expectedDraftRevision:1});
+  if(result.kind !== 'preview') throw Error('preview');
+  const stored = (await f.r.getCorrectionPreview(f.scopeId,result.previewId))!;
+  const before = f.counts();
+  const readOnly = new SqliteHistoryRepository(f.r.databasePath,{readOnly:true}); repos.push(readOnly);
+  const detail = await work.getCorrectionReviewDetail(readOnly,f.scopeId,{kind:'draft',id:d.draftId});
+  expect(detail.preview).toMatchObject({previewId:stored.previewId,previewHash:stored.previewHash,draftRevision:1,baseRevision:stored.baseRevision,rawDiff:stored.rawDiff,affectedReports:stored.affectedReports});
+  for (const result of stored.resultDiff as {indicator:string;beforeDisplay:string;afterDisplay:string;changed:boolean}[]) {
+    expect(detail.preview!.resultDiff).toContainEqual({indicator:result.indicator,beforeDisplay:result.beforeDisplay,afterDisplay:result.afterDisplay,changed:result.changed});
+  }
+  expect(JSON.stringify(detail.preview)).not.toMatch(/sourceRecordId|sourceIdentity|fieldPath|schemaVersion|captureId|candidateId/);
+  expect(await readOnly.getCorrectionPreview(f.scopeId,result.previewId)).toEqual(stored);
+  expect(detail.preview!.resultDiff).toHaveLength(5);expect(f.counts()).toEqual(before);expect(f.calls()).toBe(0);
 });

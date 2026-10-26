@@ -11,6 +11,8 @@ export function correctionErrorMessage(error: unknown) {
     return '조회 중 다른 변경이 저장되었습니다. 내 입력을 유지했으니 최신 내용을 다시 조회해 비교해 주세요.';
   if (error instanceof CorrectionClientError && error.status === 409)
     return '다른 변경이 먼저 저장되었습니다. 입력을 유지했으니 최신 내용과 다시 비교해 주세요.';
+  if (error instanceof CorrectionClientError && error.status === 413)
+    return '입력 분량이 너무 큽니다. 수정 항목이나 입력을 줄인 뒤 다시 저장해 주세요.';
   return error instanceof CorrectionClientError && error.status === 422 ? '입력과 사유를 확인해 주세요.' : '저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.';
 }
 type Page<T> = {
@@ -87,6 +89,7 @@ export type CorrectionSessionState = {
     } | null;
   } | null;
   preview: Preview | null;
+  comparison: CorrectionReviewDetail['preview'];
   errors: readonly CorrectionFieldError[];
   message: string;
   busy: boolean;
@@ -111,18 +114,39 @@ export class CorrectionSession {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private command: CorrectionConfirmCommand | null = null;
   private saveDeadline = 0;
+  private comparisonGeneration = 0;
   constructor(editor: CorrectionEditorDto, draft: CorrectionDraftDto | null, private client: CorrectionClient, private nextKey: () => string = () => crypto.randomUUID()) {
-    this.value = { editor, draft, content: draft?.content ?? { edits: [], reason: '', evidenceNote: '' }, saveStatus: draft ? 'saved' : 'idle', conflict: null, preview: null, errors: [], message: '', busy: false, completed: false, stale: false };
+    this.value = { editor, draft, content: draft?.content ?? { edits: [], reason: '', evidenceNote: '' }, saveStatus: draft ? 'saved' : 'idle', conflict: null, preview: null, comparison: null, errors: [], message: '', busy: false, completed: false, stale: false };
   }
   get snapshot() { return this.value; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.value;
-  private emit(patch: Partial<CorrectionSessionState>) { this.value = { ...this.value, ...patch }; this.listeners.forEach(listener => listener()); }
+  private emit(patch: Partial<CorrectionSessionState>) {
+    if (patch.preview === null) patch = { ...patch, comparison: null };
+    this.value = { ...this.value, ...patch };
+    this.listeners.forEach(listener => listener());
+  }
   get hasUnacknowledged() { return this.version !== this.ackVersion || this.pending !== null; }
-  get canConfirm() { return !!this.value.preview && !this.hasUnacknowledged && !this.value.busy && !this.value.completed && this.value.errors.length === 0 && !this.value.stale && !this.value.draft?.requiresReapply && !this.value.conflict && this.value.saveStatus !== 'error' && this.value.preview.draftRevision === this.value.draft?.draftRevision; }
+  get canConfirm() {
+    const { preview, comparison, draft } = this.value;
+    return !!preview && !!comparison && comparison.previewId === preview.previewId
+      && comparison.previewHash === preview.previewHash && comparison.draftRevision === preview.draftRevision
+      && !this.hasUnacknowledged && !this.value.busy && !this.value.completed && this.value.errors.length === 0
+      && !this.value.stale && !draft?.requiresReapply && !this.value.conflict && this.value.saveStatus !== 'error'
+      && preview.draftRevision === draft?.draftRevision;
+  }
   change(content: DraftContent) {
     if (this.value.busy || this.value.completed || this.value.draft?.requiresReapply)
       return;
+    const forbiddenEdit = content.edits.find(edit => {
+      const row = this.value.editor.rows.find(row => row.rowId === edit.rowId);
+      return row && !row.allowedActions.includes(edit.action);
+    });
+    if (forbiddenEdit) {
+      this.command = null;
+      this.emit({ preview: null, errors: [{ rowId: forbiddenEdit.rowId, field: 'action', code: 'INVALID_ACTION', message: '이 항목에서 허용하지 않는 수정입니다.' }] });
+      return;
+    }
     const longEdit = content.edits.find(edit => (edit.rawValue?.length ?? 0) > 2000);
     if (content.reason.length > 2000 || content.evidenceNote.length > 2000 || longEdit) {
       this.command = null;
@@ -131,7 +155,7 @@ export class CorrectionSession {
     }
     this.version++;
     this.command = null;
-    this.emit({ content, preview: null, errors: [], message: '', saveStatus: this.value.conflict ? 'conflict' : this.value.saveStatus === 'error' ? 'error' : 'saving' });
+    this.emit({ content, preview: null, errors: [], message: '', saveStatus: this.value.conflict ? 'conflict' : this.value.saveStatus === 'error' && this.pending ? 'error' : 'saving' });
     if (this.timer)
       clearTimeout(this.timer);
     this.saveDeadline = Date.now() + 1000;
@@ -161,8 +185,10 @@ export class CorrectionSession {
           this.command = null;
           this.emit({ saveStatus: 'conflict', conflict: { code: error.code, latest: null }, preview: null, message: '다른 변경과 충돌했습니다. 내 입력을 유지한 채 최신 내용을 조회하고 복구 방법을 선택해 주세요.' });
         }
-        else
-          this.emit({ saveStatus: 'error', message: correctionErrorMessage(error) });
+        else {
+          if (error instanceof CorrectionClientError && [422, 413].includes(error.status)) this.pending = null;
+          this.emit({ saveStatus: 'error', errors: error instanceof CorrectionClientError ? error.errors : [], message: correctionErrorMessage(error) });
+        }
         throw error;
       }
     }
@@ -244,31 +270,57 @@ export class CorrectionSession {
     this.command = null;
     this.ackVersion = this.version;
     const readonly = !!latest.detail && !latest.detail.summary.capabilities.resume;
-    this.emit({ editor: latest.editor, draft: latest.draft, content: latest.draft?.content ?? { edits: [], reason: '', evidenceNote: '' }, saveStatus: latest.draft ? 'saved' : 'idle', conflict: null, preview: null, errors: [], completed: readonly, stale: latest.detail?.summary.state === 'stale', message: readonly ? '처리된 수정안입니다. 읽기 전용으로 확인합니다.' : latest.detail?.summary.state==='stale'?'기준 확정본이 바뀌었습니다. 목록에서 검토 종료한 뒤 새 수정안으로 다시 검토해 주세요.':'서버의 최신 내용으로 전환했습니다.' });
+    this.emit({ editor: latest.editor, draft: latest.draft, content: latest.draft?.content ?? { edits: [], reason: '', evidenceNote: '' }, saveStatus: latest.draft ? 'saved' : 'idle', conflict: null, preview: null, comparison: null, errors: [], completed: readonly, stale: latest.detail?.summary.state === 'stale', message: readonly ? '처리된 수정안입니다. 읽기 전용으로 확인합니다.' : latest.detail?.summary.state==='stale'?'기준 확정본이 바뀌었습니다. 목록에서 검토 종료한 뒤 새 수정안으로 다시 검토해 주세요.':'서버의 최신 내용으로 전환했습니다.' });
   }
   markStale() { this.command = null; this.emit({ stale: true, preview: null, message: '기준 확정본이 바뀌었습니다. 목록에서 이 안을 검토 종료한 뒤 새 수정안으로 다시 검토해 주세요.' }); }
+  private async readComparison(draft: CorrectionDraftDto, expected: { previewId: string; previewHash?: string; draftRevision: number }, version: number, generation: number) {
+    const detail = await this.client.detail({ kind: 'draft', id: draft.draftId });
+    if (generation !== this.comparisonGeneration || version !== this.version || this.hasUnacknowledged
+      || this.value.stale || this.value.completed || this.value.draft?.draftId !== draft.draftId
+      || this.value.draft.draftRevision !== draft.draftRevision) return;
+    const comparison = detail.preview;
+    if (!comparison || !Array.isArray(comparison.rawDiff) || !Array.isArray(comparison.resultDiff) || !Array.isArray(comparison.affectedReports)
+      || detail.summary.ref.kind !== 'draft' || detail.summary.ref.id !== draft.draftId
+      || detail.summary.state !== 'pending' || !detail.summary.capabilities.resume
+      || comparison.previewId !== expected.previewId
+      || (expected.previewHash !== undefined && comparison.previewHash !== expected.previewHash)
+      || comparison.draftRevision !== expected.draftRevision || comparison.baseRevision !== this.value.editor.baseRevision
+      || detail.summary.baseRevision !== this.value.editor.baseRevision)
+      throw new CorrectionClientError(409, 'PREVIEW_COMPARISON_MISMATCH');
+    this.emit({ preview: { kind: 'preview', previewId: comparison.previewId, previewHash: comparison.previewHash, draftRevision: expected.draftRevision }, comparison, message: '확정 대기 · 저장된 산출값과 영향을 확인해 주세요.' });
+  }
+  async loadSavedPreview() {
+    const draft = this.value.draft;
+    if (!draft?.currentPreviewId || draft.requiresReapply || this.value.completed || this.value.stale || this.value.busy || this.hasUnacknowledged) return;
+    const generation = ++this.comparisonGeneration;
+    this.emit({ busy: true, preview: null, message: '저장된 변경 비교 조회 중' });
+    try { await this.readComparison(draft, { previewId: draft.currentPreviewId, draftRevision: draft.draftRevision }, this.version, generation); }
+    catch (error) { if (generation === this.comparisonGeneration) this.emit({ message: correctionErrorMessage(error) }); }
+    finally { if (generation === this.comparisonGeneration) this.emit({ busy: false }); }
+  }
   async preview() {
     await this.drain();
     const draft = this.value.draft;
     if (!draft || draft.requiresReapply || this.value.completed || this.value.stale)
       return;
     const version = this.version;
+    const generation = ++this.comparisonGeneration;
     this.command = null;
     this.emit({ busy: true, preview: null, errors: [], message: '' });
     try {
       const result = await this.client.preview(draft.draftId, draft.draftRevision);
-      if (version !== this.version)
+      if (version !== this.version || generation !== this.comparisonGeneration)
         return;
       if (result.kind === 'preview' && result.draftRevision === draft.draftRevision)
-        this.emit({ preview: result, message: '확정 대기 · 변경 내용을 확인해 주세요.' });
+        await this.readComparison(draft, result, version, generation);
       else
         this.emit({ errors: result.kind === 'invalid' ? result.errors : [], message: result.kind === 'no-change' ? '변경 없음 · 새 확정 차수를 만들지 않습니다.' : '입력을 확인해 주세요.' });
     }
     catch (error) {
-      this.emit({ errors: error instanceof CorrectionClientError ? error.errors : [], message: correctionErrorMessage(error) });
+      if (generation === this.comparisonGeneration) this.emit({ errors: error instanceof CorrectionClientError ? error.errors : [], message: correctionErrorMessage(error) });
     }
     finally {
-      this.emit({ busy: false });
+      if (generation === this.comparisonGeneration) this.emit({ busy: false });
     }
   }
   async confirm() {
@@ -299,6 +351,8 @@ export class CorrectionSession {
     }
   }
   dispose() {
+    this.comparisonGeneration++;
+    this.emit({ busy: false });
     if (this.timer)
       clearTimeout(this.timer);
     this.timer = null;
@@ -307,6 +361,7 @@ export class CorrectionSession {
 export function useReportCorrection(session: CorrectionSession) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   useEffect(() => {
+    void session.loadSavedPreview();
     const listener = (event: BeforeUnloadEvent) => {
       if (session.hasUnacknowledged) {
         event.preventDefault();

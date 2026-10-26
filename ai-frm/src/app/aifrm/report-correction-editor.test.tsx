@@ -153,3 +153,30 @@ it('conflict comparison shows preserved local proposal and latest readonly conte
   expect(client.save).toHaveBeenCalledTimes(1);
   expect(session.snapshot.content.reason).toBe('내가 입력한 사유');
 });
+
+it('rows without set permission disable the actual Astryx numeric input, including missing-only rows', () => {
+  const editor = {basisId:'id',baseConfirmationId:'head',baseRevision:1,basis:{reportCycle:'2026/01',reportTitleMonth:'2025/12'},rows:detail.rows.flatMap(row=>[{...row,rowId:'locked',label:'조회 실패',allowedActions:[]},{...row,rowId:'missing-only',label:'결측 전용',allowedActions:['set-missing']}])} as unknown as CorrectionEditorDto;
+  const session = new CorrectionSession(editor,null,{} as never);
+  const html = renderToStaticMarkup(<CorrectionEditor session={session} onLeave={vi.fn()} onConfirmed={vi.fn()}/>);
+  for(const label of ['조회 실패','결측 전용']) {
+    const labelMarkup = [...html.matchAll(/<label[^>]*for="([^"]+)"[^>]*>([\s\S]*?)<\/label>/g)].find(match=>match[2].includes(`${label} ·`));
+    expect(labelMarkup).toBeDefined();
+    const input = [...html.matchAll(/<input[^>]*>/g)].find(match=>match[0].includes(`id="${labelMarkup![1]}"`))?.[0];
+    expect(input).toContain('disabled');
+  }
+});
+
+it('editor and read-only legacy details render all five stored metrics, grade, unavailable and real saved impact', async () => {
+  const comparison = {previewId:'p',previewHash:'hash',draftRevision:1,baseRevision:1,rawDiff:[{rowId:'r',label:'저장 항목',sourceRound:'2026/01',period:'2025/12',unit:'억원',before:1,after:0,reason:'사유',evidenceNote:''}],
+    resultDiff:[{indicator:'recovery',beforeDisplay:'1 · 양호',afterDisplay:'2 · 보통',changed:true},{indicator:'liquidity',beforeDisplay:'3',afterDisplay:'4',changed:true},{indicator:'cash',beforeDisplay:'5',afterDisplay:'6',changed:true},{indicator:'construction',beforeDisplay:'산출불가 · 조회 실패',afterDisplay:'7 · 주의',changed:true},{indicator:'funding',beforeDisplay:'8 · 위기',afterDisplay:'8 · 위기',changed:false}],
+    affectedReports:[{reportCycle:'2025/11',revision:3,indicator:'construction',status:'not-recalculated',reason:'저장된 영향 안내'}]};
+  const editor={basisId:'id',baseConfirmationId:'head',baseRevision:1,basis:{reportCycle:'2026/01',reportTitleMonth:'2025/12'},rows:detail.rows} as unknown as CorrectionEditorDto;
+  const session=new CorrectionSession(editor,{draftId:'d',draftRevision:1,editor,content:{edits:[],reason:'사유',evidenceNote:''},currentPreviewId:'p',requiresReapply:false} as never,{detail:async()=>({...detail,summary:{...summary,ref:{kind:'draft',id:'d'},state:'pending',capabilities:{...summary.capabilities,resume:true}},preview:comparison})} as never);
+  await session.loadSavedPreview();expect(session.canConfirm).toBe(true);
+  const editHtml=renderToStaticMarkup(<CorrectionEditor session={session} onLeave={vi.fn()} onConfirmed={vi.fn()}/>);
+  const readonlyHtml=renderToStaticMarkup(<CorrectionReviewDetails detail={{...detail,summary:{...summary,ref:{kind:'legacy-preview',id:'old'}},preview:{...comparison,draftRevision:null}}}/>);
+  for(const html of [editHtml,readonlyHtml]) {
+    for(const label of ['저장 항목 · 자료 2026/01 · 2025/12','대금 회수 위험','유동성 Gap','적정 시재','건설경기 인식 지수','조달위험 인식 지수','2 · 보통','산출불가 · 조회 실패','8 · 위기','다른 보고서 영향','2025/11','저장된 영향 안내','영향 가능 · 재계산 불가']) expect(html).toContain(label);
+  }
+  expect(readonlyHtml).not.toContain('<input');expect(readonlyHtml).not.toContain('정정 확정');session.dispose();
+});

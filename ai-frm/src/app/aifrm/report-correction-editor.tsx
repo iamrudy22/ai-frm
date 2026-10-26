@@ -1,5 +1,6 @@
 'use client';
 
+import { CorrectionPreviewDetails } from './report-history-controls';
 import { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertDialog } from '@astryxdesign/core/AlertDialog';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -63,6 +64,7 @@ export function CorrectionReviewDetails({ detail, comparison = false }: {
       { key: 'evidenceNote', header: '행별 근거', width: proportional(1) },
     ]}/>
   <Text>사유 · {detail.reason || '입력 전'}</Text><Text>근거 · {detail.evidenceNote || '없음'}</Text>
+  {detail.preview && <CorrectionPreviewDetails preview={detail.preview}/>}
   {detail.resolvedAt && <Text color="secondary">처리 시각 · {dateText(detail.resolvedAt)}</Text>}
  </VStack>;
 }
@@ -132,7 +134,7 @@ export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, on
               inputRefs.current.set(row.rowId, input);
             else
               inputRefs.current.delete(row.rowId);
-          }} label={`${identity(row)} 수정 값`} isLabelHidden value={edit?.action === 'set' ? edit.rawValue ?? '' : ''} onChange={value => session.change(updateDraftEdit(state.content, row.rowId, value))} type="text" size="sm" placeholder="빈칸은 변경 없음" isDisabled={edit?.action === 'set-missing' || state.busy || state.completed || state.draft?.requiresReapply} status={error ? { type: 'error', message: error.message } : undefined}/>
+          }} label={`${identity(row)} 수정 값`} isLabelHidden value={edit?.action === 'set' ? edit.rawValue ?? '' : ''} onChange={value => session.change(updateDraftEdit(state.content, row.rowId, value))} type="text" size="sm" placeholder="빈칸은 변경 없음" isDisabled={!row.allowedActions.includes('set') || edit?.action === 'set-missing' || state.busy || state.completed || state.draft?.requiresReapply} status={error ? { type: 'error', message: error.message } : undefined}/>
    {row.allowedActions.includes('set-missing') && <CheckboxInput size="sm" label={`${row.label} ${row.period} 값 없음`} value={edit?.action === 'set-missing'} isDisabled={state.busy || state.completed || state.draft?.requiresReapply} onChange={checked => session.change(updateDraftEdit(state.content, row.rowId, checked ? null : ''))}/>}
   </VStack>;
       } },
@@ -168,7 +170,7 @@ export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, on
   <Text color="secondary">빈 수정 칸은 변경 없음 · 0과 값 없음은 구분합니다.</Text>
   <TextArea ref={reasonRef} label="전체 정정 사유" value={state.content.reason} onChange={reason => session.change({ ...state.content, reason })} maxLength={2000} isRequired isReadOnly={state.busy || state.completed} status={state.errors.find(error => error.field === 'reason') ? { type: 'error', message: state.errors.find(error => error.field === 'reason')!.message } : undefined}/>
   <TextArea ref={noteRef} label="근거 메모" value={state.content.evidenceNote} onChange={evidenceNote => session.change({ ...state.content, evidenceNote })} maxLength={2000} isOptional isReadOnly={state.busy || state.completed} status={state.errors.find(error => error.field === 'evidenceNote') ? { type: 'error', message: state.errors.find(error => error.field === 'evidenceNote')!.message } : undefined}/>
-  {state.preview && <VStack gap={2}><Heading level={4}>검증한 입력 내용</Heading><Table data={state.content.edits.map(edit => { const row = state.editor.rows.find(row => row.rowId === edit.rowId)!; return { rowId: edit.rowId, item: identity(row), before: originalValue(row), after: proposalValue(edit.action, edit.rawValue) }; })} idKey="rowId" density="compact" columns={[{ key: 'item', header: '항목·회차·기간·단위', width: pixel(270) }, { key: 'before', header: '시작값', width: proportional(1) }, { key: 'after', header: '제안값', width: proportional(1) }]}/><Text>사유 · {state.content.reason}</Text><Text>근거 · {state.content.evidenceNote || '없음'}</Text></VStack>}
+  {state.preview && state.comparison && <CorrectionPreviewDetails preview={state.comparison} confirmation={{ kind: 'unconfirmed' }}/>}
   {state.errors.length > 0 && <Banner status="error" title="입력을 확인해 주세요" description={state.errors.map(error => error.message).join(' ')}/>}
   </>}
    </VStack></LayoutContent>} footer={<LayoutFooter><HStack gap={2} wrap="wrap"><Button label="목록으로" variant="ghost" isDisabled={state.busy} onClick={() => void leave()}/>{state.conflict && <><Button label="최신 내용 조회·비교" variant="secondary" isDisabled={state.busy} onClick={() => void session.readConflictLatest().catch(() => { })}/><Button label="서버의 최신 내용으로 전환" variant="secondary" isDisabled={!state.conflict.latest || state.busy} onClick={() => setAcceptLatestOpen(true)}/></>}{state.saveStatus === 'error' && <Button label="저장 다시 시도" variant="secondary" onClick={() => void session.retry().catch(() => { })}/>}{!state.draft?.requiresReapply && <><Button label="변경 내용 확인" variant="secondary" isDisabled={state.busy || state.completed || state.stale || !!state.conflict || state.saveStatus === 'error'} onClick={() => void safePreview()}/><Button label="정정 확정" isDisabled={!session.canConfirm} isLoading={state.busy} onClick={() => void session.confirm().then(result => {

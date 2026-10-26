@@ -22,7 +22,7 @@ npm run dev
 ```
 
 `http://localhost:3000/aifrm`을 연다.
-이력 저장 기능은 `package.json`에 지정한 Node.js **26.12.1**의 내장 SQLite를 사용한다. 별도 SQLite 서버나 패키지 설치는 필요 없다. 앱 폴더에서 서버를 실행하면 `data/report-history.sqlite`가 자동 생성되고 기존 원장은 시작 시 스키마 3으로 이관된다. 다른 작업 폴더에서 실행하면 저장 위치도 달라지므로 항상 `ai-frm`에서 실행한다. `data/`는 Git에서 제외된다.
+이력 저장 기능은 `package.json`에 지정한 Node.js **26.12.1**의 내장 SQLite를 사용한다. 별도 SQLite 서버나 패키지 설치는 필요 없다. 앱 폴더에서 서버를 실행하면 `data/report-history.sqlite`가 자동 생성되고 기존 원장은 시작 시 스키마 4로 이관된다. 다른 작업 폴더에서 실행하면 저장 위치도 달라지므로 항상 `ai-frm`에서 실행한다. `data/`는 Git에서 제외된다.
 
 Node.js 26.12.1은 Brotli 취약점 CVE-2026-111497 패치를 포함한 [보안 릴리스](https://nodejs.org/en/blog/release/v26.12.1/)다([공식 보안 공지](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)). 실행 전 `node -p 'process.version'`으로 `v26.12.1`을 확인한다. 런타임 변경 뒤에는 기존 앱 서버를 완전히 종료하고 다시 시작하며, 관리 도구나 디버거에서 실제 서버 프로세스의 `process.version`도 `v26.12.1`인지 확인한다. `engines` 변경이나 새 터미널의 버전 확인만으로 이미 실행 중인 서버가 갱신되지는 않는다.
 
@@ -81,30 +81,33 @@ UI/UX 단계별 변경·검토·QA·재개 지점은 [진행 기록](../docs/sup
 
 **과거 18회차 보완**은 현재 확보한 자금수지표 회차와 현재 조회한 외부 자료로 과거 달을 계산해 저장한다. 과거 당시에 확보하거나 확정한 값이라는 뜻은 아니다. 준비 상태를 보고 가능한 달부터 실행·재개할 수 있으며, 부족한 회차나 연말의 전년도 열 부재는 사유로 남는다. 확정 이력·보완 산출의 출처와 원천 수신 시각은 저장 기록에서 구분한다. 보완값이나 외부 자료 재조회가 기존 확정 문서와 다른 보고서의 확정값을 자동으로 바꾸지 않는다. 이 기능은 외부 스프레드시트·클라우드 DB 연결이나 정기 수집을 하지 않는다. 다만 기존 위험 산출에 필요한 ECOS·금투협 조회는 실행 시 발생한다.
 
-## 정정용 엑셀 내보내기·수정본 검증·정정 확정
+## 웹에서 원자료 수정·자동 보관·정정 확정
 
-`/aifrm`의 **월별 확정 이력**에서 대상 확정본 하나를 선택해 **정정용 엑셀 내보내기**를 누른다. 서버는 해당 revision의 입력·원천·산출 참조와 허용 셀을 묶은 불변 내보내기 명세를 원장에 먼저 저장한다. 다운로드가 실패하면 화면의 내보내기 ID로 **저장된 엑셀 다시 다운로드**를 사용한다. 파일 이름은 `aifrm-history-YYYYMM-rN-<내보내기ID 앞8자리>.xlsx` 형식이다.
+**월별 확정 이력**은 저장된 최신 **보고월**을 끝으로 최근 12개월을 보여 준다. **보고 기간**에서 연도나 **전체 기간**을 선택할 수 있고, **전체 기간 미처리만**은 기간 선택에 가려진 오래된 수정안도 찾는다. 보고월은 자료회차의 전달이며 두 식별자는 화면에서 구분한다. 자료가 없는 달을 임의로 채우지 않는다. **확정본 열기**와 월별로 펼치는 이전 확정본 열기는 보관된 문서·출처를 그대로 읽는다.
 
-| 시트 | 용도 |
-|---|---|
-| `안내` | 사용법과 제한을 읽는다. |
-| `확정이력` | 다섯 지표의 저장된 값·결측/비적용·단위·출처를 조회한다. |
-| `경제지표_정정` | 해당 산출에 쓰인 ECOS 9종 원값의 허용 행을 수정한다. |
-| `자금자료_정정` | 저장된 회차·월에 있는 여섯 금액 항목의 허용 칸을 수정한다. |
-| `조달금리_정정` | 저장된 평가일의 공사채 AAA 1년·국고채 1년 공표 3사 평균 금리를 수정한다. |
-| `_교환정보` | 발급 ID와 형식 정보를 보관하므로 건드리지 않는다. |
+작성 중인 수정안이 하나면 **이어서 작성**으로 같은 수정안과 보관된 입력을 연다. 여러 안은 **수정안 보기**에서 선택한다. 별도로 시작할 때는 **새 수정안**을 누른다. 편집은 **자금자료·경제지표·조달금리** 탭으로 나뉘며 자료회차·적용 월/평가일·단위를 확인한다. 탭을 바꾸어도 입력과 각 탭의 검색·필터는 유지된다.
 
-세 정정 시트에서 편집할 수 있는 열은 **수정 동작·수정 값·정정 사유·근거 메모**뿐이다. `유지`는 수정 값과 사유를 비워 두며 저장된 원값을 그대로 쓴다. `값수정`은 숫자와 비어 있지 않은 사유가 필요하다. `0`은 실제 숫자 0이므로 0으로 바꾸려면 `값수정`과 사유를 쓴다. 빈칸은 0이나 결측을 뜻하지 않는다. `결측처리`는 허용된 ECOS 값 또는 조달금리 평균에만 가능하며 사유가 필요하다. 자금자료의 개별 칸을 결측으로 만들거나 없는 월·전년도 열을 추가할 수 없다. 근거 메모는 선택 사항이다. 행 ID·회차·월·평가일·단위·기준값·결과·수식·등급은 바꾸지 않는다. 기준값은 정밀도를 지키기 위해 텍스트로 표시되고, 시트 보호는 안내일 뿐 서버가 저장된 명세로 모든 셀을 다시 검사한다.
+| 대상 | 수정 가능한 원자료 | 고정 항목 |
+|---|---|---|
+| 자금자료 | 저장된 각 회차·월의 기초시재·수입계·수입·분양회수·기타수입·지출(억원) | 수입계는 독립 입력이며 자동 합산하지 않는다. 없는 월·개별 결측을 추가하지 않는다. 판독불가 항목의 복구는 기존 모든 월 값이 필요하다. |
+| 경제지표 | 저장된 유효 ECOS 9종의 기준월·비교월 원값, 허용 행의 **값 없음** | 단위·통계/항목 코드·월은 고정이다. 조회 실패 계열을 새로 만들 수 없다. |
+| 조달금리 | 저장된 평가일의 공사채 AAA 1년·국고채 1년 공표 3사 평균(%) | 날짜·채권·만기·기관별 참고값은 고정이며 참고값을 재평균하지 않는다. |
 
-수정 값에는 유한한 숫자 셀 또는 쉼표·통화기호·`%`·과학표기 없는 일반 십진 텍스트를 쓴다. 날짜/퍼센트 서식 숫자, 수식, Boolean, 오류 셀은 허용되지 않는다. `.xlsx`는 5MiB 이하이며 ZIP64·암호화 파일은 거부된다. 수정본을 **수정본 가져오기 → 수정본 검증**으로 확인하면 셀별 오류 또는 원자료·산출값·등급 차이와 영향 보고서가 표시된다. 한 셀이라도 오류이면 전체 수정안이 반영되지 않는다. 무수정 파일이나 원래 숫자를 다시 적은 파일은 `no-change`이며 새 revision을 만들지 않는다. 수정해도 산출 결과가 같을 수 있으며, 그 경우 원자료 변경과 결과 변화 없음이 구분된다.
+숫자는 문자열로 입력한다. **빈 수정 칸은 변경 없음**이며 실제 숫자 `0`, 음수, 허용된 **값 없음**과 다르다. 쉼표·통화기호·`%`·과학표기 없는 일반 십진수를 사용하며 자동 반올림·범위 보정은 하지 않는다. 기존 수치의 정밀도는 유지된다. 지수·등급·산식·가중치·기준월 식별자는 직접 수정할 수 없고 서버가 저장된 편집 기준으로 검사한다.
 
-검증과 미리보기만으로 확정본은 바뀌지 않는다. 차이를 검토하고 별도의 **정정 사유**를 적어 **정정 확정**을 눌러야 선택한 보고서의 새 revision이 저장된다. 원본 업무용 자금수지표와 이전 확정본은 수정되지 않으며, 다른 보고서에 영향이 있어도 자동 정정하지 않는다. `409` 충돌은 기준 확정본 또는 참조 이력이 바뀐 경우다. **최신 확정본에서 새 정정용 엑셀을 내보내고 수정안을 새 파일에 다시 입력·검증한 뒤 정정 확정**한다. 이전 파일·미리보기를 재검증하는 것만으로는 충돌이 해소되지 않는다.
+마지막 입력 후 **1000ms**에 이 PC의 로컬 서버로 자동 보관한다. 미완성 숫자나 빈 사유도 수정안으로 보관되지만 확정값은 아니다. **저장 중 → 서버 성공 응답(ACK) → 보관됨** 순서이며 ACK 전에 닫거나 강제 종료한 마지막 입력의 복구는 보장하지 않는다. 브라우저 캐시나 sessionStorage가 원장이 아니다. **저장 실패** 때 입력은 유지되며 **저장 다시 시도**로 같은 요청을 재확인한다. **목록으로** 이동하거나 검토하기 전에는 남은 저장을 기다리고, 실패하면 전환하지 않는다. 미전송 입력이 있으면 지원 브라우저에서 이탈 경고를 표시할 수 있다.
 
-교환 XLSX 파일만으로 확정 원장을 복구하거나 다른 PC로 이전할 수 없다. 원장에는 XLSX에 없는 확정 문서·이전 버전·원천 기록과 각 export ID의 서버 기준 명세가 들어 있다. 생성한 교환 파일과 실제 업무 수치는 Git에 넣지 않는다.
+**전체 정정 사유**는 공백을 제외하고 비어 있지 않아야 하며 원문 최대 2000자다. **근거 메모**는 선택이며 최대 2000자다. **변경 내용 확인**은 보관된 정확한 버전을 검증해 원자료·산출 결과·영향 보고서를 보여 준다. 오류가 있으면 해당 입력을 고친다. 입력·사유·근거를 바꾸면 현재 검토와 확정 연결이 풀리므로 다시 확인한다. 검토를 통과한 현재 버전만 확정 대기이며, 별도의 **정정 확정** 성공 응답이 있어야 새 차수가 생긴다. 자동 보관·검토·인쇄·PDF 저장은 확정이 아니다. 값이 완전히 같으면 **변경 없음** 또는 **이미 반영됨**으로 처리하여 새 차수를 만들지 않는다. 수정한 원자료의 영향이 있어도 다른 보고서를 자동 정정하지 않는다. 이전 문서·작성일·차트·확정 차수와 원본 업무용 자금수지표는 보존된다.
+
+**검토 종료**는 작업 목록을 정리하는 별도 동작으로 확정본을 바꾸지 않는다. 모든 안의 **내용 보기**는 보관 당시의 시작값·제안값·자료 식별·사유·근거·상태를 읽기 전용으로 보여 주며 조회만으로 새 작업이나 저장·정정을 실행하지 않는다. 수동 종료한 안의 **새 수정안으로 다시 검토**는 원본을 보존한 별도 안을 만든다. 원래 시작값·최신값·제안값을 비교하고 **제안값 재적용 → 변경 내용 확인 → 정정 확정**을 거친다. 비교 중 기준이 바뀌면 **최신값 다시 비교**를 사용한다. 이미 전부 동일하면 새 안이나 차수를 만들지 않는다.
+
+두 탭의 저장이나 기준 변경이 충돌하면 **충돌 · 비교 필요** 상태에서 내 입력을 유지한다. **최신 내용 조회·비교**로 내 미보관 입력과 서버 최신 내용을 비교한다. **서버의 최신 내용으로 전환**은 확인창에서 **미보관 입력 버리고 전환**을 명시적으로 선택해야 한다. **내 입력 유지**로 취소할 수 있다. 이 전환은 서버 값을 덮어쓰지 않으며 오래된 버전을 최신으로 추정해 다시 저장하지 않는다. 내 제안을 다시 적용하려면 비교한 값과 사유를 확인하여 최신 기준에서 입력·검토한다.
+
+정정용 엑셀 내보내기·수정본 업로드·파일 경로·내부 ID 관리는 일반 화면에서 제거되었다. 최초 자금수지표 원본 선택, 보고서 열기·PDF 출력, 과거 보완은 유지한다. 저장된 수정안의 검토·확정과 보관 문서 열기는 ECOS·금투협을 재조회하지 않는다. 구형 검증안은 **내용 보기**와 명시적 **정정 확정**으로 호환되지만 교환 API는 종료되어 `410 EXCHANGE_RETIRED`를 반환한다.
 
 ## 원장 백업·복구·PC 이전
 
-앱에는 **자동 백업, 백업 버튼, 백업 API가 없다.** 아래 명령은 필요할 때 운영자가 `ai-frm` 폴더에서 Node.js 26.12.1로 직접 실행한다. 서버를 켠 상태의 백업은 SQLite 온라인 백업을 사용하며 `data/backups/report-history-<UTC시각>-<UUID>.sqlite`에 만든다. 실행 중인 WAL 원장의 `report-history.sqlite` 파일 하나만 복사하면 최근 기록이 빠질 수 있다. 백업 성공 경로를 확인하고 DB·백업을 접근 권한이 제한된 별도 저장소에도 보관한다.
+앱에는 **자동 백업, 백업 버튼, 백업 API가 없다.** 아래 명령은 필요할 때 운영자가 `ai-frm` 폴더에서 Node.js 26.12.1로 직접 실행한다. 서버를 켠 상태의 백업은 SQLite 온라인 백업을 사용하며 `data/backups/report-history-<UTC시각>-<UUID>.sqlite`에 만든다. 실행 중인 WAL 원장의 `report-history.sqlite` 파일 하나만 복사하면 최근 기록이 빠질 수 있다. 백업 성공 경로를 확인하고 DB·백업을 접근 권한이 제한된 별도 저장소에도 보관한다. 원장에는 확정 문서·원천·계산뿐 아니라 수정안·검토·처리 이력이 함께 들어 있다. 일반 사용자는 웹에서 작업하며 DB 위치나 내부 ID를 입력하거나 DB를 직접 편집하지 않는다.
 
 ```bash
 node --input-type=module <<'NODE'
@@ -114,6 +117,15 @@ import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, rmSyn
 import { join } from 'node:path';
 import { backupWithWake } from './src/infrastructure/report-history/sqlite-backup-wake.mjs';
 
+const expectedSchemaVersion = 4;
+const expectedTables = [
+  'schema_migration', 'workspace_scope', 'source_capture', 'report_input_snapshot',
+  'backfill_batch', 'calculation_record', 'history_selection', 'report_document',
+  'report_candidate', 'monthly_confirmation', 'monthly_head', 'idempotent_command',
+  'backfill_step', 'batch_capture_slot', 'workbook_export', 'workbook_import',
+  'correction_preview', 'correction_command', 'correction_draft',
+  'correction_work_command', 'correction_resolution',
+].sort();
 const data = join(process.cwd(), 'data');
 const original = join(data, 'report-history.sqlite');
 const folder = join(data, 'backups');
@@ -133,7 +145,11 @@ try {
   try {
     if (copy.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' ||
         copy.prepare('PRAGMA foreign_key_check').all().length ||
-        copy.prepare('PRAGMA user_version').get()?.user_version !== 3) throw Error('백업 검증 실패');
+        copy.prepare('PRAGMA user_version').get()?.user_version !== expectedSchemaVersion) throw Error('백업 검증 실패');
+    const names = copy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row => row.name);
+    if (JSON.stringify(names) !== JSON.stringify(expectedTables)) throw Error('원장 테이블 누락 또는 예상하지 않은 테이블');
+    const migrations = copy.prepare('SELECT version FROM schema_migration ORDER BY version').all().map(row => row.version);
+    if (JSON.stringify(migrations) !== JSON.stringify([1, 2, 3, 4])) throw Error('원장 migration 검증 실패');
   } finally { copy.close(); }
   if (existsSync(target + '-wal') && statSync(target + '-wal').size !== 0) throw Error('백업 WAL 확인 필요');
   for (const suffix of ['-wal', '-shm']) rmSync(target + suffix, { force: true });
@@ -146,7 +162,7 @@ try {
 NODE
 ```
 
-복구나 다른 PC 이전은 **앱 서버와 이 DB를 여는 모든 프로세스를 완전히 종료한 뒤** 진행한다. 복구할 백업을 대상 PC의 로컬 파일로 가져오고, 아래 명령의 `<백업 파일 경로>`를 실제 경로로 바꾼다. 스크립트는 백업과 복구용 복사본의 무결성·외래키·스키마 3을 검사한다. 기존 원장과 `-wal`·`-shm`이 있으면 `data/recovery-before-restore-.../`에 함께 옮겨 보존하고, 실패하면 되돌린다. 명령이 성공하기 전에는 앱을 다시 시작하지 않는다.
+복구나 다른 PC 이전은 **앱 서버와 이 DB를 여는 모든 프로세스를 완전히 종료한 뒤** 진행한다. 복구할 백업을 대상 PC의 로컬 파일로 가져오고, 아래 명령의 `<백업 파일 경로>`를 실제 경로로 바꾼다. 스크립트는 백업과 복구용 복사본의 무결성·외래키·스키마 4·정확한 21개 테이블·migration 1~4를 검사한다. 기존 원장과 `-wal`·`-shm`이 있으면 `data/recovery-before-restore-.../`에 함께 옮겨 보존하고, 실패하면 되돌린다. 명령이 성공하기 전에는 앱을 다시 시작하지 않는다.
 
 ```bash
 node --input-type=module - "<백업 파일 경로>" <<'NODE'
@@ -156,6 +172,15 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, 
 import { join, resolve } from 'node:path';
 
 const backup = resolve(process.argv[2] ?? '');
+const expectedSchemaVersion = 4;
+const expectedTables = [
+  'schema_migration', 'workspace_scope', 'source_capture', 'report_input_snapshot',
+  'backfill_batch', 'calculation_record', 'history_selection', 'report_document',
+  'report_candidate', 'monthly_confirmation', 'monthly_head', 'idempotent_command',
+  'backfill_step', 'batch_capture_slot', 'workbook_export', 'workbook_import',
+  'correction_preview', 'correction_command', 'correction_draft',
+  'correction_work_command', 'correction_resolution',
+].sort();
 const data = join(process.cwd(), 'data');
 if (!existsSync(data)) mkdirSync(data, { mode: 0o700 });
 if (!lstatSync(data).isDirectory() || lstatSync(data).isSymbolicLink() ||
@@ -166,14 +191,13 @@ function inspect(path) {
   try {
     if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' ||
         db.prepare('PRAGMA foreign_key_check').all().length ||
-        db.prepare('PRAGMA user_version').get()?.user_version !== 3 ||
-        db.prepare('SELECT count(*) AS n FROM schema_migration WHERE version IN (1,2,3)').get()?.n !== 3)
+        db.prepare('PRAGMA user_version').get()?.user_version !== expectedSchemaVersion)
       throw Error('원장 무결성·스키마 검증 실패');
-    for (const name of ['monthly_confirmation', 'workbook_export', 'correction_command'])
-      if (!db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=?").get(name)?.ok)
-        throw Error('원장 테이블 누락');
-    return ['monthly_confirmation', 'workbook_export', 'correction_command'].map(name =>
-      db.prepare(`SELECT count(*) AS n FROM ${name}`).get()?.n);
+    const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row => row.name);
+    if (JSON.stringify(names) !== JSON.stringify(expectedTables)) throw Error('원장 테이블 누락 또는 예상하지 않은 테이블');
+    const migrations = db.prepare('SELECT version FROM schema_migration ORDER BY version').all().map(row => row.version);
+    if (JSON.stringify(migrations) !== JSON.stringify([1, 2, 3, 4])) throw Error('원장 migration 검증 실패');
+    return names.map(name => ({ name, count: db.prepare(`SELECT count(*) AS n FROM ${name}`).get()?.n }));
   } finally { db.close(); }
 }
 const original = join(data, 'report-history.sqlite');
@@ -213,7 +237,9 @@ try {
 NODE
 ```
 
-복구 후 앱을 시작해 이전·최신 확정 revision과 정정용 엑셀 재다운로드를 확인한다. 새 PC로 이전할 때는 **앱 시작 전에** 이 백업을 배치한다. 앱을 먼저 실행하면 새 빈 원장이 만들어지며, XLSX만 가져와서는 기존 확정 문서와 내보내기 명세를 복원할 수 없다. 기존 원장 파일을 백업으로 대체하기 전에는 이전 원장과 WAL/SHM을 함께 보관한다. 백업의 시점 이후 기록은 복구본에 없으므로 복구 전 보존 폴더를 삭제하지 않는다.
+복구 후 앱을 시작해 이전·최신 확정본의 문서·출처, 보관된 수정안의 이어쓰기, 종료안의 읽기 전용 내용과 새 복사·재적용 대기 상태를 확인한다. 새 PC로 이전할 때는 **앱 시작 전에** 이 백업을 배치한다. 앱을 먼저 실행하면 새 빈 원장이 만들어지며, 원본 자금수지표나 과거 교환 XLSX만 가져와서는 확정 문서·수정안·처리 이력 전체를 복원할 수 없다. 기존 원장 파일을 백업으로 대체하기 전에는 이전 원장과 WAL/SHM을 함께 보관한다. 백업의 시점 이후 기록은 복구본에 없으므로 복구 전 보존 폴더를 삭제하지 않는다.
+
+새 실행 파일은 schema3 원장을 schema4로 자동 이관하며 기존 18개 테이블의 보관 내용을 재작성하지 않는다. schema4는 `correction_draft`, `correction_work_command`, `correction_resolution`을 더한 총 21개 테이블이며 migration 이력은 1~4다. 구형 실행 파일은 schema4를 거부한다. 위 명령은 schema4 백업용이므로 구형 원장은 앱 업데이트 전에 해당 구버전 절차로 별도 백업한다. 운영 스크립트의 무결성·외래키·스키마·21개 테이블 건수 확인은 모든 body/hash의 동일성을 증명하는 검사가 아니다. 합성 원장의 전체 행·trigger 비교 QA와 구분한다.
 
 ## ECOS 인증키
 

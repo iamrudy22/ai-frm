@@ -64,7 +64,7 @@ export function ReportHistoryControls({ history, summary }: { readonly history: 
   </VStack>;
 }
 
-type Preview = import('@/application/report-history/ports').StoredCorrectionPreview;
+type Preview = Pick<import('@/domain/report-history/correction').CorrectionComparison, 'baseRevision' | 'rawDiff' | 'resultDiff' | 'affectedReports'>;
 type PreviewConfirmation = { readonly kind: 'unconfirmed' | 'unknown' } | { readonly kind: 'confirmed'; readonly revision: number };
 type RecordValue = Record<string, unknown>;
 const records = (value: unknown): RecordValue[] => Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
@@ -78,7 +78,7 @@ function identityLabel(value: unknown): string {
 }
 const columns = (items: readonly [string, string][]) => items.map(([key, header]) => ({ key, header, width: proportional(1) }));
 export function CorrectionPreviewDetails({ preview, confirmation = { kind: 'unknown' } }: { readonly preview: Preview; readonly confirmation?: PreviewConfirmation }) {
-  const raw: RecordValue[] = records(preview.rawDiff).map(row => ({ ...row, label: identityLabel(row.identity), before: displayValue(row.before), after: displayValue(row.after) }));
+  const raw: RecordValue[] = records(preview.rawDiff).map(row => ({ ...row, label: typeof row.label === 'string' ? [row.label, row.sourceRound ? `자료 ${row.sourceRound}` : '', row.period].filter(Boolean).join(' · ') : identityLabel(row.identity), before: displayValue(row.before), after: displayValue(row.after) }));
   const results: RecordValue[] = records(preview.resultDiff).map(row => ({ ...row, label: metricName[String(row.indicator)] ?? String(row.indicator), before: displayValue(row.beforeDisplay), after: displayValue(row.afterDisplay), change: row.changed ? '산출값 변화 있음' : '산출값 변화 없음' }));
   const impacts: RecordValue[] = records(preview.affectedReports).map(row => ({ ...row, label: metricName[String(row.indicator)] ?? String(row.indicator), status: row.status === 'recalculated' ? (row.changed ? '재계산 시 변화 있음' : '재계산 시 변화 없음') : '영향 가능 · 재계산 불가' }));
   return <VStack gap={2} aria-label="정정 차이 미리보기">

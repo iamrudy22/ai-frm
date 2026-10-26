@@ -53,7 +53,7 @@ it('failed_save_keeps_text_and_requires_retry of SAME key payload BEFORE next re
 it('edit_invalidates_preview_and_confirmation_command and uncertain confirm retries original command', async () => {
   const commands: unknown[] = [];
   let fails = true;
-  const client = { preview: vi.fn(async () => ({ kind: 'preview', previewId: 'p', previewHash: 'hash', draftRevision: 1 })), confirm: vi.fn(async (cmd) => {
+  const client = { detail: async () => comparisonDetail(), preview: vi.fn(async () => ({ kind: 'preview', previewId: 'p', previewHash: 'hash', draftRevision: 1 })), confirm: vi.fn(async (cmd) => {
       commands.push(cmd);
       if (fails)
         throw Error('unknown');
@@ -101,7 +101,7 @@ it('client keeps exact W4 envelopes and explicit query limits without exchange',
 it('leave_and_preview_wait_for_ack use exact acknowledged revision and preserve latest reason', async () => {
   const ack = defer<CorrectionDraftDto>();
   const preview = vi.fn(async () => ({ kind: 'preview', previewId: 'p', previewHash: 'hash', draftRevision: 2 }));
-  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'old', evidenceNote: '' }), { save: () => ack.promise, preview } as never);
+  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'old', evidenceNote: '' }), { save: () => ack.promise, preview, detail: async () => comparisonDetail(2) } as never);
   session.change({ ...session.snapshot.content, reason: 'new' });
   const reviewed = session.preview();
   expect(preview).not.toHaveBeenCalled();
@@ -151,7 +151,7 @@ it('invalid, no-change, stale and copied proposal never enable confirmation', as
 it('reason, note, raw zero and full precision changes invalidate current preview without mutating stored preview', async () => {
   const stored = { kind: 'preview', previewId: 'p', previewHash: 'h', draftRevision: 1 };
   for (const patch of [{ reason: 'new' }, { evidenceNote: 'new' }, { edits: [{ rowId: 'r', action: 'set', rawValue: '0' }] }, { edits: [{ rowId: 'r', action: 'set-missing', rawValue: null }] }]) {
-    const session = new CorrectionSession(editor, dto({ edits: [], reason: 'old', evidenceNote: '' }), { preview: async () => stored } as never);
+    const session = new CorrectionSession(editor, dto({ edits: [], reason: 'old', evidenceNote: '' }), { preview: async () => stored, detail: async () => comparisonDetail(1, 'h') } as never);
     await session.preview();
     session.change({ ...session.snapshot.content, ...patch } as never);
     expect(session.snapshot.preview).toBeNull();
@@ -191,7 +191,7 @@ it('2000 character transport boundary does not truncate or poison the retry queu
   session.dispose();
 });
 it('rejected overlength input is an error and cannot retain an actionable preview', async () => {
-  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'valid', evidenceNote: '' }), { preview: async () => ({ kind: 'preview', previewId: 'p', previewHash: 'h', draftRevision: 1 }) } as never);
+  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'valid', evidenceNote: '' }), { preview: async () => ({ kind: 'preview', previewId: 'p', previewHash: 'h', draftRevision: 1 }), detail: async () => comparisonDetail(1, 'h') } as never);
   await session.preview();
   expect(session.canConfirm).toBe(true);
   session.change({ ...session.snapshot.content, reason: '가'.repeat(2001) });
@@ -319,4 +319,89 @@ it('a changed basis with the same reported revision invalidates an earlier adopt
  const session=new CorrectionSession(editor,dto({edits:[],reason:'start',evidenceNote:''}),{save,resume:async()=>current,detail:async()=>{if(changedBasis)current={...current,editor:{...current.editor,basisId:'new-basis'}};return {summary:{state:'draft',capabilities:{resume:true}},rows:[],reason:'server stable',evidenceNote:''};}} as never);
  session.change({...session.snapshot.content,reason:'my unsaved proposal'});await expect(session.drain()).rejects.toThrow();await session.readConflictLatest();expect(session.snapshot.conflict?.latest).not.toBeNull();
  changedBasis=true;await expect(session.readConflictLatest()).rejects.toMatchObject({code:'CONFLICT_CHANGED_DURING_READ'});expect(session.snapshot.conflict?.latest).toBeNull();expect(()=>session.acceptConflictLatest()).toThrow();expect(session.snapshot.content.reason).toBe('my unsaved proposal');expect(session.hasUnacknowledged).toBe(true);expect(save).toHaveBeenCalledTimes(1);
+});
+
+const comparisonDetail = (revision = 1, hash = 'hash', previewId = 'p') => ({
+  summary: { ref: { kind: 'draft', id: 'same' }, state: 'pending', baseRevision: 1, capabilities: { resume: true } },
+  preview: { previewId, previewHash: hash, draftRevision: revision, baseRevision: 1, rawDiff: [], resultDiff: [], affectedReports: [] },
+});
+it('confirmation waits for exact stored comparison and a failed read cannot authorize a write', async () => {
+  const comparison = defer<ReturnType<typeof comparisonDetail>>();
+  const client = { preview: vi.fn(async () => ({ kind: 'preview', previewId: 'p', previewHash: 'hash', draftRevision: 1 })), detail: vi.fn(() => comparison.promise), confirm: vi.fn() };
+  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'why', evidenceNote: '' }), client as never);
+  const reviewing = session.preview();
+  await vi.waitFor(() => expect(client.detail).toHaveBeenCalledTimes(1));
+  expect(session.snapshot.preview).toBeNull(); expect(session.canConfirm).toBe(false);
+  comparison.resolve(comparisonDetail()); await reviewing;
+  expect(session.canConfirm).toBe(true); expect(session.snapshot).toHaveProperty('comparison.resultDiff', []);
+  const failed = new CorrectionSession(editor, dto({ edits: [], reason: 'why', evidenceNote: '' }), { ...client, detail: async () => { throw Error('read failed'); } } as never);
+  await failed.preview(); expect(failed.canConfirm).toBe(false); expect(failed.snapshot.preview).toBeNull();
+  expect(client.confirm).not.toHaveBeenCalled();
+});
+it.each(['id', 'hash', 'revision', 'ref', 'closed', 'stale', 'missing', 'payload'])('stored comparison %s mismatch never enables confirmation', async mismatch => {
+  const detail = comparisonDetail();
+  if(mismatch === 'payload') detail.preview.resultDiff = null as never;
+  if(mismatch === 'id') detail.preview.previewId = 'other';
+  if(mismatch === 'hash') detail.preview.previewHash = 'other';
+  if(mismatch === 'revision') detail.preview.draftRevision = 2;
+  if(mismatch === 'ref') detail.summary.ref.id = 'other';
+  if(mismatch === 'closed' || mismatch === 'stale') detail.summary.state = mismatch;
+  const session = new CorrectionSession(editor, dto({ edits: [], reason: 'why', evidenceNote: '' }), { preview: async () => ({ kind: 'preview', previewId: 'p', previewHash: 'hash', draftRevision: 1 }), detail: async () => mismatch === 'missing' ? {...detail, preview: null} : detail } as never);
+  await session.preview(); expect(session.canConfirm).toBe(false); expect(session.snapshot.preview).toBeNull();
+});
+it.each([422, 413])('definite %s rejection keeps raw and ACK but corrected content uses a new key once', async status => {
+  const save = vi.fn().mockRejectedValueOnce(new CorrectionClientError(status, status === 413 ? 'LIMIT_EXCEEDED' : 'INVALID_DRAFT')).mockImplementation(async cmd => dto(cmd.content, 2));
+  let key = 0;
+  const session = new CorrectionSession(editor, dto({edits: [], reason: 'old', evidenceNote: ''}), {save} as never, () => `key-${++key}`);
+  session.change({...session.snapshot.content, reason:'rejected'}); await expect(session.drain()).rejects.toMatchObject({status});
+  expect(session.snapshot.content.reason).toBe('rejected'); expect(session.snapshot.draft?.draftRevision).toBe(1);
+  session.change({...session.snapshot.content, reason:'corrected'}); await session.drain();
+  expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toMatchObject({expectedDraftRevision:1,idempotencyKey:'key-2',content:{reason:'corrected'}});
+  await session.drain(); expect(save).toHaveBeenCalledTimes(2); expect(session.hasUnacknowledged).toBe(false); session.dispose();
+});
+it('503 retains original key and payload before saving corrected content', async () => {
+  const save = vi.fn().mockRejectedValueOnce(new CorrectionClientError(503,'STORAGE_UNAVAILABLE')).mockImplementation(async cmd => dto(cmd.content, cmd.expectedDraftRevision + 1));
+  let key=0; const session = new CorrectionSession(editor,dto({edits:[],reason:'old',evidenceNote:''}),{save} as never,()=>`key-${++key}`);
+  session.change({...session.snapshot.content,reason:'uncertain'});await expect(session.drain()).rejects.toThrow();
+  session.change({...session.snapshot.content,reason:'corrected'});await expect(session.drain()).rejects.toThrow('SAVE_RETRY_REQUIRED');
+  await session.retry();expect(save.mock.calls[1][0]).toEqual(save.mock.calls[0][0]);expect(save.mock.calls[2][0]).toMatchObject({expectedDraftRevision:2,idempotencyKey:'key-2',content:{reason:'corrected'}});session.dispose();
+});
+
+it('reload restores matching stored comparison and ignores a disposed late read after changed inputs', async () => {
+  const saved = {...dto({edits:[],reason:'saved',evidenceNote:''}),currentPreviewId:'p'};
+  const detail = vi.fn(async()=>comparisonDetail());
+  const session = new CorrectionSession(editor,saved,{detail} as never);
+  await session.loadSavedPreview();expect(session.canConfirm).toBe(true);expect(session.snapshot.comparison).toEqual(comparisonDetail().preview);
+  session.dispose();
+  const late = defer<ReturnType<typeof comparisonDetail>>();
+  const other = new CorrectionSession(editor,saved,{detail:()=>late.promise} as never);
+  const loading=other.loadSavedPreview();other.dispose();
+  other.change({...other.snapshot.content,reason:'new local reason'});
+  late.resolve(comparisonDetail());await loading;
+  expect(other.snapshot.content.reason).toBe('new local reason');expect(other.canConfirm).toBe(false);expect(other.snapshot.preview).toBeNull();other.dispose();
+});
+it('failed saved read can reload same comparison without issuing preview or mutation', async () => {
+  const detail=vi.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValue(comparisonDetail());
+  const preview=vi.fn(),save=vi.fn();const session=new CorrectionSession(editor,{...dto({edits:[],reason:'saved',evidenceNote:''}),currentPreviewId:'p'},{detail,preview,save} as never);
+  await session.loadSavedPreview();expect(session.canConfirm).toBe(false);
+  await session.loadSavedPreview();expect(session.canConfirm).toBe(true);expect(preview).not.toHaveBeenCalled();expect(save).not.toHaveBeenCalled();session.dispose();
+});
+it.each(['closed','confirmed','reflected','stale'])('reloaded %s work remains read only and cannot publish a confirmation', async state => {
+  const detail={...comparisonDetail(),summary:{...comparisonDetail().summary,state,capabilities:{resume:false}}};
+  const session=new CorrectionSession(editor,{...dto({edits:[],reason:'saved',evidenceNote:''}),currentPreviewId:'p'},{detail:async()=>detail} as never);
+  await session.loadSavedPreview();expect(session.canConfirm).toBe(false);expect(session.snapshot.preview).toBeNull();session.dispose();
+});
+it.each([{allowedActions: []}, {allowedActions: ['set-missing']}])('session rejects forbidden numeric edit before queueing a write for allowed actions $allowedActions', async ({allowedActions}) => {
+  const create=vi.fn(),save=vi.fn();const row={rowId:'locked',category:'economic',label:'조회 실패',sourceRound:'2026/01',period:'2025/12',unit:'지수',originalText:'',originalState:'missing',allowedActions};
+  const session=new CorrectionSession({...editor,rows:[row]} as unknown as CorrectionEditorDto,null,{create,save} as never);
+  session.change({edits:[{rowId:'locked',action:'set',rawValue:'10'}],reason:'attempt',evidenceNote:''});
+  await session.drain();expect(session.snapshot.content.edits).toEqual([]);expect(session.snapshot.errors[0]).toMatchObject({rowId:'locked',field:'action',code:'INVALID_ACTION'});
+  expect(create).not.toHaveBeenCalled();expect(save).not.toHaveBeenCalled();expect(session.canConfirm).toBe(false);session.dispose();
+});
+it.each([422,413])('definite create %s rejection allows corrected content with one new command and no duplicate draft', async status=>{
+  const create=vi.fn().mockRejectedValueOnce(new CorrectionClientError(status,'INVALID_DRAFT')).mockImplementation(async cmd=>dto(cmd.content));
+  const save=vi.fn();let key=0;const session=new CorrectionSession(editor,null,{create,save} as never,()=>`create-${++key}`);
+  session.change({edits:[],reason:'rejected',evidenceNote:''});await expect(session.drain()).rejects.toThrow();
+  session.change({edits:[],reason:'corrected',evidenceNote:''});await session.drain();await session.drain();
+  expect(create).toHaveBeenCalledTimes(2);expect(create.mock.calls[1][0]).toMatchObject({idempotencyKey:'create-2',content:{reason:'corrected'}});expect(save).not.toHaveBeenCalled();expect(session.snapshot.draft?.draftId).toBe('same');session.dispose();
 });

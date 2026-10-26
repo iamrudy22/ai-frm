@@ -73,12 +73,37 @@ export type CorrectionReviewRow = CorrectionEditorRow & {
   /** Current values are comparison-only; originalText always belongs to the saved work. */
   readonly current: Pick<CorrectionEditorRow, 'originalText' | 'originalState'> | null;
 };
+export type CorrectionComparison = {
+  readonly previewId: string;
+  readonly previewHash: string;
+  readonly draftRevision: number | null;
+  readonly baseRevision: number;
+  readonly rawDiff: JsonValue;
+  readonly resultDiff: JsonValue;
+  readonly affectedReports: JsonValue;
+};
+/** Only display fields cross the review boundary; immutable encoded evidence stays on the server. */
+export function toCorrectionComparison(source: Omit<CorrectionComparison, 'draftRevision'> & { readonly draftRevision?: number }): CorrectionComparison {
+  type Record = { readonly [key: string]: JsonValue };
+  const isRecord = (value: JsonValue): value is Record => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const rows = (value: JsonValue): readonly Record[] => Array.isArray(value) ? value.filter(isRecord) : [];
+  const pick = (row: Record, fields: readonly string[]): Record => Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]]));
+  return {
+    previewId: source.previewId, previewHash: source.previewHash, draftRevision: source.draftRevision ?? null, baseRevision: source.baseRevision,
+    rawDiff: rows(source.rawDiff).map(row => ({
+      ...pick(row, ['rowId', 'category', 'label', 'sourceRound', 'period', 'before', 'after', 'action', 'unit', 'reason', 'evidenceNote']),
+      ...(row.identity && isRecord(row.identity) ? { identity: pick(row.identity, ['item', 'month', 'date', 'indicator', 'bond']) } : {}),
+    })),
+    resultDiff: rows(source.resultDiff).map(row => pick(row, ['indicator', 'beforeDisplay', 'afterDisplay', 'changed'])),
+    affectedReports: rows(source.affectedReports).map(row => pick(row, ['reportCycle', 'revision', 'indicator', 'status', 'changed', 'reason'])),
+  };
+}
 export type CorrectionReviewDetail = {
   readonly summary: CorrectionWorkSummary;
   readonly rows: readonly CorrectionReviewRow[];
   readonly reason: string;
   readonly evidenceNote: string;
-  readonly preview: { readonly previewId: string; readonly previewHash: string; readonly draftRevision: number | null } | null;
+  readonly preview: CorrectionComparison | null;
   readonly confirmationId: string | null;
   readonly resolvedAt: string | null;
 };

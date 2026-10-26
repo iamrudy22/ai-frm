@@ -6,7 +6,7 @@ import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSIO
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
 import { HistoryOperationError } from '../../application/report-history/ports';
 import type * as P from '../../application/report-history/ports';
-import { validateDraftContent, isEmptyDraftContent, correctionWorkState, correctionPatchAlreadyApplied, normalizeCorrectionEdits } from '../../domain/report-history/correction';
+import { validateDraftContent, isEmptyDraftContent, correctionWorkState, correctionPatchAlreadyApplied, normalizeCorrectionEdits, toCorrectionComparison } from '../../domain/report-history/correction';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
 import { backupWithWake } from './sqlite-backup-wake.mjs';
 export { HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
@@ -742,7 +742,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       const matches=currentBasis?.rows.filter(other=>equal(meaning(row),meaning(other)))??[];
       return matches.length===1&&basis.rows.filter(other=>equal(meaning(row),meaning(other))).length===1?{originalText:matches[0].originalText,originalState:matches[0].originalState}:null;
     };
-    return {summary,rows:content.edits.flatMap(edit=>{const row=basis.rows.find(row=>row.rowId===edit.rowId);return row?[{rowId:row.rowId,category:row.category,label:row.label,sourceRound:row.sourceRound,period:row.period,unit:row.unit,originalText:row.originalText,originalState:row.originalState,allowedActions:row.allowedActions,proposedAction:edit.action,proposedText:edit.rawValue,evidenceNote:patch?.find(p=>p.rowId===edit.rowId)?.evidenceNote??content.evidenceNote,current:current(row)}]:[];}),reason:content.reason,evidenceNote:content.evidenceNote,preview:preview?{previewId:preview.previewId,previewHash:preview.previewHash,draftRevision:v2(preview)?preview.draftRevision:null}:null,confirmationId:confirmation?.confirmationId??resolution?.reflectedConfirmationId??null,resolvedAt:resolution?.resolvedAt??null};
+    return {summary,rows:content.edits.flatMap(edit=>{const row=basis.rows.find(row=>row.rowId===edit.rowId);return row?[{rowId:row.rowId,category:row.category,label:row.label,sourceRound:row.sourceRound,period:row.period,unit:row.unit,originalText:row.originalText,originalState:row.originalState,allowedActions:row.allowedActions,proposedAction:edit.action,proposedText:edit.rawValue,evidenceNote:patch?.find(p=>p.rowId===edit.rowId)?.evidenceNote??content.evidenceNote,current:current(row)}]:[];}),reason:content.reason,evidenceNote:content.evidenceNote,preview:preview?toCorrectionComparison(preview):null,confirmationId:confirmation?.confirmationId??resolution?.reflectedConfirmationId??null,resolvedAt:resolution?.resolvedAt??null};
   }
   async listCorrectionWork(scopeId: string, query: P.CorrectionWorkQuery): Promise<{items:readonly P.CorrectionWorkSummary[];nextCursor:string|null}> {
     if(query.limit!==20)throw new HistoryOperationError('LIMIT_EXCEEDED');if(query.reportCycle)parseYearMonth(query.reportCycle);

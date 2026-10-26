@@ -12,6 +12,33 @@ export type AcceptedCandidate = {
 
 export type ConfirmationAttempt = { readonly key: string; readonly candidateId: string; readonly expectedRevision: number;
   readonly idempotencyKey: string; readonly correctionReason?: string };
+export type ArchivedReport = { readonly document: PreparedDocument; readonly historySources: HistorySourceSummary };
+type CorrectionSuccessState = {
+  readonly candidateState: AcceptedCandidate | null;
+  readonly candidatePreparingKey: string | null;
+  readonly confirmationKey: string | null;
+  readonly candidatePreparationKey: string | null;
+  readonly confirmationAttempt: ConfirmationAttempt | null;
+  readonly confirmationConflictKey: string | null;
+  readonly confirmed: { key: string; id: string } | null;
+  readonly archived: (ArchivedReport & { id?: string }) | null;
+  readonly appliedGeneration: number;
+  readonly correctionRefreshRevision: number;
+};
+
+export function correctionSuccessState<T extends CorrectionSuccessState>(current: T): Omit<CorrectionSuccessState, 'archived' | 'appliedGeneration' | 'correctionRefreshRevision'> & { archived: T['archived']; appliedGeneration: (current: number) => number; correctionRefreshRevision: (current: number) => number } {
+  return { ...current, candidateState: null, candidatePreparingKey: null, confirmationKey: null,
+    candidatePreparationKey: null, confirmationAttempt: null, confirmationConflictKey: null, confirmed: null,
+    appliedGeneration: value => value + 1, correctionRefreshRevision: value => value + 1 };
+}
+
+export function reportDisplayOf<T>(archived: ArchivedReport | null, candidate: AcceptedCandidate | null,
+  projectedReport: T | null, currentSources: (report: T) => HistorySourceSummary | null): { report: T | null; sources: HistorySourceSummary | null } {
+  if (archived) return { report: archived.document.json as T, sources: archived.historySources };
+  const report = candidate?.previewRequired ? candidate.candidate.document.json as T : projectedReport;
+  return { report, sources: report === null ? null : currentSources(report) };
+}
+
 export type ExportRequest = { readonly confirmationId: string; readonly generation: number };
 export function exportRequestMatches(current: ExportRequest | null, requested: ExportRequest): boolean {
   return current?.confirmationId === requested.confirmationId && current.generation === requested.generation;

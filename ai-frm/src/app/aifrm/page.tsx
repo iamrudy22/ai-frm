@@ -67,7 +67,7 @@ import { snapshotStatement, type PreparedCandidate } from '@/application/report-
 import type { PreparedDocument, ReportBasis } from '@/domain/report-history/report-history';
 import { TextInput } from '@astryxdesign/core/TextInput';
 import type { FinancialReport } from './report-model';
-import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, fetchArchivedDocument, revisionForCycle,
+import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, correctionSuccessState, fetchArchivedDocument, reportDisplayOf, revisionForCycle,
   type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
 import { ReportCorrectionControls } from './report-correction-editor';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
@@ -305,10 +305,8 @@ export default function AifrmDashboardPage() {
   const currentRevision = revisionForCycle(confirmations, confirmationsLoaded, basis?.reportCycle ?? null);
   const activeAttempt = confirmationAttempt?.key === confirmationKey ? confirmationAttempt : null;
   const candidatePreparing = confirmationKey !== null && candidatePreparingKey === confirmationKey;
-  const displayReport = archived?.document.json as FinancialReport | undefined ??
-    (activeCandidate?.previewRequired ? activeCandidate.candidate.document.json as FinancialReport : projectedReport);
-  const currentHistorySources = archived === null && displayReport && history.view
-    ? summarizeHistorySources(displayReport, history.view, 'current') : null;
+  const { report: displayReport, sources: displayHistorySources } = reportDisplayOf<FinancialReport>(archived, activeCandidate, projectedReport,
+    currentReport => history.view ? summarizeHistorySources(currentReport, history.view, 'current') : null);
 
   const openConfirmation = async (id: string) => {
     const generation = ++openGeneration.current;
@@ -371,16 +369,20 @@ export default function AifrmDashboardPage() {
   };
 
   const correctionConfirmed = (id: string) => {
+    const next = correctionSuccessState({ candidateState, candidatePreparingKey, confirmationKey: confirmationKeyRef.current,
+      candidatePreparationKey: candidatePreparationRef.current, confirmationAttempt, confirmationConflictKey, confirmed,
+      archived, appliedGeneration, correctionRefreshRevision });
     history.invalidateSelection();
-    confirmationKeyRef.current = null;
-    candidatePreparationRef.current = null;
-    setCandidateState(null);
-    setCandidatePreparingKey(null);
-    setConfirmationAttempt(null);
-    setConfirmationConflictKey(null);
-    setConfirmed(null);
-    setAppliedGeneration(value => value + 1);
-    setCorrectionRefreshRevision(value => value + 1);
+    confirmationKeyRef.current = next.confirmationKey;
+    candidatePreparationRef.current = next.candidatePreparationKey;
+    setCandidateState(next.candidateState);
+    setCandidatePreparingKey(next.candidatePreparingKey);
+    setConfirmationAttempt(next.confirmationAttempt);
+    setConfirmationConflictKey(next.confirmationConflictKey);
+    setConfirmed(next.confirmed);
+    setArchived(next.archived);
+    setAppliedGeneration(next.appliedGeneration);
+    setCorrectionRefreshRevision(next.correctionRefreshRevision);
     void loadConfirmations();
     void openConfirmation(id);
   };
@@ -409,8 +411,8 @@ export default function AifrmDashboardPage() {
             <LayoutContent isScrollable={false}>
               <VStack gap={3}>
                 <ReportControlSurface>
-                  {archived ? <ReportHistorySourceSummary summary={archived.historySources} archived /> :
-                    <ReportHistoryControls history={history} summary={currentHistorySources} />}
+                  {archived && displayHistorySources ? <ReportHistorySourceSummary summary={displayHistorySources} archived /> :
+                    <ReportHistoryControls history={history} summary={displayHistorySources} />}
                   {confirmationControls(true)}
                 </ReportControlSurface>
                 <FinancialReportPreview report={displayReport} onBack={() => { void (async () => { if (correctionNavigation.current && !await correctionNavigation.current()) return; openGeneration.current++; setArchived(null); setReportOpenedAt(null); })(); }} />
@@ -430,7 +432,7 @@ export default function AifrmDashboardPage() {
         <LayoutContent>
           <VStack gap={6}>
             <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
-            <ReportHistoryControls history={history} summary={currentHistorySources} />
+            <ReportHistoryControls history={history} summary={displayHistorySources} />
             {confirmationControls(false)}
 
             <UploadPanel

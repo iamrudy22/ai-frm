@@ -854,7 +854,14 @@ describe('schema4 correction work persistence', () => {
     expect(closed.state).toBe('closed'); expect(await f.r.closeCorrectionWork(f.scopeId,cmd)).toEqual(closed);
     expect(await f.r.commitCorrection(f.scopeId,{...p,expectedBaseRevision:1,idempotencyKey:'confirm-closed',reason:'합성 정정'})).toMatchObject({kind:'conflict',reason:'WORK_CLOSED'});
     const ro=open(f.r.databasePath,{readOnly:true});
-    expect((await ro.getCorrectionReviewDetail(f.scopeId,ref))?.summary.state).toBe('closed');
+    const stored = (await ro.getCorrectionPreview(f.scopeId,p.previewId))!;
+    const detail = await ro.getCorrectionReviewDetail(f.scopeId,ref);
+    expect(detail?.summary.state).toBe('closed');
+    expect(detail?.preview).toMatchObject({previewId:stored.previewId,previewHash:stored.previewHash,draftRevision:null,baseRevision:stored.baseRevision,affectedReports:stored.affectedReports});
+    expect(detail?.preview?.rawDiff).toContainEqual(expect.objectContaining({before:100,after:0,identity:{item:'기초시재',month:'2026/01'}}));
+    expect(JSON.stringify(detail?.preview)).not.toMatch(/sourceRecordId|sourceIdentity|fieldPath|schemaVersion|captureId|candidateId/);
+    expect(await ro.getCorrectionPreview(f.scopeId,p.previewId)).toEqual(stored);
+    expect(detail?.preview?.resultDiff).toHaveLength(5);
   });
 });
 
