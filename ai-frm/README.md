@@ -22,6 +22,7 @@ npm run dev
 ```
 
 `http://localhost:3000/aifrm`을 연다.
+이력 저장 기능은 `package.json`에 지정한 Node.js **26.8.2**의 내장 SQLite를 사용한다. 별도 SQLite 서버나 패키지 설치는 필요 없다. 앱 폴더에서 서버를 실행하면 `data/report-history.sqlite`가 자동 생성되고 기존 원장은 시작 시 스키마 3으로 이관된다. 다른 작업 폴더에서 실행하면 저장 위치도 달라지므로 항상 `ai-frm`에서 실행한다. `data/`는 Git에서 제외된다.
 
 검증: `npm run verify`(tsc + vitest), `npm run lint`(전체 ESLint).
 
@@ -72,13 +73,145 @@ UI/UX 단계별 변경·검토·QA·재개 지점은 [진행 기록](../docs/sup
 - 세 회차로 당월 지표를 채울 수 있어도 장기 추이가 모두 생기지는 않는다. 보고서는 없는 자료와 산출불가 사유를 표시한다.
 - 샘플 PDF의 금액이나 과거 수치를 복사한 데이터는 포함하지 않는다. 실제 결과를 검증하려면 대응하는 원본 회차가 필요하다.
 
-## 확정 이력의 정정용 엑셀 내보내기
+## 로컬 이력과 보고서 확정
 
-`/aifrm`의 **월별 확정 이력**에서 한 확정본을 선택하고 **정정용 엑셀 내보내기**를 누른다. 서버는 그 확정본의 revision과 입력·원천·산출 참조를 묶은 불변 내보내기 명세를 먼저 로컬 원장에 저장한다. 응답 뒤 파일 다운로드에 실패하면 화면에 남은 내보내기 ID로 **저장된 엑셀 다시 다운로드**를 누를 수 있다. 파일 이름은 `aifrm-history-YYYYMM-rN-<내보내기ID 앞8자리>.xlsx` 형식이다.
+외부 산출이 끝나면 해당 계산 입력, 외부 원천 응답과 산출 기록이 **서버가 실행 중인 PC의** `data/report-history.sqlite`에 보관된다. **정규화한 전체 자금수지표 회차 스냅샷과 문서 후보는 보고서를 열고 후보 준비에 성공했을 때** 저장된다. 용지 바깥의 **보고서 확정**을 눌러야 그 후보가 월별 확정 revision이 된다. 보고서 열기, 인쇄 창 열기, PDF 저장 시도는 확정이 아니다. 일부 지표가 산출 불가여도 그 상태를 확인한 보고서를 확정할 수 있다. 성공 응답 후에만 확정 상태를 표시하며, 같은 후보의 재시도는 새 버전을 만들지 않는다. 한 번 확정한 문서의 값·차트·작성일과 이전 revision은 그대로 남고, 정정은 새 revision을 만든다. 서버 또는 브라우저를 다시 열어도 같은 DB를 사용하는 동안 확정 이력을 다시 조회할 수 있다.
 
-파일에는 `안내`, `확정이력`, `경제지표_정정`, `자금자료_정정`, `조달금리_정정`, `_교환정보` 여섯 시트가 있다. `확정이력`은 저장된 보고서의 다섯 지표 조회점(값·결측/비적용·단위·적정 시재 보조값)과 선택 당시 외부 산출 출처를 읽기 전용으로 담는다. 정정 시트는 원자료의 행 ID, 월·평가일, 단위, 기준값과 수정 입력 칸을 나란히 둔다. `허용 동작`은 `유지 · 값수정 · 결측처리` 중 가능한 항목을 한글로 표시한다. 기준값은 소수 정밀도를 보존하는 텍스트이며 지수·등급·산식은 읽기 전용 참고값이다. 여섯 시트의 헤더·고정 셀·입력 열 구조도 발급 당시 서버 명세에 보관한다. 시트 보호는 편집 안내이며 실제 검증 기준은 서버 원장의 명세다.
+**과거 18회차 보완**은 현재 확보한 자금수지표 회차와 현재 조회한 외부 자료로 과거 달을 계산해 저장한다. 과거 당시에 확보하거나 확정한 값이라는 뜻은 아니다. 준비 상태를 보고 가능한 달부터 실행·재개할 수 있으며, 부족한 회차나 연말의 전년도 열 부재는 사유로 남는다. 확정 이력·보완 산출의 출처와 원천 수신 시각은 저장 기록에서 구분한다. 보완값이나 외부 자료 재조회가 기존 확정 문서와 다른 보고서의 확정값을 자동으로 바꾸지 않는다. 이 기능은 외부 스프레드시트·클라우드 DB 연결이나 정기 수집을 하지 않는다. 다만 기존 위험 산출에 필요한 ECOS·금투협 조회는 실행 시 발생한다.
 
-현재 단계에서는 **내보내기와 재다운로드만** 제공한다. 앱이 만든 파일을 저장하거나 편집해도 확정본·원본 자금수지표는 바뀌지 않는다. 수정본 가져오기와 검증·정정 확정은 후속 단계다. 이 XLSX만으로 확정 원장을 복구할 수 없으며, 다른 PC로 옮길 때는 로컬 SQLite 원장과 백업에 들어 있는 내보내기 명세도 함께 필요하다. 생성한 교환 파일과 실제 업무 수치는 Git에 넣지 않는다.
+## 정정용 엑셀 내보내기·수정본 검증·정정 확정
+
+`/aifrm`의 **월별 확정 이력**에서 대상 확정본 하나를 선택해 **정정용 엑셀 내보내기**를 누른다. 서버는 해당 revision의 입력·원천·산출 참조와 허용 셀을 묶은 불변 내보내기 명세를 원장에 먼저 저장한다. 다운로드가 실패하면 화면의 내보내기 ID로 **저장된 엑셀 다시 다운로드**를 사용한다. 파일 이름은 `aifrm-history-YYYYMM-rN-<내보내기ID 앞8자리>.xlsx` 형식이다.
+
+| 시트 | 용도 |
+|---|---|
+| `안내` | 사용법과 제한을 읽는다. |
+| `확정이력` | 다섯 지표의 저장된 값·결측/비적용·단위·출처를 조회한다. |
+| `경제지표_정정` | 해당 산출에 쓰인 ECOS 9종 원값의 허용 행을 수정한다. |
+| `자금자료_정정` | 저장된 회차·월에 있는 여섯 금액 항목의 허용 칸을 수정한다. |
+| `조달금리_정정` | 저장된 평가일의 공사채 AAA 1년·국고채 1년 공표 3사 평균 금리를 수정한다. |
+| `_교환정보` | 발급 ID와 형식 정보를 보관하므로 건드리지 않는다. |
+
+세 정정 시트에서 편집할 수 있는 열은 **수정 동작·수정 값·정정 사유·근거 메모**뿐이다. `유지`는 수정 값과 사유를 비워 두며 저장된 원값을 그대로 쓴다. `값수정`은 숫자와 비어 있지 않은 사유가 필요하다. `0`은 실제 숫자 0이므로 0으로 바꾸려면 `값수정`과 사유를 쓴다. 빈칸은 0이나 결측을 뜻하지 않는다. `결측처리`는 허용된 ECOS 값 또는 조달금리 평균에만 가능하며 사유가 필요하다. 자금자료의 개별 칸을 결측으로 만들거나 없는 월·전년도 열을 추가할 수 없다. 근거 메모는 선택 사항이다. 행 ID·회차·월·평가일·단위·기준값·결과·수식·등급은 바꾸지 않는다. 기준값은 정밀도를 지키기 위해 텍스트로 표시되고, 시트 보호는 안내일 뿐 서버가 저장된 명세로 모든 셀을 다시 검사한다.
+
+수정 값에는 유한한 숫자 셀 또는 쉼표·통화기호·`%`·과학표기 없는 일반 십진 텍스트를 쓴다. 날짜/퍼센트 서식 숫자, 수식, Boolean, 오류 셀은 허용되지 않는다. `.xlsx`는 5MiB 이하이며 ZIP64·암호화 파일은 거부된다. 수정본을 **수정본 가져오기 → 수정본 검증**으로 확인하면 셀별 오류 또는 원자료·산출값·등급 차이와 영향 보고서가 표시된다. 한 셀이라도 오류이면 전체 수정안이 반영되지 않는다. 무수정 파일이나 원래 숫자를 다시 적은 파일은 `no-change`이며 새 revision을 만들지 않는다. 수정해도 산출 결과가 같을 수 있으며, 그 경우 원자료 변경과 결과 변화 없음이 구분된다.
+
+검증과 미리보기만으로 확정본은 바뀌지 않는다. 차이를 검토하고 별도의 **정정 사유**를 적어 **정정 확정**을 눌러야 선택한 보고서의 새 revision이 저장된다. 원본 업무용 자금수지표와 이전 확정본은 수정되지 않으며, 다른 보고서에 영향이 있어도 자동 정정하지 않는다. `409` 충돌은 기준 확정본 또는 참조 이력이 바뀐 경우다. **최신 확정본에서 새 정정용 엑셀을 내보내고 수정안을 새 파일에 다시 입력·검증한 뒤 정정 확정**한다. 이전 파일·미리보기를 재검증하는 것만으로는 충돌이 해소되지 않는다.
+
+교환 XLSX 파일만으로 확정 원장을 복구하거나 다른 PC로 이전할 수 없다. 원장에는 XLSX에 없는 확정 문서·이전 버전·원천 기록과 각 export ID의 서버 기준 명세가 들어 있다. 생성한 교환 파일과 실제 업무 수치는 Git에 넣지 않는다.
+
+## 원장 백업·복구·PC 이전
+
+앱에는 **자동 백업, 백업 버튼, 백업 API가 없다.** 아래 명령은 필요할 때 운영자가 `ai-frm` 폴더에서 Node.js 26.8.2로 직접 실행한다. 서버를 켠 상태의 백업은 SQLite 온라인 백업을 사용하며 `data/backups/report-history-<UTC시각>-<UUID>.sqlite`에 만든다. 실행 중인 WAL 원장의 `report-history.sqlite` 파일 하나만 복사하면 최근 기록이 빠질 수 있다. 백업 성공 경로를 확인하고 DB·백업을 접근 권한이 제한된 별도 저장소에도 보관한다.
+
+```bash
+node --input-type=module <<'NODE'
+import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { backupWithWake } from './src/infrastructure/report-history/sqlite-backup-wake.mjs';
+
+const data = join(process.cwd(), 'data');
+const original = join(data, 'report-history.sqlite');
+const folder = join(data, 'backups');
+if (!existsSync(original) || !lstatSync(original).isFile() || lstatSync(original).isSymbolicLink())
+  throw Error('백업할 원장이 없습니다');
+mkdirSync(folder, { recursive: true, mode: 0o700 });
+if (!lstatSync(folder).isDirectory() || lstatSync(folder).isSymbolicLink()) throw Error('백업 폴더 확인 필요');
+chmodSync(folder, 0o700);
+const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+const target = join(folder, `report-history-${stamp}-${randomUUID()}.sqlite`);
+closeSync(openSync(target, 'wx', 0o600));
+let source;
+try {
+  source = new DatabaseSync(original, { readOnly: true });
+  await backupWithWake(source, target);
+  const copy = new DatabaseSync(target, { readOnly: true });
+  try {
+    if (copy.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' ||
+        copy.prepare('PRAGMA foreign_key_check').all().length ||
+        copy.prepare('PRAGMA user_version').get()?.user_version !== 3) throw Error('백업 검증 실패');
+  } finally { copy.close(); }
+  if (existsSync(target + '-wal') && statSync(target + '-wal').size !== 0) throw Error('백업 WAL 확인 필요');
+  for (const suffix of ['-wal', '-shm']) rmSync(target + suffix, { force: true });
+  chmodSync(target, 0o600);
+  console.log('BACKUP_OK', target);
+} catch (error) {
+  for (const suffix of ['', '-wal', '-shm']) rmSync(target + suffix, { force: true });
+  throw error;
+} finally { source?.close(); }
+NODE
+```
+
+복구나 다른 PC 이전은 **앱 서버와 이 DB를 여는 모든 프로세스를 완전히 종료한 뒤** 진행한다. 복구할 백업을 대상 PC의 로컬 파일로 가져오고, 아래 명령의 `<백업 파일 경로>`를 실제 경로로 바꾼다. 스크립트는 백업과 복구용 복사본의 무결성·외래키·스키마 3을 검사한다. 기존 원장과 `-wal`·`-shm`이 있으면 `data/recovery-before-restore-.../`에 함께 옮겨 보존하고, 실패하면 되돌린다. 명령이 성공하기 전에는 앱을 다시 시작하지 않는다.
+
+```bash
+node --input-type=module - "<백업 파일 경로>" <<'NODE'
+import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, statSync, constants } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const backup = resolve(process.argv[2] ?? '');
+const data = join(process.cwd(), 'data');
+if (!existsSync(data)) mkdirSync(data, { mode: 0o700 });
+if (!lstatSync(data).isDirectory() || lstatSync(data).isSymbolicLink() ||
+    !existsSync(backup) || !lstatSync(backup).isFile() || lstatSync(backup).isSymbolicLink())
+  throw Error('data 폴더 또는 백업 파일 확인 필요');
+function inspect(path) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' ||
+        db.prepare('PRAGMA foreign_key_check').all().length ||
+        db.prepare('PRAGMA user_version').get()?.user_version !== 3 ||
+        db.prepare('SELECT count(*) AS n FROM schema_migration WHERE version IN (1,2,3)').get()?.n !== 3)
+      throw Error('원장 무결성·스키마 검증 실패');
+    for (const name of ['monthly_confirmation', 'workbook_export', 'correction_command'])
+      if (!db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name=?").get(name)?.ok)
+        throw Error('원장 테이블 누락');
+    return ['monthly_confirmation', 'workbook_export', 'correction_command'].map(name =>
+      db.prepare(`SELECT count(*) AS n FROM ${name}`).get()?.n);
+  } finally { db.close(); }
+}
+const original = join(data, 'report-history.sqlite');
+const staged = join(data, `.report-history-restore-${randomUUID()}.sqlite`);
+const saved = join(data, `recovery-before-restore-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${randomUUID()}`);
+mkdirSync(saved, { mode: 0o700 });
+chmodSync(saved, 0o700);
+const moved = [];
+let installed = false;
+try {
+  copyFileSync(backup, staged, constants.COPYFILE_EXCL);
+  chmodSync(staged, 0o600);
+  const expected = inspect(staged);
+  if (existsSync(staged + '-wal') && statSync(staged + '-wal').size !== 0) throw Error('복구용 복사본 WAL 확인 필요');
+  for (const suffix of ['-wal', '-shm']) rmSync(staged + suffix, { force: true });
+  for (const suffix of ['', '-wal', '-shm']) {
+    const from = original + suffix;
+    if (!existsSync(from)) continue;
+    if (!lstatSync(from).isFile() || lstatSync(from).isSymbolicLink()) throw Error('기존 원장 파일 확인 필요');
+    const to = join(saved, `report-history.sqlite${suffix}`);
+    renameSync(from, to);
+    moved.push({ from, to });
+  }
+  renameSync(staged, original);
+  installed = true;
+  if (JSON.stringify(inspect(original)) !== JSON.stringify(expected)) throw Error('복구 건수 불일치');
+  console.log('RESTORE_OK; 이전 원장 보존:', saved);
+} catch (error) {
+  if (installed) for (const suffix of ['', '-wal', '-shm']) {
+    const from = original + suffix;
+    if (existsSync(from)) renameSync(from, join(saved, `failed-restored.sqlite${suffix}`));
+  }
+  for (const { from, to } of moved.reverse()) renameSync(to, from);
+  for (const suffix of ['', '-wal', '-shm']) rmSync(staged + suffix, { force: true });
+  throw error;
+}
+NODE
+```
+
+복구 후 앱을 시작해 이전·최신 확정 revision과 정정용 엑셀 재다운로드를 확인한다. 새 PC로 이전할 때는 **앱 시작 전에** 이 백업을 배치한다. 앱을 먼저 실행하면 새 빈 원장이 만들어지며, XLSX만 가져와서는 기존 확정 문서와 내보내기 명세를 복원할 수 없다. 기존 원장 파일을 백업으로 대체하기 전에는 이전 원장과 WAL/SHM을 함께 보관한다. 백업의 시점 이후 기록은 복구본에 없으므로 복구 전 보존 폴더를 삭제하지 않는다.
 
 ## ECOS 인증키
 
@@ -122,9 +255,7 @@ N월 기준(기준월 N−2)에는 N월 회차의 실적과 N−3월 회차의 �
 값은 엑셀 H열과 조금 다를 수 있다. 엑셀 C열은 각 달 실적을 그 달 직후 회차에서 적어 두고
 고치지 않지만, 여기서는 최신 회차에 적힌(뒤에 고쳐진) 실적을 쓴다. 8월 기준이면 23.35%, 엑셀은 24.11%다.
 
-**회차는 저장하지 않는다.** 화면에 올린 회차만으로 매번 계산한다. 브라우저가 각 회차에서
-분양회수 실적(1월~직전 달)과 계획만 떼어 산출 요청에 담아 보낸다. 파일 원본은 서버로
-가지 않고, 서버도 아무것도 남기지 않는다. 새로고침하면 다시 올린다.
+브라우저는 올린 자금수지표 원본을 읽어 계산에 필요한 입력을 서버에 보낸다. 원본 `.xlsx` 파일 자체는 서버에 업로드·저장하지 않는다. 외부 산출 때 계산 입력·원천 응답·산출 기록을 저장하고, 보고서 후보 준비에 성공하면 **정규화된 전체 회차 스냅샷**과 문서를 저장한다. 새로고침 후 현재 대시보드에서 새 산출을 하려면 원본 회차 파일을 다시 선택해야 한다. 이전에 확정한 보고서는 **월별 확정 이력**에서 다시 열 수 있다.
 
 - 파일은 페이지 위쪽 **"자금수지표 회차"** 한 곳에서 여러 개를 한 번에 올린다. 가장 늦은
   회차가 최신 회차, 바로 전 달 회차가 이전 회차가 되고, 올린 회차 전부가 분양회수 이력에 들어간다.
