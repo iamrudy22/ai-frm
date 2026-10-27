@@ -15,7 +15,7 @@ describe('보고서는 파일 산출 결과로만 연다', () => {
     expect(html).toContain('aria-label="월별 확정 이력"');
     const submit = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [])
       .find((button) => button.includes('산출하기'));
-    expect(submit).toContain('disabled=""');
+    expect(submit).toBeUndefined();
   });
   it('확정 이력 제어부는 기존 인쇄 제외 클래스로 감싼다', () => {
     const html = renderToStaticMarkup(<AifrmDashboardPage />);
