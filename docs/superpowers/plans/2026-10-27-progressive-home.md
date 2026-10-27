@@ -87,3 +87,37 @@
 - 운영 QA: 실제 홈·과거 등록 진입/제목초점·보고서 작성 복귀를 확인하고 생성/수정/확정은 실행하지 않았다. 홈과 두 읽기API200, 이력API no-store, 실제 서버 실행 바이너리v26.12.1 확인. 최초 수동 probe의 목록 query에 limit가 없어422를 받았으며 실제client와 같은 ?limit=12로 교정해200을 확인했다. 기존 strict API 검증은 완화하지 않았다.
 - 운영 원장 보존: 재시작/실제 UI 확인 후 모든23테이블의 전체행 hash·schema/triggerhash가 직전/온라인백업과 동일, schema5/integrityok/FK0. 합성자료를 업무DB에 만들지 않았다. 비밀값·DB·백업·PDF fixture는 Git에 추가하지 않았다. 보호83파일 SHA변경0이며 source/domain/application/infrastructure/API/리포트모델·본문·차트·CSS·서체·참고표도 그대로다.
 - 종료 컨텍스트: H1(b24c7f2)→H2(cf7653e)→H3복구보완(8fc6bd5) 순서로 TDD/검토/QA/단계커밋을 완료했고 본 기록은 별도 최종문서 커밋에 포함한다. 현재 요청 범위의 필수 구현·QA·로컬반영은 완료다. 기존2skip(독립 기대값CSV 미보유/opt-in KOFIA live)은 유지하며 새로 통과 처리하지 않았다. 외부공개/Tunnel·push·merge는 이번 요청으로 실행하지 않았다. 실제 새 홈을 사용자 브라우저에 열어두었으며 증거는 progressive-home-qa-20261027/local-product-home-final.png.
+
+## 승인한 간결한 홈 목업 실제 반영 L1–L3 (2026-10-27)
+
+사용자가 landing-page-design 검토와 최신목업(별도선택버튼·확장자행제거)을 승인하고 TDD·검토·QA·커밋·컨텍스트정리를 명시 요청했다. 이번 기준HEAD ea71adf/기존branch codex/aifrm-ui-ux/clean이다. 앞H1–H3를 반복구현하지 않고 UI만보완한다.
+
+### L1: 첫 화면과 별도 과거 진입
+
+- Files: home-workspace.tsx/.test.tsx, upload-panel.tsx/.test.tsx, page.tsx/.test.tsx, home전용theme source/CLI builtJS·CSS·types, 로컬Geist자산/라이선스. globals.css/ThemeProvider·기존my-theme는 보호한다.
+- Interface: HomeWorkspace에 selectedBase?:YearMonth|null만추가하고 page의 실제 prepared.ready 최신회차를 전달한다. results가있으면선택heading대신기존결과를유지한다. onNavigate/onPast/수동세션owner계약은그대로다.
+- [x] RED: 첫화면드롭존한곳·보조과거진입한곳·설명중복/별도선택버튼/확장자행없음, 선택후실제기준월, 산출후원래결과유지, 과거등록에보관탭오선택없음/보관목록복귀가동일안전이동callback을사용함.
+- [x] GREEN: 실제Astryx 프레임·Geist/한글fallback전용테마·의미단위hero/접힌파일안내·드롭존으로반영. source defineTheme를공식CLI로빌드해SSR첫화면을보장하며문서테마에침범하지않는다.
+
+### L2: 실제 원자료 등록 편집 화면
+
+- Files: manual-entry-editor.tsx/.test.tsx만. workspace h1/보고월/원자료설명·여백을정리하고Dialog호환을유지한다.
+- [ ] RED→GREEN: 파일/이력0에서보고월t·자료회차t+1입력, 이어쓰기/임시보관/다음월·충돌·응답불명/숨은오류초점·인쇄owner의기존동작을보존한다. 새저장/계산/예시값/메모리초안은이식하지않는다.
+
+### L3: 검토·QA·로컬반영·인계
+
+- [ ] 집중/전체verify·lint·별도실제소스production build·독립review를완료한다. 발견은RED→GREEN으로보완하고보호83파일SHA변경0확인.
+- [ ] 업무env/DB없는격리합성앱에서첫홈/선택·산출결과/과거등록→보관·다음월·재접속/안전복귀·모바일·기존3쪽HTML/PDF·문서해시보존을확인한다. native파일선택기장시간대기는반복하지않고기존합성캡처/실제세션fixture와공개API를사용하며검증경계를정확히기록한다.
+- [ ] 단계커밋·README/컨텍스트갱신. 운영DBreadonlyfingerprint/onlinebackup후스키마변경없이최종Node26.12.1서버를loopback3002에실행하고기록보존/읽기API/홈·진입QA를확인한다. push/merge/외부공개는실행하지않는다.
+
+Ruling: 최신승인목업의‘중복선택버튼·확장자안내줄제거’가앞H1파일설명의초기표현보다우선한다. 파일별용도·판독중/실패·산출상태는필요할때계속제공한다. 목업툴바/예시상태버튼/파일명연월추정/가짜산출은실제제품에옮기지않는다. 새CSS수작업은추가하지않으며공식Astryx theme build 산출물과필수font자산만UI스코프에추가한다.
+
+
+### L1 검증 기록
+
+- 홈 계약을 먼저 추가해 RED 6건을 확인하고 구현 후 홈·업로드·페이지 33건을 통과했다. 실제 판독한 최신 회차만 제목에 전달하며, 이미 산출한 결과가 있으면 새 선택 제목으로 대체하지 않는다.
+- 승인한 목업대로 브랜드와 작업 탭, 결과 중심 제목, 드롭존 한 곳, 접힌 파일 안내, 단일 과거 진입을 적용했다. 과거 화면에는 잘못 선택된 보관 탭을 표시하지 않으며 복귀는 기존 ACK 가드를 호출한다.
+- 홈 전용 Astryx 테마는 공식 CLI로 생성한 CSS·JS·타입만 사용한다. 원본 source와 `--check`를 함께 보관한다. 생성된 d.ts의 triple-slash 선언만 기존 generated 규칙과 같이 lint에서 제외했으며 UI 소스의 검사 범위를 줄이지 않았다.
+- 로컬 Geist 자산과 OFL을 포함했다. 출처는 Next 번들 `next/dist/next-devtools/server/font/geist-latin.woff2`, 라이선스는 공식 `https://github.com/vercel/geist-font/blob/main/OFL.txt`이다. 홈에서만 해당 family를 사용하며 전역·문서 테마는 그대로다.
+- 통합 verify는 1,275 passed / 기존 2 skipped. 별도 production webpack 빌드와 테마 `--check` 통과. 독립 코드 검토 P1/P2 없음, 보호 83파일 SHA 변경 0. 격리 서버의 360px 홈과 390px 입력 화면에서 문서 가로 넘침 0을 확인했다.
+- 증거: `/private/tmp/aifrm-l2-home-contract-red.log`, `aifrm-l2-home-green.log`, `aifrm-l2-verify.log`, `aifrm-l2-build.log`, `aifrm-l2-independent-review.md`. 파일 선택 전·후/기존 결과 유지 계약은 테스트로 검증했으며 네이티브 파일 선택기 업로드를 이번에 반복 실행한 것은 아니다.

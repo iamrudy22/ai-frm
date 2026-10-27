@@ -478,7 +478,7 @@ export default function AifrmDashboardPage() {
     );
   }
 
-    return <HomeWorkspace section={homeSection}
+    return <HomeWorkspace section={homeSection} selectedBase={prepared.kind === 'ready' ? prepared.rounds.latest.round : null}
       onNavigate={section => void navigateWorkspace(section)} onPast={trigger => void openPastWorkspace(trigger)}
       pending={manual.pending} entry={manual.entry} records={confirmationControls(false)}
       backfill={<ReportHistoryControls history={history} summary={displayHistorySources} />} backfillRunning={history.running}
@@ -512,10 +512,10 @@ export default function AifrmDashboardPage() {
 
             {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
       </>}
-      results={loaded !== null && dashboard !== null && readiness !== null ? <VStack gap={5}>
+      results={loaded !== null && dashboard !== null && readiness !== null ? <VStack gap={6}>
             <HStack gap={4} wrap="wrap" hAlign="between" vAlign="center">
               <VStack gap={2}>
-                <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
+                <Heading level={1} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
                 <Text color="secondary">보고월 {addMonths(loaded.latest.round, -1)} · 자금수지표 기준월 {loaded.latest.round}</Text>
               </VStack>
               <Button

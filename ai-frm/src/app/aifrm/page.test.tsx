@@ -13,7 +13,8 @@ describe('보고서는 파일 산출 결과로만 연다', () => {
     expect(html).toMatch(/<input\b[^>]*type="file"[^>]*accept="\.xlsx,\.xls"[^>]*multiple=""/);
     expect(html).not.toContain('aria-label="외부 위험 이력 보완"');
     expect(html).not.toContain('aria-label="월별 확정 이력"');
-    expect(html).toContain('월별 자금 리스크 보고서');
+    expect(html).toContain('월별 리스크 보고서를');
+    expect(html).not.toContain('엑셀 없이 직접 입력');
     expect(html).toContain('과거 자료 등록');
     expect(html).toContain('role="tablist"');
     expect(html).not.toContain('새 보고서 직접 입력');

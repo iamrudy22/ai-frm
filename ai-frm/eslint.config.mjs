@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "my-theme.d.ts",
+    // Astryx CLI-generated declaration uses its own variants reference.
+    "src/app/aifrm/aifrm-home.d.ts",
   ]),
 ]);
 

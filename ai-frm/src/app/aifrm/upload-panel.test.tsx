@@ -82,7 +82,10 @@ describe('필요한 시점에 설명하는 파일 등록', () => {
     expect(picker(tree).props.accept).toBe('.xlsx,.xls');
     expect(picker(tree).props.isMultiple).toBe(true);
     const html = renderToStaticMarkup(tree);
-    expect(status(html, '자금수지표 기준월 확인')).toContain('업로드한 파일에서 자동으로');
+    expect(status(html, '자금수지표 기준월 확인')).toBe('');
+    expect(picker(tree).props.placeholder).toBe('자금수지표를 놓거나 클릭하여 선택');
+    expect(html).not.toContain('.xlsx · .xls / 여러 회차를 한 번에 선택');
+    expect(elements(tree).filter(element => element.type === Button && element.props.label === '자금수지표 선택')).toHaveLength(0);
     expect(html).not.toMatch(/<select\b|role="combobox"/);
     expect(html).not.toContain('차트 기준 자세히');
   });

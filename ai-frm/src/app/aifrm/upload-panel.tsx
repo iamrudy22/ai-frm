@@ -86,11 +86,10 @@ export function UploadPanel({ files, prepared, isApplied, onFilesChange, onSubmi
     })}
   </List>;
 
-  const content = <VStack gap={4}>
-    <Text role="status" aria-label="자금수지표 기준월 확인" color={base === null ? 'secondary' : 'primary'}>
-      {base === null ? '기준월은 업로드한 파일에서 자동으로 확인합니다.'
-        : `자금수지표 기준월: ${monthLabel(base)} · 최신 파일 기준`}
-    </Text>
+  const content = <VStack gap={6}>
+    {base !== null && <Text role="status" aria-label="자금수지표 기준월 확인">
+      {`자금수지표 기준월: ${monthLabel(base)} · 최신 파일 기준`}
+    </Text>}
 
     {files.length > 0 && <List hasDividers density="compact" header={<Text type="label">등록한 파일 {files.length}개</Text>}>
       {selectedFiles.map(({ file, index, source }) => {
@@ -109,11 +108,10 @@ export function UploadPanel({ files, prepared, isApplied, onFilesChange, onSubmi
       isLabelHidden width="100%" mode={files.length > 0 ? 'input' : 'dropzone'}
       accept=".xlsx,.xls" isMultiple value={null} onChange={addFiles}
       isLoading={prepared.kind === 'reading'} status={prepared.kind === 'error' ? { type: 'error' } : undefined}
-      placeholder={files.length > 0 ? '파일 추가' : '엑셀 파일을 놓거나 클릭하여 선택'} />
-    {files.length === 0 && <Text color="secondary">.xlsx · .xls / 여러 회차를 한 번에 선택</Text>}
+      placeholder={files.length > 0 ? '파일 추가' : '자금수지표를 놓거나 클릭하여 선택'} />
 
     {base === null ? <Collapsible trigger="필요한 파일 안내" defaultIsOpen={false}>
-      <VStack gap={5} paddingBlock={3}>
+      <VStack gap={6} paddingBlock={3}>
         {guidance(BASIC_OFFSETS, '기본 산출에 사용하는 파일')}
         {guidance(TREND_OFFSETS, '추이 보완에 사용하는 파일 · 선택')}
       </VStack>
