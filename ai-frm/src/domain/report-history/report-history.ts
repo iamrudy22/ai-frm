@@ -11,7 +11,22 @@ export type Derivation = {
   readonly patchHash: string;
   readonly parentId: string;
   readonly correctedAt: string;
-};
+} | ManualEntryDerivation;
+export type ManualEntryDerivation = { readonly kind: 'manual-input'; readonly draftId: string; readonly draftRevision: number; readonly rawInputHash: string; readonly recordedAt: string };
+/** Exact variant shape prevents unknown lineage from being silently treated as captured. */
+export function isDerivation(value: unknown): value is Derivation {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const exact = (keys: readonly string[]) => Object.keys(v).length === keys.length && keys.every(key => Object.hasOwn(v, key));
+  if (v.kind === 'captured') return exact(['kind']);
+  // Existing correction IDs/hashes predate the UUID/SHA contract. Preserve their string contract.
+  if (v.kind === 'manual-correction') return exact(['kind', 'importId', 'patchHash', 'parentId', 'correctedAt']) && ['importId', 'patchHash', 'parentId', 'correctedAt'].every(key => typeof v[key] === 'string');
+  if (v.kind !== 'manual-input' || !exact(['kind', 'draftId', 'draftRevision', 'rawInputHash', 'recordedAt'])) return false;
+  if (typeof v.draftId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v.draftId) || !Number.isSafeInteger(v.draftRevision) || (v.draftRevision as number) < 1 || typeof v.rawInputHash !== 'string' || !/^[0-9a-f]{64}$/i.test(v.rawInputHash)) return false;
+  if (typeof v.recordedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v.recordedAt)) return false;
+  const parsed = new Date(v.recordedAt);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === v.recordedAt;
+}
 export type JsonValue = null | boolean | number | string | readonly JsonValue[] | {
   readonly [key: string]: JsonValue;
 };

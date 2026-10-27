@@ -4,6 +4,8 @@ import type { BondYieldSource, EconomicIndicatorSource, SourceResult, YieldFetch
 import type { HistoryIndicator, CalculationOrigin, Derivation, JsonValue, ReportBasis, PreparedDocument, ConfirmationCommand, ConfirmationResult } from '../../domain/report-history/report-history';
 export type * from '../../domain/report-history/report-history';
 export type * from '../../domain/report-history/correction';
+export type * from '../../domain/report-history/manual-entry';
+import type { ManualEntryBinding, ManualEntryReviewRef, StoredManualEntryDraft, ManualEntrySummary, CreateManualEntryCommand, SaveManualEntryCommand, ConfirmManualEntryCommand } from '../../domain/report-history/manual-entry';
 import type { CorrectionBasis, CorrectionDraft, CorrectionDraftDto, CorrectionEditorDto, CorrectionEditResult, CorrectionMonthSummary, CorrectionResolution, CorrectionReviewDetail, CorrectionWorkRef, CorrectionWorkSummary, DraftContent, NormalizedCorrectionPatch, SaveDraftCommand } from '../../domain/report-history/correction';
 export type StatementSnapshotDto = {
   readonly asOf: {
@@ -80,6 +82,7 @@ export type CandidateWrite = {
   readonly historySelectionId: string;
   readonly document: PreparedDocument;
   readonly correctionPreviewId: string | null;
+  readonly manualEntry?: ManualEntryBinding;
 };
 export type StoredCandidate = CandidateWrite & {
   readonly candidateId: string;
@@ -453,3 +456,46 @@ export type SourceObservation<T> =
   | { readonly kind: 'threw'; readonly errorKind: 'error'; readonly message: string }
   | { readonly kind: 'threw'; readonly errorKind: 'non-error' };
 export type CapturedSource<S, T> = { readonly source: S; readonly observation: () => SourceObservation<T> };
+
+
+/** First-report commands remain separate until the schema5 adapter composes these ports. */
+export type CreateManualEntryWrite = {
+  readonly scopeId: string;
+  readonly command: CreateManualEntryCommand;
+  readonly requestHash: string;
+  readonly draft: StoredManualEntryDraft;
+};
+export type ManualEntryCommandReceipt = {
+  readonly recordKind: 'manual-entry-command';
+  readonly payloadVersion: 1;
+  readonly scopeId: string;
+  readonly key: string;
+  readonly draftId: string;
+  readonly action: 'create' | 'save' | 'prepare' | 'confirm';
+  readonly requestHash: string;
+  readonly acknowledgement: JsonValue;
+};
+export type ManualEntryStageWrite = {
+  readonly scopeId: string;
+  readonly draft: ManualEntryBinding;
+  readonly command: { readonly idempotencyKey: string; readonly requestHash: string };
+  readonly expectedHead: { readonly reportCycle: YearMonth; readonly confirmationId: null; readonly revision: 0 };
+  readonly selection: ExternalHistorySelection;
+  readonly evidence: readonly StoredEvidence[];
+  readonly input: StoredInputSnapshot;
+  readonly calculations: readonly StoredCalculation[];
+  readonly candidate: CandidateWrite & { readonly candidateId: string; readonly manualEntry: ManualEntryBinding };
+  readonly review: ManualEntryReviewRef;
+};
+export type ManualEntryListQuery = { readonly limit: 12; readonly cursor?: string };
+export interface ManualEntryRepositoryPorts {
+  createManualEntry(input: CreateManualEntryWrite): Promise<StoredManualEntryDraft>;
+  saveManualEntry(scopeId: string, cmd: SaveManualEntryCommand): Promise<StoredManualEntryDraft>;
+  getManualEntry(scopeId: string, draftId: string): Promise<StoredManualEntryDraft | null>;
+  listManualEntries(scopeId: string, query: ManualEntryListQuery): Promise<{ readonly items: readonly ManualEntrySummary[]; readonly nextCursor: string | null }>;
+  getManualEntryCommand(scopeId: string, key: string): Promise<ManualEntryCommandReceipt | null>;
+  /** Selects a read-only dependency snapshot; stage persists it in the same transaction as the candidate. */
+  planHistorySelection(query: HistorySelectionQuery): Promise<ExternalHistorySelection>;
+  stageManualEntry(input: ManualEntryStageWrite): Promise<ManualEntryReviewRef>;
+  commitManualEntry(scopeId: string, cmd: ConfirmManualEntryCommand): Promise<ConfirmationResult>;
+}
