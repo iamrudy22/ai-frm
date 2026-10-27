@@ -14,7 +14,7 @@
 
 **웹 정정 완료 상태(2026-10-27):** 실행 기준은 `666e6ef`이며 W1~W6 구현·TDD·단계별 독립 검토·자동 QA와 로컬 적용을 완료했다. 전체 검토의 Important2건과 generation Minor를 수정한 뒤 재검토도 통과했다. 최종1068개 통과/기존2skip, 보호51파일 변경0. **실제 저장 PDF 페이지 경계·native200% 확대 수동 인수2건은 Mac 잠금으로 미완료**다. 다음 재개는 사용자 잠금 해제 후 이2건이며 구현 단계를 반복하지 않는다. 운영 앱은 `http://127.0.0.1:3002/aifrm`이다.
 
-**현재 추가 작업(2026-10-27):** 사용자 확답에 따라 §8 D1–D5를 순서대로 실행 중이다. 자금자료·경제지표·금리를 웹에 직접 입력하고 확정 이력 없이도 최초 보고서를 만들 수 있게 한다. 새 실행 기준은 `e2a1602`이며 D1 계약·검토·QA를 완료했으며 D2 저장소를 이어서 구현한다. 기존 W1–W6는 반복하지 않는다.
+**현재 추가 작업(2026-10-27):** 사용자 확답에 따라 §8 D1–D5를 순서대로 실행 중이다. 자금자료·경제지표·금리를 웹에 직접 입력하고 확정 이력 없이도 최초 보고서를 만들 수 있게 한다. 새 실행 기준은 `e2a1602`이며 D1–D2 계약·저장소·검토·QA를 완료했으며 D3 계산/API 연결을 이어서 구현한다. 기존 W1–W6는 반복하지 않는다.
 
 ## Global Constraints
 
@@ -734,7 +734,7 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 - 자금자료는 q 필수, q−1/q−3 명시 선택. 각 r의 1월부터 max(그해12월,r+3)까지 원래 열 모양을 유지하며 전년 열을 발명하지 않는다. 실제 기준일 YYYY-MM-DD가 r 안에 있어야 한다. 6항목은 기존 ItemName, 단위억원. values 행은 모든 열 필수; unavailable은 사유가 있는 항목 전체 Unreadable이며 raw는 남긴다. 6행 전부 판독불가는 거부한다.
 - 경제지표9종의 현재/비교 원값만 입력한다. b=q−2, yoy는 b−12 그 외 b−1로 기존 transform을 따른다. 단위·기준은 두 값이 공유하는 사용자 입력 원자료 메타데이터이며 값이 있으면 필수다. ECOS_SERIES에 없는 공식 단위 enum/기준연도를 발명하지 않는다. 기존 단위 불변 정정 정책은 유지한다.
 - 금리는 관측월 q−1의 실제 평가일과 AAA1년/국고채1년 공표3사평균을 받는다. 평가사별 값은 선택 참조이며 재평균하지 않는다. 공란은 null, 날짜/rowId 중복 거부, 실제 마지막 평가일 안내. days 없음은 사유 필수다. 최대 제공 평가일 선택과 월완료 clock guard는 기존 계산기에 맡긴다.
-- sourceKind ecos/kofia는 자료 종류다. 새 Derivation manual-input(draftId,draftRevision,rawInputHash,recordedAt)으로 입력 방법을 정직하게 기록한다. resultJson은 기존 결과 그대로다. 보호 buildFinancialReport 호출 뒤 공통 factory에서 출처/설명 텍스트만 직접 입력으로 투영하고 수치/월/등급/계열 불변을 검증한다. 이후 일반 정정도 같은 경로로 처리한다.
+- sourceKind ecos/kofia는 자료 종류다. 새 Derivation manual-input(draftId,draftRevision,rawInputHash,recordedAt)으로 입력 방법을 정직하게 기록한다. recordedAt와 evidence.receivedAt는 해당 raw 초안의 savedAt이며, 파생 input/calculation의 createdAt와 candidate.preparedAt는 이후의 실제 검토 시각으로 구분한다. resultJson은 기존 결과 그대로다. 보호 buildFinancialReport 호출 뒤 공통 factory에서 출처/설명 텍스트만 직접 입력으로 투영하고 수치/월/등급/계열 불변을 검증한다. 이후 일반 정정도 같은 경로로 처리한다.
 - 초기 manual 후보만 전용 확정 경로로 제한한다. manual-input을 부모로 가진 정상 manual-correction의 확정을 막지 않는다. 가짜 파일/부모/확정0차를 만들지 않는다.
 - 서버 scope/Host/Origin/no-store/6MiB/UUID·목록·문자열 경계 유지. 외부 원천/API키·실제 업무 자료는 QA에 사용하지 않는다. push/merge/공개/Tunnel은 범위 밖이다.
 
@@ -745,7 +745,7 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 - SQLite schema5는 manual_entry_draft(scope,id,report_cycle,revision,current_candidate_id,confirmation_id,body)와 manual_entry_command(scope,key,draft_id,action,request_hash,body)만 추가한다. scope+cycle unique, 기존 FK 사용, draft삭제/receipt수정삭제 금지. 기존21테이블/31트리거와 모든 body/hash/ID/head/시각 불변.
 - HistoryRepository에 create/save/get/listManualEntries, getManualEntryCommand, planHistorySelection, stageManualEntry, commitManualEntry를 추가한다. selection 선택 로직은 기존 createHistorySelection과 공유하되 plan은 읽기 전용이다.
 - 모든 mutation은 성공 receipt를 먼저 확인한다. 같은 key+action+semantic hash면 후속 수정/확정 이후에도 원래 ACK 반환; 다른 요청에 key 재사용409. save는 revision CAS, 미완성 raw 보존, 변경 시 검토 무효화. 생성은 동일 pending월 재개, 기존 head가 있으면 충돌이다.
-- stage는 draft binding/head0/dependency head를 검증하고 evidence/input/계산2개/selection/document/candidate/review/receipt를 원자 보관한다. 같은 유효 검토의 재준비는 파생 중복0. 실패는 전부 rollback. confirm은 현재 raw+검토 binding과 head0/dependencies 확인 후 기존 confirmDecision을 사용해 revision1/head/멱등/receipt/draft 확인표시를 원자 보관한다.
+- stage는 draft binding/head0/dependency head를 검증하고 직접 제출된 경제·금리 원자료 evidence각1개(총2개)/input/계산2개/selection/document/candidate/review/receipt를 원자 보관한다. source 사용을 건너뛰는 기존 월guard에서도 두 자료의 수신 원형을 보존하되 이를 원격 조회2회로 표시하지 않는다. 같은 유효 검토의 재준비는 파생 중복0. 실패는 전부 rollback. confirm은 현재 raw+검토 binding과 head0/dependencies 확인 후 기존 confirmDecision을 사용해 revision1/head/멱등/receipt/draft 확인표시를 원자 보관한다.
 - `/api/report-history/manual-entries`: GET draftId 또는 limit12/cursor의 미확정 초안 목록. POST action create/save/prepare/confirm. 엄격한 action별 필드. 404없음/타scope,409충돌,413크기,422입력,503저장장애+Retry-After1. confirm은 expectedRevision0/candidateId/documentHash/draftRevision 필요. 서버만 catalog/clock/IDs/hash/source를 만든다.
 - 입력 목록은 기존 확정 이력과 별도의 간결한 ‘작성 중인 새 보고서’ Table이다. 기존 월별 head/미처리 정정 수를 섞지 않는다. 초기 empty/loading/error/필터empty를 구분하고 언제나 ‘새 보고서 직접 입력’ 진입을 제공한다.
 - 실제 Astryx의 Dialog/TabList/Table/TextInput/DateInput/Selector/CheckboxInput/EmptyState/Button/Banner/Text를 사용한다. 생성 창에서 보고월 선택→고정 월 편집창의 자금자료/경제지표/조달금리 탭→1000ms 직렬 CAS 자동 보관→검토→보고서 확정. ACK만 보관됨이며 late ACK는 최신 입력을 덮지 않는다. 응답 불명은 같은 명령/key 재시도, 422/413은 새 명령 가능, 409는 명시 복구. 입력 변경 즉시 이전 검토 무효화. 닫기/검토는 저장 ACK를 기다린다.
@@ -760,11 +760,11 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 ### D2: schema5 최초 입력 초안·원자 검토/확정 저장
 
-**Files:** ports, sqlite-history-repository.ts(.test). **Consumes:** D1. **Produces:** §8.2 저장 ports, CAS/receipts/stage/confirm/generic bypass.
+**Files:** ports, sqlite-history-repository.ts(.test), 새 manual-entry.ts의 공유 명령 의미 hash 입력 helper와 테스트. **Consumes:** D1. **Produces:** §8.2 저장 ports, CAS/receipts/stage/confirm/generic bypass.
 
-- [ ] RED: schema4의21테이블 행/트리거 보존·DDL실패rollback·pending재개·receiptfirst·two-tab CAS·preview무효화·이전후보/일반우회 거부·중복prepare/더블confirm·stage부분실패전부rollback·동일월/의존head경쟁을 고정한다.
-- [ ] GREEN: 부가2테이블과 검증/저장 port를 구현하고 기존 저장 private 로직을 재사용한다. 정상 후속 정정은 허용한다.
-- [ ] 검토·QA: synthetic schema4→5 두 연결/백업·복구·FK/integrity/구버전거부, focused/tsc/보호0·독립 검토 후 커밋 `feat(history): persist first report drafts atomically`, context 갱신.
+- [x] RED: schema4의21테이블 행/트리거 보존·DDL실패rollback·pending재개·receiptfirst·two-tab CAS·preview무효화·이전후보/일반우회 거부·중복prepare/더블confirm·stage부분실패전부rollback·동일월/의존head경쟁을 고정한다.
+- [x] GREEN: 부가2테이블과 검증/저장 port를 구현하고 기존 저장 private 로직을 재사용한다. 정상 후속 정정은 허용한다.
+- [x] 검토·QA: synthetic schema4→5 두 연결/백업·복구·FK/integrity/구버전거부, focused/tsc/보호0·독립 검토 후 커밋 `feat(history): persist first report drafts atomically`, context 갱신.
 
 ### D3: 직접 입력 서비스·기존 산출 연결·엄격 JSON API
 

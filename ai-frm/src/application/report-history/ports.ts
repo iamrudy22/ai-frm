@@ -244,7 +244,7 @@ export type HistoryWorkbookCodec = {
   decode(bytes: Uint8Array, manifest: StoredWorkbookExport): DecodedCorrection;
 };
 export type CorrectionPatch = DecodedCorrection['patch'];
-export type HistoryOperationErrorCode = 'STALE_BASE' | 'STALE_DEPENDENCY' | 'STORAGE_UNAVAILABLE' | 'LIMIT_EXCEEDED' | 'NOT_FOUND' | 'UNSUPPORTED_VERSION' | 'EVALUATION_ZONE_MISMATCH' | 'STALE_DRAFT' | 'WORK_CLOSED' | 'IDEMPOTENCY_KEY_REUSED' | 'INVALID_DRAFT';
+export type HistoryOperationErrorCode = 'STALE_BASE' | 'STALE_DEPENDENCY' | 'STORAGE_UNAVAILABLE' | 'LIMIT_EXCEEDED' | 'NOT_FOUND' | 'UNSUPPORTED_VERSION' | 'EVALUATION_ZONE_MISMATCH' | 'STALE_DRAFT' | 'WORK_CLOSED' | 'IDEMPOTENCY_KEY_REUSED' | 'INVALID_DRAFT' | 'REPORT_ALREADY_EXISTS';
 export class HistoryOperationError extends Error {
   constructor(readonly code: HistoryOperationErrorCode) { super(code); this.name = 'HistoryOperationError'; }
 }

@@ -10,6 +10,10 @@ import { decodeEvidence, encodeEvidence, evidenceToJson } from './evidence-codec
 import { SqliteHistoryRepository, hashHistoryValue } from './sqlite-history-repository';
 import { historyWorkbookCodec } from './history-workbook';
 import type { ReportBasis, CalculationWrite, EvidenceWrite, CandidateWrite, StatementSnapshotDto, ConfirmationResult } from '../../application/report-history/ports';
+import { randomUUID } from 'node:crypto';
+import type * as P from '../../application/report-history/ports';
+import { SCORING_RULES } from '../../domain/risk/construction-perception/policy';
+import { createBlankManualEntryContent, createManualEntryCatalog, normalizeManualEntry } from '../../domain/report-history/manual-entry';
 import { yearMonth } from '../../domain/shared/year-month';
 const dirs: string[] = [];
 const repos: SqliteHistoryRepository[] = [];
@@ -53,7 +57,7 @@ describe('SQLite 불변 월별 이력', () => {
     const r = open();
     const scopeId = await r.defaultScopeId();
     const database = new DatabaseSync(r.databasePath, { readOnly: true });
-    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
+    expect(database.prepare('PRAGMA user_version').get()?.user_version).toBe(5);
     database.close();
     const draft = { scopeId, exportId: 'export-1', workbookFormatVersion: 1 as const, baseConfirmationId: 'base-1', baseRevision: 1,
       baseDocumentHash: 'hash', basis, inputSnapshotId: 'input-1', inputHash: 'input-hash', calculationIds: { construction: 'c', funding: 'f' },
@@ -180,6 +184,8 @@ describe('SQLite 불변 월별 이력', () => {
       const { parentPort, workerData } = require('node:worker_threads');
       const fs = require('node:fs');
       const ts = require(workerData.typescriptPath);
+      const Module = require('node:module'), path = require('node:path'), originalResolve = Module._resolveFilename;
+      Module._resolveFilename = function(specifier, ...args) { return originalResolve.call(this, specifier.startsWith('@/') ? path.join(workerData.sourceRoot, specifier.slice(2)) : specifier, ...args); };
       require.extensions['.ts'] = (module, filename) => {
         const source = fs.readFileSync(filename, 'utf8');
         const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -207,7 +213,7 @@ describe('SQLite 불변 월별 이력', () => {
     for (const [candidateId, idempotencyKey] of [[first.candidateId, 'worker-first'], [second.candidateId, 'worker-second']]) {
       const worker = new Worker(source, { eval: true, workerData: {
         repositoryPath: join(process.cwd(), 'src/infrastructure/report-history/sqlite-history-repository.ts'),
-        typescriptPath: join(process.cwd(), 'node_modules/typescript'),
+        typescriptPath: join(process.cwd(), 'node_modules/typescript'), sourceRoot: join(process.cwd(), 'src'),
         databasePath: r.databasePath, candidateId, idempotencyKey, barrier,
       } });
       workers.push(worker);
@@ -824,8 +830,8 @@ const rawContent = { edits: [{ rowId:'economic', action:'set' as const, rawValue
 describe('schema4 correction work persistence', () => {
   it('schema4 adds exactly three tables', () => {
     const r = open(), db = new DatabaseSync(r.databasePath, {readOnly:true});
-    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(21); db.close();
+    expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(5);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(23); db.close();
   });
   it('invalid_draft_autosaves_without_derivation_or_head_change', async () => {
     const { r, neutral } = await webFixture();
@@ -924,12 +930,12 @@ describe('schema4 complete lifecycle contracts',()=>{
 });
 
 function ledgerSnapshot(path:string) {
-  const db=new DatabaseSync(path,{readOnly:true}),tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('correction_draft','correction_work_command','correction_resolution') ORDER BY name").all().map(r=>String(r.name));
+  const db=new DatabaseSync(path,{readOnly:true}),tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('correction_draft','correction_work_command','correction_resolution','manual_entry_draft','manual_entry_command') ORDER BY name").all().map(r=>String(r.name));
   const rows=Object.fromEntries(tables.map(t=>[t,db.prepare(`SELECT * FROM ${t}${t==='schema_migration'?' WHERE version<=3':''} ORDER BY rowid`).all()]));
-  const triggers=db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name NOT IN ('correction_draft','correction_work_command','correction_resolution') ORDER BY name").all();db.close();return {rows,triggers};
+  const triggers=db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name NOT IN ('correction_draft','correction_work_command','correction_resolution','manual_entry_draft','manual_entry_command') ORDER BY name").all();db.close();return {rows,triggers};
 }
 function schema3Only(path:string) {
-  const db=new DatabaseSync(path);db.exec('DROP TABLE correction_resolution; DROP TABLE correction_work_command; DROP TABLE correction_draft; DELETE FROM schema_migration WHERE version=4; PRAGMA user_version=3');db.close();
+  const db=new DatabaseSync(path);db.exec('DROP TABLE manual_entry_command; DROP TABLE manual_entry_draft; DELETE FROM schema_migration WHERE version=5; DROP TABLE correction_resolution; DROP TABLE correction_work_command; DROP TABLE correction_draft; DELETE FROM schema_migration WHERE version=4; PRAGMA user_version=3');db.close();
 }
 describe('schema4 migration and adversarial storage',()=>{
   it('schema3_upgrade_preserves_every_existing_body_hash_and_head; legacy_preview_retry_survives_upgrade',async()=>{
@@ -1049,4 +1055,157 @@ it('copying a closed unapplied copy retains its original source basis and raw pr
  const input={draft:next,expectedDraftRevision:null,expectedHead:(await f.r.currentHeads('scope-A',[month]))[0],command:{action:'copy' as const,idempotencyKey:'nested-second',requestHash:'nested-second'}};
  expect(await f.r.writeCorrectionDraft(input)).toEqual(next);expect(await f.r.getCorrectionDraft('scope-A',copied.draftId)).toEqual(before);
  expect(await f.r.writeCorrectionDraft({...input,expectedHead:{...input.expectedHead,revision:99}})).toEqual(next);
+});
+
+
+const manualDefinitions = SCORING_RULES.filter(r => r.key !== '분양회수예측오차').map((r,i) => ({key:r.key as P.ManualEconomicDefinition['key'],name:r.key,statistic:`S${i}`,items:[`I${i}`]}));
+const requestHash=(action:string,cmd:object)=>hashHistoryValue({action,...Object.fromEntries(Object.entries(cmd).filter(([key])=>key!=='idempotencyKey'))});
+function manualWrite(scopeId='manual-scope', reportTitleMonth=basis.reportTitleMonth, key:string=randomUUID()): P.CreateManualEntryWrite {
+  const catalog=createManualEntryCatalog(reportTitleMonth,manualDefinitions),content=createBlankManualEntryContent(catalog),command={reportTitleMonth,idempotencyKey:key};
+  return {scopeId,command,requestHash:requestHash('create',command),draft:{recordKind:'manual-entry-draft',payloadVersion:1,scopeId,draftId:randomUUID(),reportCycle:catalog.reportCycle,draftRevision:1,catalog,content,rawInputHash:hashHistoryValue(content),createdAt:now,savedAt:now,currentReview:null,confirmationId:null}};
+}
+async function manualFixture(r:SqliteHistoryRepository, write=manualWrite(), preparedAt=now) {
+  const created=await r.createManualEntry(write), content=structuredClone(created.content),current=content.cashflow[created.reportCycle];
+  Object.assign(current,{asOfRaw:`${created.reportCycle.replace('/','-')}-23`});
+  for(const item of Object.values(current.items))for(const month of Object.keys(item.values))Object.assign(item.values,{[month]:'1'});
+  Object.assign(content.funding,{noDataReason:'합성 자료 없음'});
+  const draft=await r.saveManualEntry(write.scopeId,{draftId:created.draftId,expectedDraftRevision:1,idempotencyKey:randomUUID(),content});
+  const normalized=normalizeManualEntry(draft.catalog,draft.content);if(normalized.kind!=='ready')throw Error('fixture normalization');
+  const binding={draftId:draft.draftId,draftRevision:draft.draftRevision,rawInputHash:draft.rawInputHash},derivation={kind:'manual-input' as const,...binding,recordedAt:draft.savedAt};
+  const selection=await r.planHistorySelection({scopeId:write.scopeId,basis:draft.catalog.basis,calculationVersion:version,asOf:preparedAt,selectedBackfillBatchId:null});
+  const evidence:P.StoredEvidence[]=['ecos','kofia'].map(sourceKind=>({scopeId:write.scopeId,captureId:randomUUID(),sourceKind:sourceKind as 'ecos'|'kofia',contentHash:hashHistoryValue({synthetic:true}),payloadJson:{synthetic:true},schemaVersion:1,receivedAt:draft.savedAt,derivation}));
+  const input:P.StoredInputSnapshot={scopeId:write.scopeId,inputSnapshotId:randomUUID(),inputHash:hashHistoryValue(normalized.statements),statements:normalized.statements,sourceMetadata:evidenceToJson({kind:'manual-input',payloadVersion:1,...binding,recordedAt:draft.savedAt,statementSources:normalized.statements.map(s=>({round:draft.reportCycle,asOf:s.asOf,label:'합성 직접 입력'})),economicSource:'user-entered-published-series',fundingSource:'user-entered-published-averages',note:''}),createdAt:preparedAt,derivation};
+  const calculations:P.StoredCalculation[]=['construction','funding'].map(indicator=>({scopeId:write.scopeId,calculationId:randomUUID(),indicator:indicator as 'construction'|'funding',origin:'live',derivation,effectiveMonth:indicator==='construction'?draft.catalog.basis.constructionBaseMonth:draft.catalog.basis.fundingObservedMonth,requestContext:evidenceToJson({request:indicator==='construction'?{reportMonth:draft.reportCycle,baseMonth:draft.catalog.basis.constructionBaseMonth}:{judgedMonth:draft.reportCycle},input:{indicator}}),inputHash:hashHistoryValue({indicator}),calculationVersion:version,captureIds:[evidence[indicator==='construction'?0:1].captureId],resultJson:{synthetic:true},evaluatedAt:preparedAt,evaluationClockTrace:[preparedAt],evaluatedCalendar:{year:2026,month:10,day:23},evaluationTimeZone:'Asia/Seoul',createdAt:preparedAt}));
+  const candidate:P.ManualEntryStageWrite['candidate']={scopeId:write.scopeId,candidateId:randomUUID(),basis:draft.catalog.basis,inputSnapshotId:input.inputSnapshotId,inputHash:input.inputHash,calculationIds:{construction:calculations[0].calculationId,funding:calculations[1].calculationId},calculationInputHashes:{construction:calculations[0].inputHash,funding:calculations[1].inputHash},calculationVersion:version,authoredAt:preparedAt,preparedAt,historySelectionId:selection.historySelectionId,correctionPreviewId:null,manualEntry:binding,document:{schemaVersion:1,templateVersion:'report@e3a8f9e',contentHash:hashHistoryValue({synthetic:true}),json:{synthetic:true},historyCalculationIds:selection.historyCalculationIds}};
+  const review={...binding,candidateId:candidate.candidateId,documentHash:candidate.document.contentHash,preparedAt,evaluatedAt:preparedAt,dependencyHeads:selection.headRevisions};
+  const command={draftId:draft.draftId,expectedDraftRevision:draft.draftRevision,idempotencyKey:randomUUID()};
+  const stage:P.ManualEntryStageWrite={scopeId:write.scopeId,draft:binding,command:{idempotencyKey:command.idempotencyKey,requestHash:requestHash('prepare',command)},expectedHead:{reportCycle:draft.reportCycle,confirmationId:null,revision:0},selection,evidence,input,calculations,candidate,review};
+  const confirm:P.ConfirmManualEntryCommand={draftId:draft.draftId,expectedDraftRevision:draft.draftRevision,candidateId:candidate.candidateId,documentHash:review.documentHash,expectedRevision:0,idempotencyKey:randomUUID()};
+  return {r,write,draft,stage,confirm};
+}
+function manualCounts(r:SqliteHistoryRepository) {const db=new DatabaseSync(r.databasePath,{readOnly:true});try{return Object.fromEntries(['source_capture','report_input_snapshot','calculation_record','history_selection','report_document','report_candidate','monthly_confirmation','monthly_head','idempotent_command','manual_entry_draft','manual_entry_command'].map(t=>[t,Number(db.prepare(`SELECT count(*) AS n FROM ${t}`).get()?.n)]));}finally{db.close();}}
+describe('schema5 최초 입력 원자 저장',()=>{
+  it('23 tables / 34 triggers and read-only planning performs zero writes',async()=>{
+    const r=open(),db=new DatabaseSync(r.databasePath,{readOnly:true});expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(5);expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(23);expect(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger'").all()).toHaveLength(34);db.close();
+    const before=manualCounts(r),ro=open(r.databasePath,{readOnly:true});await ro.planHistorySelection({scopeId:'absent',basis,calculationVersion:version,asOf:now,selectedBackfillBatchId:null});expect(await ro.getManualEntry('absent',randomUUID())).toBeNull();expect(await ro.listManualEntries('absent',{limit:12})).toEqual({items:[],nextCursor:null});expect(manualCounts(r)).toEqual(before);
+  });
+  it('create resumes pending month; receipt first survives edits, two connections CAS and key reuse',async()=>{
+    const r=open(),w=manualWrite(),d=await r.createManualEntry(w);expect(await r.createManualEntry(manualWrite(w.scopeId,w.command.reportTitleMonth))).toEqual(d);
+    const cmd={draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:randomUUID(),content:{...d.content,note:'-1.'}},saved=await r.saveManualEntry(w.scopeId,cmd);expect(saved).toMatchObject({draftRevision:2,currentReview:null,rawInputHash:hashHistoryValue(cmd.content)});
+    expect(await r.createManualEntry(w)).toEqual(d);expect(await r.saveManualEntry(w.scopeId,cmd)).toEqual(saved);await expect(r.saveManualEntry(w.scopeId,{...cmd,content:{...cmd.content,note:'other'}})).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+    const other=open(r.databasePath);await expect(other.saveManualEntry(w.scopeId,{...cmd,idempotencyKey:randomUUID()})).rejects.toMatchObject({code:'STALE_DRAFT'});
+  });
+  it('stage reuses current review, confirm receipt first and generic bypass blocked',async()=>{
+    const f=await manualFixture(open());const ref=await f.r.stageManualEntry(f.stage),before=manualCounts(f.r);expect(ref).toEqual(f.stage.review);
+    const cmd={draftId:f.draft.draftId,expectedDraftRevision:f.draft.draftRevision,idempotencyKey:randomUUID()};expect(await f.r.stageManualEntry({...f.stage,command:{idempotencyKey:cmd.idempotencyKey,requestHash:requestHash('prepare',cmd)}})).toEqual(ref);expect(manualCounts(f.r)).toEqual({...before,manual_entry_command:before.manual_entry_command+1});
+    expect(await f.r.commitConfirmation(f.write.scopeId,{candidateId:f.confirm.candidateId,expectedRevision:0,idempotencyKey:randomUUID()})).toMatchObject({kind:'not-ready',reason:'MANUAL_ENTRY_REQUIRED'});
+    const result=await f.r.commitManualEntry(f.write.scopeId,f.confirm);expect(result).toMatchObject({kind:'confirmed',revision:1});expect(await f.r.commitManualEntry(f.write.scopeId,f.confirm)).toEqual(result);expect(await f.r.stageManualEntry(f.stage)).toEqual(ref);expect(await f.r.createManualEntry(f.write)).toMatchObject({draftRevision:1});
+    await expect(f.r.createManualEntry(manualWrite(f.write.scopeId))).rejects.toMatchObject({code:'REPORT_ALREADY_EXISTS'});expect((await f.r.listManualEntries(f.write.scopeId,{limit:12})).items).toHaveLength(0);
+  });
+  it('edit invalidates review and rejects old candidate plus input/calculation laundering',async()=>{
+    const f=await manualFixture(open());await f.r.stageManualEntry(f.stage);await f.r.saveManualEntry(f.write.scopeId,{draftId:f.draft.draftId,expectedDraftRevision:f.draft.draftRevision,idempotencyKey:randomUUID(),content:{...f.draft.content,note:'new'}});
+    await expect(f.r.commitManualEntry(f.write.scopeId,{...f.confirm,idempotencyKey:randomUUID()})).rejects.toMatchObject({code:'STALE_DRAFT'});
+    const {manualEntry:_,candidateId:__,...plain}=f.stage.candidate;void _;void __;await expect(f.r.putCandidate(plain)).rejects.toMatchObject({code:'INVALID_DRAFT'});
+    expect((await f.r.getManualEntry(f.write.scopeId,f.draft.draftId))?.currentReview).toBeNull();
+  });
+  it('late stage receipt failure rolls every artifact back and head stays zero',async()=>{
+    const f=await manualFixture(open()),before=manualCounts(f.r),db=new DatabaseSync(f.r.databasePath);db.exec("CREATE TRIGGER fail_manual_receipt BEFORE INSERT ON manual_entry_command WHEN NEW.action='prepare' BEGIN SELECT RAISE(ABORT,'SYNTHETIC_LATE_FAILURE'); END");db.close();
+    await expect(f.r.stageManualEntry(f.stage)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});expect(manualCounts(f.r)).toEqual(before);expect((await f.r.getManualEntry(f.write.scopeId,f.draft.draftId))?.currentReview).toBeNull();
+  });
+});
+
+function schema4Only(path:string) {const db=new DatabaseSync(path);db.exec('DROP TABLE manual_entry_command; DROP TABLE manual_entry_draft; DELETE FROM schema_migration WHERE version=5; PRAGMA user_version=4');db.close();}
+function oldLedger(path:string) {
+  const db=new DatabaseSync(path,{readOnly:true});try { const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('manual_entry_draft','manual_entry_command') ORDER BY name").all().map(r=>String(r.name));return {tables:Object.fromEntries(tables.map(t=>[t,db.prepare(`SELECT * FROM ${t}${t==='schema_migration'?' WHERE version<=4':''} ORDER BY rowid`).all().map(row=>hashHistoryValue(row))])),schema:db.prepare("SELECT type,name,sql FROM sqlite_master WHERE tbl_name NOT IN ('manual_entry_draft','manual_entry_command') ORDER BY type,name").all()}; }finally{db.close();}
+}
+describe('schema5 persistence adversarial cases',()=>{
+  it('v4 shape upgrade preserves every old row/hash/schema; DDL and migration receipt failures roll back',async()=>{
+    const r=open();await fixture(r);r.close();schema4Only(r.databasePath);const before=oldLedger(r.databasePath),db=new DatabaseSync(r.databasePath);
+    db.exec("CREATE TRIGGER fail_v5 BEFORE INSERT ON schema_migration WHEN NEW.version=5 BEGIN SELECT RAISE(ABORT,'SYNTHETIC_V5_FAIL'); END");expect(()=>open(r.databasePath)).toThrow('SYNTHETIC_V5_FAIL');expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'manual_entry%'").all()).toEqual([]);db.exec('DROP TRIGGER fail_v5');
+    db.exec('CREATE TABLE manual_entry_command(occupied TEXT)');expect(()=>open(r.databasePath)).toThrow();expect(db.prepare("SELECT name FROM sqlite_master WHERE name='manual_entry_draft'").all()).toEqual([]);expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);db.exec('DROP TABLE manual_entry_command');db.close();
+    const upgraded=open(r.databasePath);expect(oldLedger(r.databasePath)).toEqual(before);const ro=open(r.databasePath,{readOnly:true});expect(await ro.getManualEntry('absent',randomUUID())).toBeNull();
+    const backup=await upgraded.backup(),restored=open(backup,{readOnly:true});expect(oldLedger(restored.databasePath)).toEqual(before);const check=new DatabaseSync(backup,{readOnly:true});expect(check.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(23);expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([]);expect(check.prepare('PRAGMA integrity_check').get()?.integrity_check).toBe('ok');check.close();
+  });
+  it('manual tables enforce immutable receipt/delete and existing candidate/confirmation foreign keys',async()=>{
+    const r=open(),w=manualWrite(),d=await r.createManualEntry(w),db=new DatabaseSync(r.databasePath);db.exec('PRAGMA foreign_keys=ON');
+    for(const sql of ["DELETE FROM manual_entry_draft","DELETE FROM manual_entry_command","UPDATE manual_entry_command SET action='save'"])expect(()=>db.exec(sql)).toThrow('IMMUTABLE_HISTORY');
+    expect(()=>db.prepare('UPDATE manual_entry_draft SET current_candidate_id=? WHERE id=?').run(randomUUID(),d.draftId)).toThrow('FOREIGN KEY');expect(()=>db.prepare('UPDATE manual_entry_draft SET confirmation_id=? WHERE id=?').run(randomUUID(),d.draftId)).toThrow('FOREIGN KEY');db.close();
+  });
+  it('strict saved raw and payload versions reject malformed records; historical IDs remain accepted',async()=>{
+    const r=open(),w=manualWrite(),d=await r.createManualEntry(w),before=manualCounts(r);
+    await expect(r.saveManualEntry(w.scopeId,{draftId:d.draftId,expectedDraftRevision:1,idempotencyKey:randomUUID(),content:{...d.content,score:7} as P.ManualEntryContentV1})).rejects.toMatchObject({code:'INVALID_DRAFT'});expect(manualCounts(r)).toEqual(before);
+    await expect(r.putInputSnapshot({scopeId:w.scopeId,statements:[],sourceMetadata:{},inputHash:'old-hash',createdAt:now,derivation:{kind:'invented'} as unknown as P.Derivation})).rejects.toThrow('INVALID_DERIVATION');
+    const db=new DatabaseSync(r.databasePath);db.prepare('UPDATE manual_entry_draft SET body=? WHERE id=?').run(encodeEvidence({...d,payloadVersion:2}),d.draftId);await expect(r.getManualEntry(w.scopeId,d.draftId)).rejects.toMatchObject({code:'UNSUPPORTED_VERSION'});db.exec('DROP TRIGGER immutable_manual_entry_command_update');db.prepare('UPDATE manual_entry_command SET body=? WHERE key=?').run(encodeEvidence({recordKind:'manual-entry-command',payloadVersion:2}),w.command.idempotencyKey);await expect(r.getManualEntryCommand(w.scopeId,w.command.idempotencyKey)).rejects.toMatchObject({code:'UNSUPPORTED_VERSION'});db.close();
+  });
+  it('cursor is creation-time/id stable across savedAt edits and later inserts from another connection',async()=>{
+    let time=now;const r=open(undefined,{now:()=>time}),other=open(r.databasePath),drafts:P.StoredManualEntryDraft[]=[];
+    for(let i=0;i<27;i++)drafts.push(await r.createManualEntry(manualWrite('pages',yearMonth(2024+Math.floor(i/12),1+i%12))));
+    const first=await r.listManualEntries('pages',{limit:12}),ids=first.items.map(d=>d.draftId);expect(ids).toHaveLength(12);const edit=drafts[0];time='2026-10-24T00:00:00.000Z';await r.saveManualEntry('pages',{draftId:edit.draftId,expectedDraftRevision:1,idempotencyKey:randomUUID(),content:{...edit.content,note:'latest savedAt'}});
+    const late=await other.createManualEntry(manualWrite('pages',yearMonth(2028,1)));let cursor=first.nextCursor;while(cursor){const page=await other.listManualEntries('pages',{limit:12,cursor});ids.push(...page.items.map(d=>d.draftId));cursor=page.nextCursor;}
+    expect(ids).toEqual(drafts.map(d=>d.draftId).sort().reverse());expect(ids).not.toContain(late.draftId);expect(new Set(ids).size).toBe(27);await expect(r.listManualEntries('other',{limit:12,cursor:first.nextCursor!})).rejects.toMatchObject({code:'INVALID_DRAFT'});
+  });
+  it('every manual action rejects a key claimed by another ledger, and generic commands reject manual receipts',async()=>{
+    const r=open(),legacy=await fixture(r,'manual-scope'),confirmed=await r.commitConfirmation('manual-scope',{candidateId:legacy.candidateId,expectedRevision:0,idempotencyKey:'legacy-key'});expect(confirmed.kind).toBe('confirmed');
+    await expect(r.createManualEntry(manualWrite('manual-scope',yearMonth(2026,7),'legacy-key'))).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+    const w=manualWrite('manual-scope',yearMonth(2026,7),'manual-key');await r.createManualEntry(w);expect(await r.commitConfirmation('manual-scope',{candidateId:legacy.candidateId,expectedRevision:0,idempotencyKey:'manual-key'})).toMatchObject({kind:'conflict',reason:'IDEMPOTENCY_KEY_REUSED'});
+    const f=await webFixture(),d=await createWebDraft(f,'work-key');void d;await expect(f.r.createManualEntry(manualWrite('scope-A',yearMonth(2026,7),'work-key'))).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+    const w2=manualWrite('scope-A',yearMonth(2026,7),'manual-key');await f.r.createManualEntry(w2);await expect(f.r.createCorrectionDraft('scope-A',{basisId:f.neutral.basisId,idempotencyKey:'manual-key',content:validContent})).rejects.toMatchObject({code:'IDEMPOTENCY_KEY_REUSED'});
+  });
+  it('stale dependency and same-month head races reject stage/confirm with zero partial writes',async()=>{
+    const r=open(),priorBasis=createManualEntryCatalog(yearMonth(2026,7),manualDefinitions).basis,prior=await fixture(r,'manual-scope','prior',priorBasis);await r.commitConfirmation('manual-scope',{candidateId:prior.candidateId,expectedRevision:0,idempotencyKey:'prior'});
+    const f=await manualFixture(r);expect(f.stage.review.dependencyHeads).toHaveLength(1);await r.stageManualEntry(f.stage);
+    const changed=await fixture(r,'manual-scope','prior-changed',priorBasis);await r.commitConfirmation('manual-scope',{candidateId:changed.candidateId,expectedRevision:1,correctionReason:'합성 변경',idempotencyKey:'prior-changed'});const before=manualCounts(r);
+    await expect(r.commitManualEntry(f.write.scopeId,f.confirm)).rejects.toMatchObject({code:'STALE_DEPENDENCY'});expect(manualCounts(r)).toEqual(before);
+    const other=open(r.databasePath),competing=await fixture(other,'manual-scope','same-month');await other.commitConfirmation('manual-scope',{candidateId:competing.candidateId,expectedRevision:0,idempotencyKey:'same-month'});const after=manualCounts(r);await expect(r.commitManualEntry(f.write.scopeId,f.confirm)).rejects.toMatchObject({code:'REPORT_ALREADY_EXISTS'});expect(manualCounts(r)).toEqual(after);
+  });
+  it('late confirm receipt failure rolls confirmation/head/idempotent marker/draft back; original save ACK survives confirm',async()=>{
+    const f=await manualFixture(open());await f.r.stageManualEntry(f.stage);const before=manualCounts(f.r),db=new DatabaseSync(f.r.databasePath);db.exec("CREATE TRIGGER fail_confirm_receipt BEFORE INSERT ON manual_entry_command WHEN NEW.action='confirm' BEGIN SELECT RAISE(ABORT,'SYNTHETIC_CONFIRM_FAIL'); END");
+    await expect(f.r.commitManualEntry(f.write.scopeId,f.confirm)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});expect(manualCounts(f.r)).toEqual(before);expect((await f.r.getManualEntry(f.write.scopeId,f.draft.draftId))?.confirmationId).toBeNull();db.exec('DROP TRIGGER fail_confirm_receipt');db.close();
+    const savedReceipt=(await f.r.getManualEntryCommand(f.write.scopeId,f.stage.command.idempotencyKey))!;await f.r.commitManualEntry(f.write.scopeId,f.confirm);expect(await f.r.stageManualEntry(f.stage)).toEqual(savedReceipt.acknowledgement);expect(await f.r.commitManualEntry(f.write.scopeId,{...f.confirm,idempotencyKey:randomUUID()})).toMatchObject({kind:'already-confirmed',revision:1});
+  });
+  it.each(['binding','hash','clock','scope','catalog','selection','document','calculation-count'])('stage rejects forged %s without derived writes',async field=>{
+    const f=await manualFixture(open()),stage=structuredClone(f.stage),before=manualCounts(f.r);
+    if(field==='binding')Object.assign(stage.input.derivation,{rawInputHash:'0'.repeat(64)});if(field==='hash')Object.assign(stage.input,{inputHash:'0'.repeat(64)});if(field==='clock')Object.assign(stage.calculations[0],{evaluatedAt:'2026-10-22T00:00:00.000Z'});if(field==='scope')Object.assign(stage.evidence[0],{scopeId:'other'});if(field==='catalog')Object.assign(stage.candidate,{calculationVersion:'other'});if(field==='selection')Object.assign(stage.selection,{historyCalculationIds:[randomUUID()]});if(field==='document')Object.assign(stage.candidate.document,{contentHash:'0'.repeat(64)});if(field==='calculation-count')Object.assign(stage,{calculations:[stage.calculations[0]]});
+    await expect(f.r.stageManualEntry(stage)).rejects.toMatchObject({code:'INVALID_DRAFT'});expect(manualCounts(f.r)).toEqual(before);
+  });
+  it('normal correction of manual roots remains confirmable; generic confirmation follows parent roots to block laundering',async()=>{
+    const f=await manualFixture(open()),scopeId=f.write.scopeId;await f.r.stageManualEntry(f.stage);const confirmed=await f.r.commitManualEntry(scopeId,f.confirm);if(confirmed.kind!=='confirmed')throw Error('fixture');
+    const exportId=randomUUID(),importId=randomUUID(),previewId=randomUUID(),patchHash='legacy-semantic-hash',candidateId=randomUUID();
+    const exported={scopeId,exportId,workbookFormatVersion:1 as const,baseConfirmationId:confirmed.confirmationId,baseRevision:1,baseDocumentHash:f.stage.review.documentHash,basis:f.draft.catalog.basis,inputSnapshotId:f.stage.input.inputSnapshotId,inputHash:f.stage.input.inputHash,calculationIds:f.stage.candidate.calculationIds,historySelectionId:f.stage.selection.historySelectionId,calculationVersion:version,templateVersion:'report@e3a8f9e',createdAt:now,rows:[],history:[],result:{synthetic:true}};await f.r.putWorkbookExport({...exported,structure:historyWorkbookCodec.structure(exported)});
+    const calculations=f.stage.calculations.map(c=>({...c,calculationId:randomUUID(),derivation:{kind:'manual-correction' as const,parentId:c.calculationId,importId,patchHash,correctedAt:now}}));
+    const candidate={...f.stage.candidate,manualEntry:undefined,candidateId,calculationIds:{construction:calculations[0].calculationId,funding:calculations[1].calculationId},correctionPreviewId:previewId};delete candidate.manualEntry;
+    const preview={scopeId,previewId,previewHash:'legacy-preview-hash',importId,exportId,baseConfirmationId:confirmed.confirmationId,baseRevision:1,inputSnapshotId:f.stage.input.inputSnapshotId,candidateId,dependencyHeads:[{reportCycle:f.draft.reportCycle,confirmationId:confirmed.confirmationId,revision:1}],rawDiff:[],resultDiff:[],affectedReports:[],createdAt:now};
+    await f.r.stageCorrection({scopeId,expectedBase:preview.dependencyHeads[0],dependencyHeads:preview.dependencyHeads,evidence:[],inputs:[],calculations,candidate,import:{scopeId,importId,exportId,fileHash:'legacy',patchHash,patch:[{rowId:'legacy',action:'set',value:1,reason:'합성 정정',evidenceNote:''}],status:'validated',errors:[],receivedAt:now},preview});
+    const derivedInput=await f.r.putInputSnapshot({...f.stage.input,derivation:{kind:'manual-correction',parentId:f.stage.input.inputSnapshotId,importId,patchHash,correctedAt:now}}),laundered=await f.r.putCandidate({...candidate,correctionPreviewId:null,inputSnapshotId:derivedInput.inputSnapshotId});
+    expect(await f.r.commitConfirmation(scopeId,{candidateId:laundered.candidateId,expectedRevision:1,correctionReason:'세탁 시도',idempotencyKey:randomUUID()})).toMatchObject({kind:'not-ready',reason:'MANUAL_ENTRY_REQUIRED'});
+    expect(await f.r.commitCorrection(scopeId,{previewId,previewHash:preview.previewHash,expectedBaseRevision:1,idempotencyKey:randomUUID(),reason:'합성 정정'})).toMatchObject({kind:'confirmed',revision:2});expect(await f.r.commitManualEntry(scopeId,f.confirm)).toEqual(confirmed);
+  });
+});
+
+it.each(['create','save'] as const)('late %s receipt failure preserves draft body/revision and command ledger',async action=>{
+  const r=open(),w=manualWrite(),draft=action==='save'?await r.createManualEntry(w):null,before=manualCounts(r),db=new DatabaseSync(r.databasePath);
+  db.exec(`CREATE TRIGGER fail_manual_write BEFORE INSERT ON manual_entry_command WHEN NEW.action='${action}' BEGIN SELECT RAISE(ABORT,'SYNTHETIC_WRITE_FAIL'); END`);db.close();
+  if(action==='create')await expect(r.createManualEntry(w)).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+  else await expect(r.saveManualEntry(w.scopeId,{draftId:draft!.draftId,expectedDraftRevision:1,idempotencyKey:randomUUID(),content:{...draft!.content,note:'changed'}})).rejects.toMatchObject({code:'STORAGE_UNAVAILABLE'});
+  expect(manualCounts(r)).toEqual(before);if(draft)expect(await r.getManualEntry(w.scopeId,draft.draftId)).toEqual(draft);
+});
+
+async function manualTimedFixture() {
+  const savedAt='2026-10-23T09:00:00.000Z',preparedAt='2026-10-23T09:05:00.000Z',write=manualWrite();
+  Object.assign(write.draft,{createdAt:savedAt,savedAt});
+  return {...await manualFixture(open(undefined,{now:()=>savedAt}),write,preparedAt),savedAt,preparedAt};
+}
+it('raw saved at 09:00 and prepared at 09:05 preserve separate receipt and derived creation clocks',async()=>{
+  const f=await manualTimedFixture();expect(f.draft.savedAt).toBe(f.savedAt);expect(await f.r.stageManualEntry(f.stage)).toEqual(f.stage.review);
+  for(const evidence of f.stage.evidence){const stored=await f.r.getEvidence(f.write.scopeId,evidence.captureId);expect(stored?.receivedAt).toBe(f.savedAt);expect(stored?.derivation).toMatchObject({kind:'manual-input',recordedAt:f.savedAt});}
+  const input=await f.r.getInputSnapshot(f.write.scopeId,f.stage.input.inputSnapshotId);expect(input?.createdAt).toBe(f.preparedAt);expect(input?.derivation).toMatchObject({recordedAt:f.savedAt});expect(decodeEvidence( JSON.stringify(input!.sourceMetadata))).toMatchObject({recordedAt:f.savedAt});
+  for(const calculation of f.stage.calculations){const stored=await f.r.getCalculation(f.write.scopeId,calculation.calculationId);expect(stored?.createdAt).toBe(f.preparedAt);expect(stored?.evaluatedAt).toBe(f.preparedAt);expect(stored?.evaluationClockTrace).toEqual([f.preparedAt]);expect(stored?.derivation).toMatchObject({recordedAt:f.savedAt});}
+  expect((await f.r.getCandidate(f.write.scopeId,f.stage.candidate.candidateId))?.preparedAt).toBe(f.preparedAt);expect((await f.r.getManualEntry(f.write.scopeId,f.draft.draftId))?.savedAt).toBe(f.savedAt);
+});
+it('prepare time cannot be falsely recorded as the raw receipt time',async()=>{
+  const f=await manualTimedFixture(),stage=structuredClone(f.stage),before=manualCounts(f.r);
+  for(const record of [...stage.evidence,stage.input,...stage.calculations])Object.assign(record.derivation,{recordedAt:f.preparedAt});
+  for(const evidence of stage.evidence)Object.assign(evidence,{receivedAt:f.preparedAt});
+  const metadata=decodeEvidence<P.ManualEntrySourceMetadataV1>(JSON.stringify(stage.input.sourceMetadata));Object.assign(stage.input,{sourceMetadata:evidenceToJson({...metadata,recordedAt:f.preparedAt})});
+  await expect(f.r.stageManualEntry(stage)).rejects.toMatchObject({code:'INVALID_DRAFT'});expect(manualCounts(f.r)).toEqual(before);
 });

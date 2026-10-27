@@ -2,11 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync, existsSync, statSync, openSync, closeSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { confirmDecision, validHistorySelectionBasis, HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
+import { confirmDecision, isDerivation, validHistorySelectionBasis, HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
 import { addMonths, parseYearMonth, type YearMonth } from '../../domain/shared/year-month';
 import { HistoryOperationError } from '../../application/report-history/ports';
 import type * as P from '../../application/report-history/ports';
 import { validateDraftContent, isEmptyDraftContent, correctionWorkState, correctionPatchAlreadyApplied, normalizeCorrectionEdits, toCorrectionComparison } from '../../domain/report-history/correction';
+import { createManualEntryCatalog, validateManualEntryContent, normalizeManualEntry, manualEntryRequestHashInput } from '../../domain/report-history/manual-entry';
 import { encodeEvidence, decodeEvidence } from './evidence-codec';
 import { backupWithWake } from './sqlite-backup-wake.mjs';
 export { HISTORY_CALCULATION_VERSION, HISTORY_TEMPLATE_VERSION } from '../../domain/report-history/report-history';
@@ -60,6 +61,20 @@ CREATE TRIGGER immutable_correction_work_command_delete BEFORE DELETE ON correct
 CREATE TRIGGER immutable_correction_resolution_update BEFORE UPDATE ON correction_resolution BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
 CREATE TRIGGER immutable_correction_resolution_delete BEFORE DELETE ON correction_resolution BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
 `;
+const SCHEMA_5 = `
+CREATE TABLE manual_entry_draft(scope_id TEXT NOT NULL REFERENCES workspace_scope,id TEXT NOT NULL,report_cycle TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),current_candidate_id TEXT,confirmation_id TEXT,body TEXT NOT NULL,PRIMARY KEY(scope_id,id),UNIQUE(scope_id,report_cycle),FOREIGN KEY(scope_id,current_candidate_id) REFERENCES report_candidate(scope_id,id),FOREIGN KEY(scope_id,confirmation_id) REFERENCES monthly_confirmation(scope_id,id));
+CREATE TABLE manual_entry_command(scope_id TEXT NOT NULL REFERENCES workspace_scope,key TEXT NOT NULL,draft_id TEXT NOT NULL,action TEXT NOT NULL CHECK(action IN ('create','save','prepare','confirm')),request_hash TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(scope_id,key),FOREIGN KEY(scope_id,draft_id) REFERENCES manual_entry_draft(scope_id,id));
+CREATE TRIGGER immutable_manual_entry_draft_delete BEFORE DELETE ON manual_entry_draft BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_manual_entry_command_update BEFORE UPDATE ON manual_entry_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+CREATE TRIGGER immutable_manual_entry_command_delete BEFORE DELETE ON manual_entry_command BEGIN SELECT RAISE(ABORT,'IMMUTABLE_HISTORY'); END;
+`;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256 = /^[0-9a-f]{64}$/i;
+function exactKeys(value: object, keys: readonly string[]): boolean {return Object.keys(value).length===keys.length && keys.every(key=>Object.hasOwn(value,key));}
+function decodedJson<T>(value: P.JsonValue): T { if(value && typeof value==='object' && !Array.isArray(value) && 'schemaVersion' in value && 'value' in value)return decodeEvidence<T>(JSON.stringify(value));return value as T; }
+function manualInvalid(): never { throw new HistoryOperationError('INVALID_DRAFT'); }
+function manualBinding(draft: P.StoredManualEntryDraft): P.ManualEntryBinding { return {draftId:draft.draftId,draftRevision:draft.draftRevision,rawInputHash:draft.rawInputHash}; }
+function validManualInstant(value: unknown): value is string { return typeof value==='string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString()===value; }
 function v2(value: object): value is P.CorrectionPreviewV2Write { return 'payloadVersion' in value && value.payloadVersion === 2; }
 function previewBasisId(preview: P.StoredCorrectionPreview): string { return v2(preview) ? preview.basisId : preview.exportId; }
 function previewSubmissionId(preview: P.StoredCorrectionPreview): string { return v2(preview) ? preview.submissionId : preview.importId; }
@@ -107,7 +122,7 @@ function correctionAmountsMatch(original: P.StatementSnapshotDto, corrected: P.S
   });
 }
 /** Server adapter. Each public operation is local; no network, calculations or document rendering occurs in a transaction. */
-export class SqliteHistoryRepository implements P.HistoryRepository {
+export class SqliteHistoryRepository implements P.HistoryRepository, P.ManualEntryRepositoryPorts {
   readonly databasePath: string;
   private readonly db: DatabaseSync;
   private readonly now: () => string;
@@ -129,10 +144,10 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     try {
       this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
       const version = Number(this.db.prepare('PRAGMA user_version').get()?.user_version);
-      if (version > 4)
+      if (version > 5)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (options.readOnly) {
-        if (version !== 1 && version !== 2 && version !== 3 && version !== 4)
+        if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5)
           throw Error('UNSUPPORTED_SCHEMA_VERSION');
       }
       else {
@@ -175,6 +190,11 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
           if(this.db.prepare('INSERT INTO schema_migration VALUES(4,?)').run(this.now()).changes!==1)throw Error('MIGRATION_WRITE_FAILED');
           this.db.exec('PRAGMA user_version=4');
         });
+        if (version <= 4) this.transaction(() => {
+          this.db.exec(SCHEMA_5);
+          if(this.db.prepare('INSERT INTO schema_migration VALUES(5,?)').run(this.now()).changes!==1)throw Error('MIGRATION_WRITE_FAILED');
+          this.db.exec('PRAGMA user_version=5');
+        });
         chmodSync(this.databasePath, 0o600);
       }
       if (this.db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok')
@@ -184,6 +204,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (this.db.prepare('SELECT version FROM schema_migration WHERE version=1').get()?.version !== 1)
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 2 && this.db.prepare('SELECT version FROM schema_migration WHERE version=2').get()?.version !== 2)
+        throw Error('UNSUPPORTED_SCHEMA_VERSION');
+      if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 5 && [2,3,4,5].some(version => this.db.prepare('SELECT version FROM schema_migration WHERE version=?').get(version)?.version !== version))
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
       if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 4 && [2,3,4].some(version => this.db.prepare('SELECT version FROM schema_migration WHERE version=?').get(version)?.version !== version))
         throw Error('UNSUPPORTED_SCHEMA_VERSION');
@@ -211,13 +233,16 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   } }
   private scope(scopeId: string): void { if (!scopeId.trim())
     throw Error('INVALID_SCOPE'); this.db.prepare('INSERT OR IGNORE INTO workspace_scope(scope_id) VALUES(?)').run(scopeId); }
-  private read<T>(table: string, scopeId: string, id: string): T | null { if(!this.tableAvailable(table))return null;const row = this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? AND id=?`).get(scopeId, id); if (!row) return null;
+  private read<T>(table: string, scopeId: string, id: string): T | null { if(!this.tableAvailable(table))return null;const row = this.db.prepare(`SELECT * FROM ${table} WHERE scope_id=? AND id=?`).get(scopeId, id); if (!row) return null;
     const value = decodeEvidence<T>(String(row.body));
     this.validatePayload(table, value);
+    if(table==='manual_entry_draft'){const d=value as P.StoredManualEntryDraft;if(d.scopeId!==scopeId||d.draftId!==id||d.reportCycle!==row.report_cycle||d.draftRevision!==row.revision||(d.currentReview?.candidateId??null)!==row.current_candidate_id||d.confirmationId!==row.confirmation_id)manualInvalid();}
     return value; }
   private tableAvailable(table: string): boolean { return Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)); }
   private validatePayload(table: string, value: unknown): void {
     const kinds: Record<string,string> = {workbook_export:'correction-basis',workbook_import:'correction-submission',correction_preview:'correction-preview'};
+    if (table === 'manual_entry_draft') { this.validateManualDraft(value); return; }
+    if (['source_capture','report_input_snapshot','calculation_record'].includes(table) && !isDerivation((value as {derivation?:unknown})?.derivation)) throw new HistoryOperationError('INVALID_DRAFT');
     if (!kinds[table]) return;
     if (!value || typeof value !== 'object') throw new HistoryOperationError('UNSUPPORTED_VERSION');
     const body = value as Record<string,unknown>;
@@ -228,7 +253,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   private all<T>(table: string, scopeId: string): T[] { if(!this.tableAvailable(table))return [];return this.db.prepare(`SELECT body FROM ${table} WHERE scope_id=? ORDER BY rowid`).all(scopeId).map(row => { const value = decodeEvidence<T>(String(row.body)); this.validatePayload(table,value); return value; }); }
   private require<T>(table: string, scopeId: string, id: string): T { const value = this.read<T>(table, scopeId, id); if (!value)
     throw Error('NOT_FOUND_OR_WRONG_SCOPE'); return value; }
-  private parent(table: string, scopeId: string, derivation: P.Derivation): void { if (derivation.kind === 'manual-correction') {
+  private parent(table: string, scopeId: string, derivation: P.Derivation): void { if (!isDerivation(derivation)) throw Error('INVALID_DERIVATION'); if (derivation.kind === 'manual-correction') {
     this.require(table, scopeId, derivation.parentId);
     const imported = this.require<P.StoredWorkbookImport | P.StoredCorrectionSubmission>('workbook_import', scopeId, derivation.importId);
     if ((!('recordKind' in imported) && imported.status !== 'validated') || imported.patchHash !== derivation.patchHash) throw Error('INVALID_DERIVATION_IMPORT');
@@ -236,6 +261,169 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     if (!derivation.importId || !derivation.patchHash)
       throw Error('INVALID_DERIVATION');
   } }
+  private keyInLedger(scopeId: string, key: string, tables: readonly string[]): boolean {
+    return tables.some(table=>this.tableAvailable(table) && Boolean(this.db.prepare(`SELECT 1 FROM ${table} WHERE scope_id=? AND key=?`).get(scopeId,key)));
+  }
+  private validateManualDraft(value: unknown): asserts value is P.StoredManualEntryDraft {
+    if(!value || typeof value!=='object')throw new HistoryOperationError('UNSUPPORTED_VERSION');
+    const d=value as P.StoredManualEntryDraft;
+    if(d.recordKind!=='manual-entry-draft'||d.payloadVersion!==1)throw new HistoryOperationError('UNSUPPORTED_VERSION');
+    try {
+      if(!exactKeys(d,['recordKind','payloadVersion','scopeId','draftId','reportCycle','draftRevision','catalog','content','rawInputHash','createdAt','savedAt','currentReview','confirmationId'])||!UUID.test(d.draftId)||typeof d.scopeId!=='string'||!d.scopeId.trim()||!Number.isSafeInteger(d.draftRevision)||d.draftRevision<1||!SHA256.test(d.rawInputHash)||!validManualInstant(d.createdAt)||!validManualInstant(d.savedAt)||d.savedAt<d.createdAt)manualInvalid();
+      const catalog=createManualEntryCatalog(d.catalog.basis.reportTitleMonth,d.catalog.economic.map(({key,name,statistic,items})=>({key,name,statistic,items})));
+      if(!equal(catalog,d.catalog)||d.reportCycle!==catalog.reportCycle||validateManualEntryContent(catalog,d.content).kind!=='valid'||hashHistoryValue(d.content)!==d.rawInputHash)manualInvalid();
+      if(d.confirmationId!==null&&!UUID.test(d.confirmationId))manualInvalid();
+      if(d.currentReview!==null) {
+        const r=d.currentReview;
+        if(!exactKeys(r,['draftId','draftRevision','rawInputHash','candidateId','documentHash','preparedAt','evaluatedAt','dependencyHeads'])||!equal(manualBinding(d),{draftId:r.draftId,draftRevision:r.draftRevision,rawInputHash:r.rawInputHash})||!UUID.test(r.candidateId)||!SHA256.test(r.documentHash)||!validManualInstant(r.preparedAt)||!validManualInstant(r.evaluatedAt)||!Array.isArray(r.dependencyHeads))manualInvalid();
+        const cycles=new Set<string>();for(const token of r.dependencyHeads){parseYearMonth(token.reportCycle);if(cycles.has(token.reportCycle)||!Number.isSafeInteger(token.revision)||token.revision<0||(token.revision===0?token.confirmationId!==null:typeof token.confirmationId!=='string'||!token.confirmationId))manualInvalid();cycles.add(token.reportCycle);}
+      }
+    } catch(error) { if(error instanceof HistoryOperationError)throw error;manualInvalid(); }
+  }
+  private manualDraft(scopeId: string, draftId: string): P.StoredManualEntryDraft {
+    const draft=this.read<P.StoredManualEntryDraft>('manual_entry_draft',scopeId,draftId);
+    if(!draft)throw new HistoryOperationError('NOT_FOUND');
+    if(draft.scopeId!==scopeId||draft.draftId!==draftId)manualInvalid();return draft;
+  }
+  private manualReceipt(scopeId: string, key: string): P.ManualEntryCommandReceipt | null {
+    if(!this.tableAvailable('manual_entry_command'))return null;
+    const row=this.db.prepare('SELECT * FROM manual_entry_command WHERE scope_id=? AND key=?').get(scopeId,key);if(!row)return null;
+    const value=decodeEvidence<P.ManualEntryCommandReceipt>(String(row.body));
+    if(value?.recordKind!=='manual-entry-command'||value.payloadVersion!==1)throw new HistoryOperationError('UNSUPPORTED_VERSION');
+    if(!exactKeys(value,['recordKind','payloadVersion','scopeId','key','draftId','action','requestHash','acknowledgement'])||value.scopeId!==scopeId||value.key!==key||value.draftId!==row.draft_id||value.action!==row.action||value.requestHash!==row.request_hash||!SHA256.test(value.requestHash)||!UUID.test(value.draftId)||!['create','save','prepare','confirm'].includes(value.action)||!value.acknowledgement||typeof value.acknowledgement!=='object')manualInvalid();
+    if(value.action==='create'||value.action==='save')this.validateManualDraft(value.acknowledgement);
+    const ack=value.acknowledgement as unknown as Record<string,unknown>;
+    if(value.action==='prepare' && (!exactKeys(ack,['draftId','draftRevision','rawInputHash','candidateId','documentHash','preparedAt','evaluatedAt','dependencyHeads'])||ack.draftId!==value.draftId||!isDerivation({kind:'manual-input',draftId:ack.draftId,draftRevision:ack.draftRevision,rawInputHash:ack.rawInputHash,recordedAt:ack.preparedAt})||typeof ack.candidateId!=='string'||!UUID.test(ack.candidateId)||typeof ack.documentHash!=='string'||!SHA256.test(ack.documentHash)||!validManualInstant(ack.evaluatedAt)||!Array.isArray(ack.dependencyHeads)))manualInvalid();
+    if(value.action==='confirm' && (!exactKeys(ack,['kind','confirmationId','revision'])||!['confirmed','already-confirmed'].includes(String(ack.kind))||typeof ack.confirmationId!=='string'||!UUID.test(ack.confirmationId)||ack.revision!==1))manualInvalid();
+    return value;
+  }
+  private manualCommand(scopeId: string, key: string, action: P.ManualEntryCommandReceipt['action'], requestHash: string): P.ManualEntryCommandReceipt | null {
+    if(typeof key!=='string'||!key.trim()||key.length>2000||!SHA256.test(requestHash))manualInvalid();
+    const old=this.manualReceipt(scopeId,key);
+    if(old){if(old.action!==action||old.requestHash!==requestHash)throw new HistoryOperationError('IDEMPOTENCY_KEY_REUSED');return old;}
+    if(this.keyInLedger(scopeId,key,['idempotent_command','correction_command','correction_work_command']))throw new HistoryOperationError('IDEMPOTENCY_KEY_REUSED');
+    return null;
+  }
+  private acknowledgeManual(scopeId: string, draftId: string, key: string, action: P.ManualEntryCommandReceipt['action'], requestHash: string, acknowledgement: unknown): void {
+    const receipt:P.ManualEntryCommandReceipt={recordKind:'manual-entry-command',payloadVersion:1,scopeId,key,draftId,action,requestHash,acknowledgement:decodeEvidence<P.JsonValue>(encodeEvidence(acknowledgement))};
+    if(this.db.prepare('INSERT INTO manual_entry_command VALUES(?,?,?,?,?,?)').run(scopeId,key,draftId,action,requestHash,encodeEvidence(receipt)).changes!==1)throw Error('COMMAND_WRITE_FAILED');
+  }
+  private updateManualDraft(draft: P.StoredManualEntryDraft, expectedRevision: number): void {
+    this.validateManualDraft(draft);
+    if(this.db.prepare('UPDATE manual_entry_draft SET revision=?,current_candidate_id=?,confirmation_id=?,body=? WHERE scope_id=? AND id=? AND revision=?').run(draft.draftRevision,draft.currentReview?.candidateId??null,draft.confirmationId,encodeEvidence(draft),draft.scopeId,draft.draftId,expectedRevision).changes!==1)throw Error('DRAFT_WRITE_FAILED');
+  }
+  private assertManualEditable(draft: P.StoredManualEntryDraft, revision: number): void {
+    if(draft.confirmationId)throw new HistoryOperationError('WORK_CLOSED');
+    if(!Number.isSafeInteger(revision)||draft.draftRevision!==revision)throw new HistoryOperationError('STALE_DRAFT');
+    if(this.head(draft.scopeId,draft.reportCycle).revision!==0)throw new HistoryOperationError('REPORT_ALREADY_EXISTS');
+  }
+  async getManualEntry(scopeId: string, draftId: string): Promise<P.StoredManualEntryDraft|null> { const d=this.read<P.StoredManualEntryDraft>('manual_entry_draft',scopeId,draftId);if(d&&(d.scopeId!==scopeId||d.draftId!==draftId))manualInvalid();return d; }
+  async getManualEntryCommand(scopeId: string, key: string): Promise<P.ManualEntryCommandReceipt|null> {return this.manualReceipt(scopeId,key);}
+  async createManualEntry(input: P.CreateManualEntryWrite): Promise<P.StoredManualEntryDraft> {
+    return this.writeWork(()=>{
+      const {scopeId,command,draft}=input,requestHash=hashHistoryValue(manualEntryRequestHashInput('create',command));
+      const old=this.manualCommand(scopeId,command.idempotencyKey,'create',requestHash);if(old)return old.acknowledgement as unknown as P.StoredManualEntryDraft;
+      if(input.requestHash!==requestHash)manualInvalid();
+      parseYearMonth(command.reportTitleMonth);const reportCycle=addMonths(command.reportTitleMonth,1);
+      if(this.head(scopeId,reportCycle).revision!==0)throw new HistoryOperationError('REPORT_ALREADY_EXISTS');
+      const pending=this.db.prepare('SELECT id FROM manual_entry_draft WHERE scope_id=? AND report_cycle=?').get(scopeId,reportCycle);
+      if(pending){const existing=this.manualDraft(scopeId,String(pending.id));this.acknowledgeManual(scopeId,existing.draftId,command.idempotencyKey,'create',requestHash,existing);return existing;}
+      this.validateManualDraft(draft);
+      if(draft.scopeId!==scopeId||draft.reportCycle!==reportCycle||draft.catalog.basis.reportTitleMonth!==command.reportTitleMonth||draft.draftRevision!==1||draft.currentReview!==null||draft.confirmationId!==null||draft.createdAt!==draft.savedAt)manualInvalid();
+      this.scope(scopeId);
+      if(this.db.prepare('INSERT INTO manual_entry_draft VALUES(?,?,?,?,NULL,NULL,?)').run(scopeId,draft.draftId,reportCycle,1,encodeEvidence(draft)).changes!==1)throw Error('DRAFT_WRITE_FAILED');
+      this.acknowledgeManual(scopeId,draft.draftId,command.idempotencyKey,'create',requestHash,draft);return draft;
+    });
+  }
+  async saveManualEntry(scopeId: string, cmd: P.SaveManualEntryCommand): Promise<P.StoredManualEntryDraft> {
+    return this.writeWork(()=>{
+      const requestHash=hashHistoryValue(manualEntryRequestHashInput('save',cmd)),old=this.manualCommand(scopeId,cmd.idempotencyKey,'save',requestHash);if(old)return old.acknowledgement as unknown as P.StoredManualEntryDraft;
+      const draft=this.manualDraft(scopeId,cmd.draftId);this.assertManualEditable(draft,cmd.expectedDraftRevision);
+      if(validateManualEntryContent(draft.catalog,cmd.content).kind!=='valid')manualInvalid();
+      const changed=!equal(cmd.content,draft.content),saved:P.StoredManualEntryDraft=changed?{...draft,draftRevision:draft.draftRevision+1,content:cmd.content,rawInputHash:hashHistoryValue(cmd.content),savedAt:this.now(),currentReview:null}:draft;
+      if(changed)this.updateManualDraft(saved,draft.draftRevision);
+      this.acknowledgeManual(scopeId,draft.draftId,cmd.idempotencyKey,'save',requestHash,saved);return saved;
+    });
+  }
+  async listManualEntries(scopeId: string, query: P.ManualEntryListQuery): Promise<{items:readonly P.ManualEntrySummary[];nextCursor:string|null}> {
+    if(query.limit!==12)throw new HistoryOperationError('LIMIT_EXCEEDED');
+    type Cursor={scopeId:string;ceiling:number;last:[string,string]};let cursor:Cursor|null=null;
+    try{if(query.cursor){cursor=JSON.parse(Buffer.from(query.cursor,'base64url').toString());if(!cursor||cursor.scopeId!==scopeId||!Number.isSafeInteger(cursor.ceiling)||cursor.ceiling<0||!Array.isArray(cursor.last)||cursor.last.length!==2||!validManualInstant(cursor.last[0])||!UUID.test(cursor.last[1]))manualInvalid();}}catch{manualInvalid();}
+    if(!this.tableAvailable('manual_entry_draft'))return {items:[],nextCursor:null};
+    const ceiling=cursor?.ceiling??Number(this.db.prepare('SELECT coalesce(max(rowid),0) AS n FROM manual_entry_draft WHERE scope_id=?').get(scopeId)?.n);
+    const compare=(a:readonly string[],b:readonly string[])=>a[0]<b[0]?-1:a[0]>b[0]?1:a[1]<b[1]?-1:a[1]>b[1]?1:0;
+    const drafts=this.db.prepare('SELECT body FROM manual_entry_draft WHERE scope_id=? AND confirmation_id IS NULL AND rowid<=?').all(scopeId,ceiling).map(row=>{const d=decodeEvidence<P.StoredManualEntryDraft>(String(row.body));this.validateManualDraft(d);return this.manualDraft(scopeId,d.draftId);}).filter(d=>!cursor||compare([d.createdAt,d.draftId],cursor.last)<0).sort((a,b)=>compare([b.createdAt,b.draftId],[a.createdAt,a.draftId]));
+    const selected=drafts.slice(0,12),items=selected.map(d=>{const head=this.head(scopeId,d.reportCycle),state:P.ManualEntrySummary['state']=head.revision?'month-conflict':d.currentReview?d.currentReview.dependencyHeads.some(token=>!equal(this.head(scopeId,token.reportCycle),token))?'stale-review':'review-ready':'editing';return {draftId:d.draftId,reportCycle:d.reportCycle,reportTitleMonth:d.catalog.basis.reportTitleMonth,draftRevision:d.draftRevision,savedAt:d.savedAt,state,...(head.confirmationId?{existingConfirmation:{confirmationId:head.confirmationId,revision:head.revision}}:{})};});
+    const nextCursor=drafts.length>12?Buffer.from(JSON.stringify({scopeId,ceiling,last:[selected[11].createdAt,selected[11].draftId]})).toString('base64url'):null;return {items,nextCursor};
+  }
+  private manualRoot(table: string, scopeId: string, id: string): boolean {
+    const seen=new Set<string>();let current:string|null=id;
+    while(current){if(seen.has(current))manualInvalid();seen.add(current);const value: {derivation:P.Derivation}|null=this.read(table,scopeId,current);if(!value)return false;if(value.derivation.kind==='manual-input')return true;current=value.derivation.kind==='manual-correction'?value.derivation.parentId:null;}
+    return false;
+  }
+  private candidateHasManualRoot(candidate: P.CandidateWrite): boolean {
+    if(candidate.manualEntry||this.manualRoot('report_input_snapshot',candidate.scopeId,candidate.inputSnapshotId))return true;
+    return Object.values(candidate.calculationIds).some(id=>{if(this.manualRoot('calculation_record',candidate.scopeId,id))return true;const calculation=this.read<P.StoredCalculation>('calculation_record',candidate.scopeId,id);return calculation?.captureIds.some(captureId=>this.manualRoot('source_capture',candidate.scopeId,captureId))??false;});
+  }
+  private validateManualCandidate(candidate: P.CandidateWrite): void {
+    const snapshot=this.require<P.StoredInputSnapshot>('report_input_snapshot',candidate.scopeId,candidate.inputSnapshotId),calculations=Object.values(candidate.calculationIds).map(id=>this.require<P.StoredCalculation>('calculation_record',candidate.scopeId,id));
+    const direct=[snapshot,...calculations].filter(v=>v.derivation.kind==='manual-input');
+    if(!direct.length){if(candidate.manualEntry)manualInvalid();return;}
+    // Valid correction previews can retain an untouched manual-input snapshot/calculation.
+    if(candidate.correctionPreviewId!==null){if(candidate.manualEntry)manualInvalid();return;}
+    if(!candidate.manualEntry||direct.length!==3)manualInvalid();
+    const draft=this.manualDraft(candidate.scopeId,candidate.manualEntry.draftId),binding=manualBinding(draft);this.assertManualEditable(draft,candidate.manualEntry.draftRevision);
+    if(!equal(candidate.manualEntry,binding)||!equal(candidate.basis,draft.catalog.basis)||candidate.document.contentHash!==hashHistoryValue(candidate.document.json)||candidate.inputHash!==hashHistoryValue(snapshot.statements))manualInvalid();
+    for(const value of direct){const d=value.derivation;if(d.kind!=='manual-input'||!equal({draftId:d.draftId,draftRevision:d.draftRevision,rawInputHash:d.rawInputHash},binding))manualInvalid();}
+  }
+  async stageManualEntry(input: P.ManualEntryStageWrite): Promise<P.ManualEntryReviewRef> {
+    return this.writeWork(()=>{
+      const {scopeId,candidate,review}=input,command={draftId:input.draft.draftId,expectedDraftRevision:input.draft.draftRevision,idempotencyKey:input.command.idempotencyKey},requestHash=hashHistoryValue(manualEntryRequestHashInput('prepare',command));
+      const old=this.manualCommand(scopeId,command.idempotencyKey,'prepare',requestHash);if(old)return old.acknowledgement as unknown as P.ManualEntryReviewRef;
+      if(input.command.requestHash!==requestHash)manualInvalid();
+      const draft=this.manualDraft(scopeId,input.draft.draftId);this.assertManualEditable(draft,input.draft.draftRevision);
+      if(!equal(input.draft,manualBinding(draft))||!equal(input.expectedHead,{reportCycle:draft.reportCycle,confirmationId:null,revision:0}))manualInvalid();
+      if(draft.currentReview && !draft.currentReview.dependencyHeads.some(token=>!equal(this.head(scopeId,token.reportCycle),token))){this.acknowledgeManual(scopeId,draft.draftId,command.idempotencyKey,'prepare',requestHash,draft.currentReview);return draft.currentReview;}
+      const normalized=normalizeManualEntry(draft.catalog,draft.content);if(normalized.kind!=='ready')manualInvalid();
+      const binding=manualBinding(draft),records=[...input.evidence,input.input,...input.calculations];
+      if(input.calculations.length!==2||new Set(input.calculations.map(c=>c.indicator)).size!==2||new Set(input.calculations.map(c=>c.calculationId)).size!==2||records.some(r=>r.scopeId!==scopeId)||candidate.scopeId!==scopeId||input.selection.scopeId!==scopeId||!UUID.test(candidate.candidateId)||candidate.correctionPreviewId!==null||!equal(candidate.manualEntry,binding)||!equal(candidate.basis,draft.catalog.basis)||candidate.calculationVersion!==draft.catalog.calculationVersion||candidate.document.templateVersion!==draft.catalog.templateVersion||candidate.inputSnapshotId!==input.input.inputSnapshotId||!equal(input.input.statements,normalized.statements)||hashHistoryValue(input.input.statements)!==input.input.inputHash||candidate.inputHash!==input.input.inputHash||candidate.historySelectionId!==input.selection.historySelectionId||!equal({draftId:review.draftId,draftRevision:review.draftRevision,rawInputHash:review.rawInputHash},binding)||review.candidateId!==candidate.candidateId||review.documentHash!==candidate.document.contentHash||review.preparedAt!==candidate.preparedAt||candidate.document.contentHash!==hashHistoryValue(candidate.document.json)||!validManualInstant(review.preparedAt)||!validManualInstant(review.evaluatedAt)||!validManualInstant(candidate.authoredAt))manualInvalid();
+      for(const record of records){const d=record.derivation;if(!isDerivation(d)||d.kind!=='manual-input'||!equal({draftId:d.draftId,draftRevision:d.draftRevision,rawInputHash:d.rawInputHash},binding)||d.recordedAt!==draft.savedAt)manualInvalid();}
+      const metadata=decodedJson<P.ManualEntrySourceMetadataV1>(input.input.sourceMetadata);
+      if(!metadata||!Array.isArray(metadata.statementSources)||metadata.statementSources.length!==normalized.statements.length||metadata.statementSources.some((s,index)=>!equal(s.asOf,normalized.statements[index].asOf)||s.round!==`${s.asOf.year}/${String(s.asOf.month).padStart(2,'0')}`||typeof s.label!=='string'||!s.label.trim())||metadata.kind!=='manual-input'||metadata.payloadVersion!==1||!equal({draftId:metadata.draftId,draftRevision:metadata.draftRevision,rawInputHash:metadata.rawInputHash},binding)||metadata.recordedAt!==draft.savedAt||metadata.economicSource!=='user-entered-published-series'||metadata.fundingSource!=='user-entered-published-averages'||metadata.note!==draft.content.note.trim())manualInvalid();
+      this.checkHeads(scopeId,input.expectedHead,review.dependencyHeads);
+      if(!UUID.test(input.selection.historySelectionId)||!validManualInstant(input.selection.cutoff)||input.input.createdAt!==candidate.preparedAt||input.evidence.some(e=>e.receivedAt!==draft.savedAt))manualInvalid();
+      const selection=this.selectHistory({scopeId,basis:draft.catalog.basis,calculationVersion:draft.catalog.calculationVersion,asOf:input.selection.cutoff,selectedBackfillBatchId:input.selection.selectedBackfillBatchId});
+      if(!equal({...selection,historySelectionId:input.selection.historySelectionId},input.selection)||!equal(review.dependencyHeads,input.selection.headRevisions))manualInvalid();
+      if(input.evidence.length!==2||new Set(input.evidence.map(e=>e.sourceKind)).size!==2||new Set(input.evidence.map(e=>e.captureId)).size!==2)manualInvalid();
+      for(const evidence of input.evidence){if(!UUID.test(evidence.captureId)||evidence.contentHash!==hashHistoryValue(decodedJson(evidence.payloadJson)))manualInvalid();this.saveEvidence(evidence,evidence.captureId);}
+      if(!UUID.test(input.input.inputSnapshotId))manualInvalid();this.saveInputSnapshot(input.input,input.input.inputSnapshotId);
+      for(const calculation of input.calculations){const indicator=calculation.indicator,context=decodedJson<{request?:Record<string,unknown>;input?:unknown}>(calculation.requestContext);if(!UUID.test(calculation.calculationId)||calculation.origin!=='live'||calculation.batchId||calculation.calculationId!==candidate.calculationIds[indicator]||calculation.inputHash!==candidate.calculationInputHashes[indicator]||calculation.evaluatedAt!==review.evaluatedAt||calculation.createdAt!==candidate.preparedAt||calculation.captureIds.length!==1||calculation.captureIds[0]!==input.evidence.find(e=>e.sourceKind===(indicator==='construction'?'ecos':'kofia'))?.captureId||!context?.request||context.input===undefined||hashHistoryValue(context.input)!==calculation.inputHash||(indicator==='construction'?(context.request.reportMonth!==draft.reportCycle||(context.request.baseMonth??draft.catalog.basis.constructionBaseMonth)!==draft.catalog.basis.constructionBaseMonth):context.request.judgedMonth!==draft.catalog.basis.fundingJudgedMonth))manualInvalid();this.saveCalculation(calculation,calculation.calculationId);}
+      this.saveSelection(input.selection);this.saveCandidate(candidate,candidate.candidateId);
+      this.updateManualDraft({...draft,currentReview:review},draft.draftRevision);
+      this.acknowledgeManual(scopeId,draft.draftId,command.idempotencyKey,'prepare',requestHash,review);return review;
+    });
+  }
+  async commitManualEntry(scopeId: string, cmd: P.ConfirmManualEntryCommand): Promise<P.ConfirmationResult> {
+    return this.writeWork(()=>{
+      const requestHash=hashHistoryValue(manualEntryRequestHashInput('confirm',cmd)),old=this.manualCommand(scopeId,cmd.idempotencyKey,'confirm',requestHash);if(old)return old.acknowledgement as unknown as P.ConfirmationResult;
+      const draft=this.manualDraft(scopeId,cmd.draftId),review=draft.currentReview;
+      if(cmd.expectedRevision!==0)manualInvalid();
+      if(draft.confirmationId){const confirmed=this.require<P.StoredConfirmation>('monthly_confirmation',scopeId,draft.confirmationId);if(!review||cmd.expectedDraftRevision!==draft.draftRevision||cmd.candidateId!==review.candidateId||cmd.documentHash!==review.documentHash)throw new HistoryOperationError('STALE_DRAFT');const result:P.ConfirmationResult={kind:'already-confirmed',confirmationId:confirmed.confirmationId,revision:confirmed.revision};this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId,cmd.idempotencyKey,cmd.candidateId,confirmed.confirmationId);this.acknowledgeManual(scopeId,draft.draftId,cmd.idempotencyKey,'confirm',requestHash,result);return result;}
+      this.assertManualEditable(draft,cmd.expectedDraftRevision);
+      if(!review||cmd.candidateId!==review.candidateId||cmd.documentHash!==review.documentHash||!equal({draftId:review.draftId,draftRevision:review.draftRevision,rawInputHash:review.rawInputHash},manualBinding(draft)))throw new HistoryOperationError('STALE_DRAFT');
+      this.checkHeads(scopeId,{reportCycle:draft.reportCycle,confirmationId:null,revision:0},review.dependencyHeads);
+      const candidate=this.require<P.StoredCandidate>('report_candidate',scopeId,cmd.candidateId);this.validateCandidate(candidate);
+      if(!equal(candidate.manualEntry,manualBinding(draft))||candidate.documentHash!==cmd.documentHash||candidate.document.contentHash!==cmd.documentHash||candidate.preparedAt!==review.preparedAt)manualInvalid();
+      const decision=confirmDecision(candidate.basis,0,cmd.expectedRevision);if(decision.kind!=='create'||decision.revision!==1)manualInvalid();
+      const confirmationId=this.nextId(),confirmedAt=this.now();if(!UUID.test(confirmationId)||!validManualInstant(confirmedAt))manualInvalid();
+      const record:P.StoredConfirmation={confirmationId,scopeId,reportCycle:draft.reportCycle,revision:1,confirmedAt,candidateId:candidate.candidateId,previousConfirmationId:null,basis:candidate.basis,canonicalCurrentCalculationIds:candidate.calculationIds,historySelectionId:candidate.historySelectionId,document:candidate.document};
+      if(this.db.prepare('INSERT INTO monthly_confirmation VALUES(?,?,?,?,?,?,?,?)').run(scopeId,confirmationId,record.reportCycle,1,candidate.candidateId,null,confirmedAt,encodeEvidence(record)).changes!==1)throw Error('CONFIRMATION_WRITE_FAILED');
+      if(this.db.prepare('INSERT INTO monthly_head VALUES(?,?,?,?)').run(scopeId,record.reportCycle,confirmationId,1).changes!==1)throw Error('HEAD_WRITE_FAILED');
+      if(this.db.prepare('INSERT INTO idempotent_command VALUES(?,?,?,?)').run(scopeId,cmd.idempotencyKey,candidate.candidateId,confirmationId).changes!==1)throw Error('COMMAND_WRITE_FAILED');
+      this.updateManualDraft({...draft,confirmationId},draft.draftRevision);
+      const result:P.ConfirmationResult={kind:'confirmed',confirmationId,revision:1};this.acknowledgeManual(scopeId,draft.draftId,cmd.idempotencyKey,'confirm',requestHash,result);return result;
+    });
+  }
   async defaultScopeId(): Promise<string> { const row = this.db.prepare('SELECT scope_id FROM workspace_scope WHERE is_default=1').get(); if (!row)
     throw Error('MISSING_DEFAULT_SCOPE'); return String(row.scope_id); }
   private saveEvidence(input: P.EvidenceWrite, captureId = this.nextId()): {
@@ -335,6 +523,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     if (input.document.schemaVersion !== 1 || !input.document.contentHash)
       throw Error('INVALID_DOCUMENT');
     encodeEvidence(input.document);
+    this.validateManualCandidate(input);
   }
   async putCandidate(input: P.CandidateWrite): Promise<{ candidateId: string; documentHash: string }> { return this.transaction(() => this.saveCandidate(input)); }
   private saveCandidate(input: P.CandidateWrite, candidateId = this.nextId()): { candidateId: string; documentHash: string } {
@@ -353,6 +542,8 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
       if (!cmd.idempotencyKey.trim())
         return { kind: 'not-ready', reason: 'IDEMPOTENCY_KEY_REQUIRED' };
       const candidate = this.read<P.StoredCandidate>('report_candidate', scopeId, cmd.candidateId);
+      if (candidate && this.candidateHasManualRoot(candidate)) return {kind:'not-ready',reason:'MANUAL_ENTRY_REQUIRED'};
+      if (this.keyInLedger(scopeId,cmd.idempotencyKey,['manual_entry_command','correction_work_command','correction_command'])) return {kind:'conflict',reason:'IDEMPOTENCY_KEY_REUSED'};
       if (candidate?.correctionPreviewId !== null && candidate?.correctionPreviewId !== undefined) return { kind: 'not-ready', reason: 'CORRECTION_PREVIEW_REQUIRED' };
       const previousCommand = this.db.prepare('SELECT candidate_id,confirmation_id FROM idempotent_command WHERE scope_id=? AND key=?').get(scopeId, cmd.idempotencyKey);
       if (previousCommand) {
@@ -394,7 +585,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         const confirmed = this.require<P.StoredConfirmation>('monthly_confirmation', scopeId, String(used.confirmation_id));
         return { kind: 'already-confirmed', confirmationId: confirmed.confirmationId, revision: confirmed.revision };
       }
-      if (this.db.prepare('SELECT 1 FROM idempotent_command WHERE scope_id=? AND key=?').get(scopeId, cmd.idempotencyKey))
+      if (this.keyInLedger(scopeId,cmd.idempotencyKey,['idempotent_command','manual_entry_command','correction_work_command']))
         return { kind: 'conflict', reason: 'IDEMPOTENCY_KEY_REUSED' };
       const preview = this.read<P.StoredCorrectionPreview>('correction_preview', scopeId, cmd.previewId);
       if (!preview) throw new HistoryOperationError('NOT_FOUND');
@@ -589,7 +780,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
   private command(scopeId: string, key: string, action: P.CorrectionWorkCommand['action'], requestHash: string): P.CorrectionWorkCommand | null {
     if (!key.trim() || key.length > 2000) throw new HistoryOperationError('INVALID_DRAFT');
     const row = this.db.prepare('SELECT body FROM correction_work_command WHERE scope_id=? AND key=?').get(scopeId,key);
-    if (!row) return null;
+    if (!row) { if(this.keyInLedger(scopeId,key,['manual_entry_command','idempotent_command','correction_command']))throw new HistoryOperationError('IDEMPOTENCY_KEY_REUSED'); return null; }
     const record = decodeEvidence<P.CorrectionWorkCommand>(String(row.body));
     if (record.action !== action || record.requestHash !== requestHash) throw new HistoryOperationError('IDEMPOTENCY_KEY_REUSED');
     return record;
@@ -797,9 +988,14 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
     }
     return this.all<P.StoredCalculation>('calculation_record', query.scopeId).filter(c => c.indicator === query.indicator && c.effectiveMonth >= query.from && c.effectiveMonth <= query.to && c.calculationVersion === query.calculationVersion && instant(c.createdAt) <= cutoff && (c.origin === 'live' || (c.batchId === query.selectedBackfillBatchId && adopted.has(c.calculationId))));
   }
+  async planHistorySelection(query: P.HistorySelectionQuery): Promise<P.ExternalHistorySelection> { return this.selectHistory(query); }
   async createHistorySelection(query: P.HistorySelectionQuery): Promise<P.ExternalHistorySelection> {
-    return this.transaction(() => {
-      this.scope(query.scopeId);
+    return this.transaction(() => { this.scope(query.scopeId); const selection=this.selectHistory(query); this.saveSelection(selection); return selection; });
+  }
+  private saveSelection(selection: P.ExternalHistorySelection): void {
+    if(this.db.prepare('INSERT INTO history_selection VALUES(?,?,?)').run(selection.scopeId,selection.historySelectionId,encodeEvidence(selection)).changes!==1)throw Error('SELECTION_WRITE_FAILED');
+  }
+  private selectHistory(query: P.HistorySelectionQuery): P.ExternalHistorySelection {
       const cutoff = instant(query.asOf);
       if (!validHistorySelectionBasis(query.basis))
         throw Error('INVALID_BASIS');
@@ -814,7 +1010,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
           heads.set(c.reportCycle, c);
       }
       const chosen = new Map<string, P.StoredCalculation>();
-      const use = (calculation: P.StoredCalculation, replace: boolean) => {
+      const chooseCalculation = (calculation: P.StoredCalculation, replace: boolean) => {
         const anchor = calculation.indicator === 'construction'
           ? query.basis.constructionBaseMonth
           : query.basis.fundingObservedMonth;
@@ -839,13 +1035,13 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
             const c = this.require<P.StoredCalculation>('calculation_record', query.scopeId, id);
             if (c.calculationVersion !== query.calculationVersion)
               throw Error('BATCH_VERSION_MISMATCH');
-            use(c, false);
+            chooseCalculation(c, false);
           }
         }
       }
       for (const head of [...heads.values()].sort((a, b) => a.reportCycle.localeCompare(b.reportCycle)))
         for (const id of Object.values(head.canonicalCurrentCalculationIds))
-          use(this.require<P.StoredCalculation>('calculation_record', query.scopeId, id), true);
+          chooseCalculation(this.require<P.StoredCalculation>('calculation_record', query.scopeId, id), true);
       const calculations = [...chosen.values()].sort((a, b) => a.effectiveMonth.localeCompare(b.effectiveMonth) || a.indicator.localeCompare(b.indicator));
       const selectedIds = new Set(calculations.map(c => c.calculationId));
       const headRevisions = [...heads.values()]
@@ -853,9 +1049,7 @@ export class SqliteHistoryRepository implements P.HistoryRepository {
         .map(h => ({ reportCycle: h.reportCycle, confirmationId: h.confirmationId, revision: h.revision }))
         .sort((a, b) => a.reportCycle.localeCompare(b.reportCycle));
       const selection: P.ExternalHistorySelection = { historySelectionId: this.nextId(), scopeId: query.scopeId, basis: query.basis, calculationVersion: query.calculationVersion, anchors: { construction: query.basis.constructionBaseMonth, funding: query.basis.fundingObservedMonth }, cutoff: query.asOf, selectedBackfillBatchId: query.selectedBackfillBatchId, headRevisions, calculations, historyCalculationIds: calculations.map(c => c.calculationId) };
-      this.db.prepare('INSERT INTO history_selection VALUES(?,?,?)').run(query.scopeId, selection.historySelectionId, encodeEvidence(selection));
       return selection;
-    });
   }
   async getHistorySelection(scopeId: string, id: string): Promise<P.ExternalHistorySelection | null> { return this.read('history_selection', scopeId, id); }
   async putBatch(input: P.BatchWrite): Promise<{

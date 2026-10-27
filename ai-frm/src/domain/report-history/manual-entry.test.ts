@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { IndicatorFetch } from '../../application/ports';
 import { calendarOf, createStatement, type ItemName } from '../cashflow/statement';
 import { SCORING_RULES } from '../risk/construction-perception/policy';
 import { yearMonth, type YearMonth } from '../shared/year-month';
@@ -100,7 +99,7 @@ describe('최초 입력 정규화', () => {
   it.each(['2027-02-01', '2027-01-32', '2027-02-29', '2027-01-00', '2027/01/01', '2027-1-01'])('실제 날짜와 회차를 확인하고 기준일을 추정하지 않는다: %s', date => {
     const content = ready(); content.cashflow['2027/01' as YearMonth].asOfRaw = date; expect(normalizeManualEntry(catalog(), content).kind).toBe('invalid');
   });
-  it('두 기간이 공란이어도 단위 메타데이터를 보존하여 빈 SourceResult Map으로 연결한다', () => {
+  it('두 기간이 공란이어도 단위 메타데이터를 보존하여 빈 Map으로 연결한다', () => {
     const content = ready(); content.economic.대출금리.unitRaw = '  공표 원금리 %  ';
     const result = normalizeManualEntry(catalog(), content); expect(result.kind).toBe('ready'); if (result.kind !== 'ready') return;
     expect(result.economic).toEqual([{ key: '대출금리', unit: '공표 원금리 %', values: [] }]);
@@ -108,7 +107,7 @@ describe('최초 입력 정규화', () => {
     expect(result.inputSummary.missingEconomic).toContainEqual({ key: '대출금리', month: '2026/11' });
     expect(result.inputSummary.missingEconomic).toContainEqual({ key: '대출금리', month: '2026/10' });
     const series = result.economic[0];
-    const source: IndicatorFetch = { unit: series.unit, values: new Map(series.values.map(value => [value.month, value.value])) };
+    const source = { unit: series.unit, values: new Map(series.values.map(value => [value.month, value.value])) };
     expect(source.unit).toBe('공표 원금리 %'); expect(source.values.size).toBe(0);
     content.economic.대출금리.unitRaw = '  ';
     const omitted = normalizeManualEntry(catalog(), content); expect(omitted.kind).toBe('ready'); if (omitted.kind !== 'ready') return;

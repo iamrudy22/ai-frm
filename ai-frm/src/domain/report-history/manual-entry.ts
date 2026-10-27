@@ -227,3 +227,12 @@ export function normalizeManualEntry(catalog: ManualEntryCatalogV1, input: unkno
   }
   return errors.length ? { kind: 'invalid', errors } : { kind: 'ready', statements, economic, yields, inputSummary: { includedRounds, omittedRounds, unavailableItems, missingEconomic, fundingDates, fundingMissing } };
 }
+
+/** Semantic command identity excludes the retry key and all server-generated fields. */
+export function manualEntryRequestHashInput(action: 'create' | 'save' | 'prepare' | 'confirm', command: CreateManualEntryCommand | SaveManualEntryCommand | PrepareManualEntryCommand | ConfirmManualEntryCommand): object {
+  if (action === 'create' && 'reportTitleMonth' in command) return { action, reportTitleMonth: command.reportTitleMonth };
+  if (action === 'save' && 'content' in command) return { action, draftId: command.draftId, expectedDraftRevision: command.expectedDraftRevision, content: command.content };
+  if (action === 'prepare' && 'draftId' in command) return { action, draftId: command.draftId, expectedDraftRevision: command.expectedDraftRevision };
+  if (action === 'confirm' && 'candidateId' in command) return { action, draftId: command.draftId, expectedDraftRevision: command.expectedDraftRevision, candidateId: command.candidateId, documentHash: command.documentHash, expectedRevision: command.expectedRevision };
+  throw Error('INVALID_MANUAL_COMMAND');
+}
