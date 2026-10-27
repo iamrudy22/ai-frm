@@ -60,8 +60,8 @@
 
 - [x] 전체 독립 검토. 중요한 발견은 실패 재현 테스트→수정→집중/전체 회귀로 해결한다.
 - [x] 별도 앱에서 production webpack build와 합성 업무 흐름, 모바일·키보드·3쪽 보고서/차트/인쇄 host 및 PDF 경로를 확인한다. 보호 해시는 변경0이어야 한다.
-- [ ] 운영 DB online backup 후 기존 기록/무결성을 확인한다. 스키마 변경 없이 Node26.12.1 운영3002를 새 코드로 재시작하고 읽기/홈/진입만 확인한다. 합성 원본·키·DB·백업을 Git에 넣지 않는다.
-- [ ] 최종 커밋·컨텍스트 정리. 실제로 미검수한 항목과 기존 skip은 완료로 표시하지 않는다.
+- [x] 운영 DB online backup 후 기존 기록/무결성을 확인한다. 스키마 변경 없이 Node26.12.1 운영3002를 새 코드로 재시작하고 읽기/홈/진입만 확인한다. 합성 원본·키·DB·백업을 Git에 넣지 않는다.
+- [x] 최종 커밋·컨텍스트 정리. 실제로 미검수한 항목과 기존 skip은 완료로 표시하지 않는다.
 
 ## 진행 기록
 
@@ -82,3 +82,8 @@
 - H3 실제 종료 복구 QA: 격리3005에서 합성 수정 원값/사유 저장→ACK후 목록 복귀를 확인했다. correction_resolution INSERT 실패 주입에서 종료503 뒤 기록0 유지→원요청 재확인 ACK로1건 생성, 두 번째 실패에서도 기존1건 유지→확인창 닫기/배너유지/홈이동차단→원요청 재확인 후2건/홈정상 이동을 확인했다. 주입trigger는 제거했으며 업무 원장은 사용하지 않았다.
 - H3 PDF 인수: 실제소스 production3006의 합성7월 검토 보고서를 nativeChrome에서 PDF 저장했다. 868714bytes/3A4, 독립 검수자가3쪽 전체 PNG를 확인해 올바른7월 제목/페이지1·2·3/5차트/두원본참고표·잘림/앱버튼혼입없음을 통과했다. 증거 progressive-home-qa-20261027/synthetic-past-review-202607.pdf, /private/tmp/aifrm-h3-pdf-review.md. 수치의 독립 기대값·골든셋 픽셀동등성을 새 입증한 것은 아니다.
 - H3 운영 준비: 업무23테이블/schema5의 행hash·schema/triggerhash를 읽기 전용으로 보관하고 README 원문 online backup을 실행해 전체 동일함·integrityok/FK0을 확인했다. data/backups 내부의 백업은 Git 제외이며 실제값/키를 로그·fixture로 내보내지 않았다. 로컬3002 재시작 및 최종 기록 비교는 다음에 수행한다.
+
+- H3 운영 반영 완료: 코드 커밋8fc6bd5의 최종 실제소스 빌드를 원래 app/.next에 설치하고 Node26.12.1 production을127.0.0.1:3002(PID92293)에 재시작했다. 이전 빌드는 임시 staging의 previous-next에 보존해 rollback 가능하다. 첫 preflight에서 마지막 테스트 파일1개의 staging 불일치가 발견되어 서버를 내리지 않고 동기화/전체verify1269pass·2skip 재통과 후 설치했다. 실제 제품코드·빌드는 이미 일치했고 새 계산/템플릿 수정은 없었다.
+- 운영 QA: 실제 홈·과거 등록 진입/제목초점·보고서 작성 복귀를 확인하고 생성/수정/확정은 실행하지 않았다. 홈과 두 읽기API200, 이력API no-store, 실제 서버 실행 바이너리v26.12.1 확인. 최초 수동 probe의 목록 query에 limit가 없어422를 받았으며 실제client와 같은 ?limit=12로 교정해200을 확인했다. 기존 strict API 검증은 완화하지 않았다.
+- 운영 원장 보존: 재시작/실제 UI 확인 후 모든23테이블의 전체행 hash·schema/triggerhash가 직전/온라인백업과 동일, schema5/integrityok/FK0. 합성자료를 업무DB에 만들지 않았다. 비밀값·DB·백업·PDF fixture는 Git에 추가하지 않았다. 보호83파일 SHA변경0이며 source/domain/application/infrastructure/API/리포트모델·본문·차트·CSS·서체·참고표도 그대로다.
+- 종료 컨텍스트: H1(b24c7f2)→H2(cf7653e)→H3복구보완(8fc6bd5) 순서로 TDD/검토/QA/단계커밋을 완료했고 본 기록은 별도 최종문서 커밋에 포함한다. 현재 요청 범위의 필수 구현·QA·로컬반영은 완료다. 기존2skip(독립 기대값CSV 미보유/opt-in KOFIA live)은 유지하며 새로 통과 처리하지 않았다. 외부공개/Tunnel·push·merge는 이번 요청으로 실행하지 않았다. 실제 새 홈을 사용자 브라우저에 열어두었으며 증거는 progressive-home-qa-20261027/local-product-home-final.png.
