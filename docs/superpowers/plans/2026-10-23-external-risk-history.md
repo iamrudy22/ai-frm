@@ -778,10 +778,10 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** 신규 manual-entry state/hook/editor(.test), 기존 page/history-controls/history hook와 관련 테스트. **Consumes:** D3. **Produces:** §8.2 실제 화면.
 
-- [ ] UI 전 실제 `npx astryx build`, layout 및 해당 component 문서를 확인한다. mock component 복제로 대체하지 않는다.
-- [ ] RED: empty CTA/global-vs-filter/loading/error, draft 재접속,1000ms 직렬 저장/late ACK/409/422/413/unknown재시도/다른draft전환/검토확정 무효화/close drain을 검사한다.
-- [ ] GREEN: 보고월 생성과 탭별 실제 원자료 입력/저장/검토/명시확정/목록갱신을 연결한다. 파일 UI·불필요한 설명·양식미리보기는 추가하지 않는다. 기존 업로드와 정정 유지.
-- [ ] 검토·QA: 합성 실제 UI 최초이력0→작성/새로고침/재개→3종원자료→검토/확정, 오류초점/키보드/작은화면/필터empty/기존수정 확인. 보호0·독립 검토 후 커밋 `feat(ui): add and resume reports with manual raw data`, context 갱신.
+- [x] UI 전 실제 `npx astryx build`, layout 및 해당 component 문서를 확인한다. mock component 복제로 대체하지 않는다.
+- [x] RED: empty CTA/global-vs-filter/loading/error, draft 재접속,1000ms 직렬 저장/late ACK/409/422/413/unknown재시도/다른draft전환/검토확정 무효화/close drain을 검사한다.
+- [x] GREEN: 보고월 생성과 탭별 실제 원자료 입력/저장/검토/명시확정/목록갱신을 연결한다. 파일 UI·불필요한 설명·양식미리보기는 추가하지 않는다. 기존 업로드와 정정 유지.
+- [x] 검토·QA: 합성 실제 UI 최초이력0→작성/새로고침/재개→3종원자료→검토/확정, 오류초점/키보드/작은화면/필터empty/기존수정 확인. 보호0·독립 검토 후 커밋 `feat(ui): add and resume reports with manual raw data`, context 갱신.
 
 ### D5: 전체 회귀·백업/운영 적용·인수
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { CorrectionPreviewDetails } from './report-history-controls';
+import { ConfirmedHistoryEmpty } from './manual-entry-editor';
 import { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertDialog } from '@astryxdesign/core/AlertDialog';
 import { Banner } from '@astryxdesign/core/Banner';
@@ -229,8 +230,9 @@ function MonthWork({ month, confirmations, client, onView, onResume, onClose, on
   {old.length > 0 && <Collapsible trigger={`이전 확정본 ${old.length}개`}><VStack gap={2}>{old.map(item => <HStack key={item.confirmationId} gap={2} wrap="wrap"><Text>{item.revision}차 · {dateText(item.confirmedAt)}</Text><Button label={`${item.revision}차 확정본 열기`} size="sm" variant="ghost" onClick={() => onOpen(item.confirmationId)}/></HStack>)}</VStack></Collapsible>}
  </VStack>;
 }
-export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, refreshRevision = 0, registerNavigationGuard }: {
+export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, refreshRevision = 0, registerNavigationGuard, onNewManualEntry }: {
   confirmations: readonly Confirmation[];
+  onNewManualEntry?: (trigger?:HTMLElement) => void;
   onOpen: (id: string) => void;
   onConfirmed: (id: string) => void;
   refreshRevision?: number;
@@ -239,6 +241,7 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
   const client = useMemo(() => createCorrectionClient(), []);
   const [months, setMonths] = useState<readonly CorrectionMonthSummary[]>([]);
   const loadedMonths=useRef<readonly CorrectionMonthSummary[]>([]);
+  const [listLoaded, setListLoaded] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [period, setPeriod] = useState('recent');
   const [pendingOnly, setPendingOnly] = useState(false);
@@ -303,7 +306,9 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
         setLatest(title);
         if (!title) {
           setMonths([]);
+          loadedMonths.current=[];
           setCursor(null);
+          setListLoaded(true);
           return;
         }
       }
@@ -312,7 +317,7 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
       let next=more?mergePage(loadedMonths.current,page.items,item=>item.reportCycle):[...page.items];
       if(!more){const preserveCount=loadedMonths.current.length;while(page.nextCursor&&next.length<preserveCount){page=await client.months({pendingOnly,...range,cursor:page.nextCursor});next=mergePage(next,page.items,item=>item.reportCycle);}}
       if (token !== generation.current) return;
-      loadedMonths.current=next;setMonths(next);setCursor(page.nextCursor);
+      loadedMonths.current=next;setMonths(next);setCursor(page.nextCursor);setListLoaded(true);
     }
     catch {
       if (token === generation.current)
@@ -458,11 +463,9 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
   return <VStack className="report-controls" gap={3}>
    {session && <VStack gap={3}><CorrectionEditor session={session} comparison={comparison} onRefreshComparison={() => void act(refreshComparison)} onReapply={() => void act(reapply)} onLeave={() => { session.dispose(); setSession(null); setComparison(null); refresh(); restoreTrigger(); }} onConfirmed={id => { setSession(null); setComparison(null); refresh(); onConfirmed(id); }}/>{error && <Banner status="warning" title="수정안 안내" description={error}/>}</VStack>}
    <Activity mode={session ? 'hidden' : 'visible'}><VStack as="section" className="report-controls" aria-label="월별 확정 이력" gap={3}>
-  <Heading level={3} tabIndex={-1} ref={heading}>월별 확정 이력</Heading>
-  <HStack gap={2} wrap="wrap" align="end"><Selector label="보고 기간" value={period} size="sm" options={[{ value: 'recent', label: '최근 12개월' }, ...years.map(value => ({ value, label: `${value}년` })), { value: 'all', label: '전체 기간' }]} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPeriod(value); setExpanded(new Set()); }} isDisabled={pendingOnly || busy}/><CheckboxInput label="전체 기간 미처리만" size="sm" value={pendingOnly} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPendingOnly(value); setExpanded(new Set()); }}/><Button label="확정 이력 다시 조회" size="sm" variant="ghost" isDisabled={busy} onClick={() => { setLatest(null); refresh(); }}/></HStack>
-  {busy && <Text role="status">이력 조회 중</Text>}
-  <Table data={months.map(month => ({ ...month }))} idKey="reportCycle" columns={columns} plugins={{ expansion, sticky }} density="compact"/>
-  {!busy && months.length === 0 && <Text>{pendingOnly ? '미처리 수정안이 없습니다.' : '선택한 기간의 확정본이 없습니다.'}</Text>}
+  <HStack gap={2} wrap="wrap"><Heading level={3} tabIndex={-1} ref={heading}>월별 확정 이력</Heading>{onNewManualEntry && !(listLoaded && !busy && !error && latest === null && months.length === 0) && <Button label="새 보고서 직접 입력" variant="secondary" size="sm" onClick={event=>onNewManualEntry?.(event.currentTarget)}/>}</HStack>
+  {!(listLoaded && !busy && !error && latest === null && months.length === 0) && <HStack gap={2} wrap="wrap" align="end"><Selector label="보고 기간" value={period} size="sm" options={[{ value: 'recent', label: '최근 12개월' }, ...years.map(value => ({ value, label: `${value}년` })), { value: 'all', label: '전체 기간' }]} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPeriod(value); setExpanded(new Set()); }} isDisabled={pendingOnly || busy}/><CheckboxInput label="전체 기간 미처리만" size="sm" value={pendingOnly} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPendingOnly(value); setExpanded(new Set()); }}/><Button label="확정 이력 다시 조회" size="sm" variant="ghost" isDisabled={busy} onClick={() => { setLatest(null); refresh(); }}/></HStack>}
+  {months.length > 0 ? <Table data={months.map(month => ({ ...month }))} idKey="reportCycle" columns={columns} plugins={{ expansion, sticky }} density="compact"/> : <ConfirmedHistoryEmpty state={busy || (!listLoaded && !error) ? 'loading' : error ? 'error' : latest === null ? 'global' : 'filtered'} onCreate={onNewManualEntry} onReset={() => { generation.current++; loadedMonths.current=[]; setPeriod('all'); setPendingOnly(false); setExpanded(new Set()); }} onRetry={() => void load()}/>}
   {cursor && <Button label="보고월 더 보기" variant="secondary" size="sm" isDisabled={busy} onClick={() => void load(cursor)}/>}
   {error && <Banner status="warning" title="수정안 안내" description={error}/>}
   {detail && <VStack gap={3}><Heading level={4} tabIndex={-1} ref={detailHeading}>수정안 내용 보기</Heading><CorrectionReviewDetails detail={detail}/>{detail.summary.ref.kind === 'legacy-preview' && detail.summary.state === 'pending' && detail.preview && <Button label="정정 확정" variant="secondary" isDisabled={actionBusy} onClick={() => void act(async () => {

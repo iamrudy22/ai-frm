@@ -70,6 +70,7 @@ import type { FinancialReport } from './report-model';
 import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, correctionSuccessState, fetchArchivedDocument, reportDisplayOf, revisionForCycle,
   type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
 import { ReportCorrectionControls } from './report-correction-editor';
+import { ManualEntryControls } from './manual-entry-editor';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -112,6 +113,10 @@ export default function AifrmDashboardPage() {
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationBusy, setConfirmationBusy] = useState(false);
   const correctionNavigation = useRef<(() => Promise<boolean>) | null>(null);
+  const manualNavigation = useRef<(() => Promise<boolean>) | null>(null);
+  const manualStart = useRef<((trigger?:HTMLElement) => void) | null>(null);
+  const registerManualStart = useCallback((start: ((trigger?:HTMLElement) => void) | null) => { manualStart.current = start; }, []);
+  const registerManualNavigation = useCallback((guard: (() => Promise<boolean>) | null) => { manualNavigation.current = guard; }, []);
   const registerCorrectionNavigation = useCallback((guard: (() => Promise<boolean>) | null) => { correctionNavigation.current = guard; }, []);
   const openGeneration = useRef(0);
   const [correctionRefreshRevision, setCorrectionRefreshRevision] = useState(0);
@@ -194,6 +199,7 @@ export default function AifrmDashboardPage() {
   }, []);
 
   const handleSubmit = async () => {
+    if (manualNavigation.current && !await manualNavigation.current()) return;
     if (correctionNavigation.current && !await correctionNavigation.current()) return;
     if (prepared.kind !== 'ready' || loaded === prepared.rounds) return;
     resultsFocusPending.current = true;
@@ -309,6 +315,8 @@ export default function AifrmDashboardPage() {
     currentReport => history.view ? summarizeHistorySources(currentReport, history.view, 'current') : null);
 
   const openConfirmation = async (id: string) => {
+    if (manualNavigation.current && !await manualNavigation.current()) return;
+    if (correctionNavigation.current && !await correctionNavigation.current()) return;
     const generation = ++openGeneration.current;
     setConfirmationError(null);
     try {
@@ -387,7 +395,8 @@ export default function AifrmDashboardPage() {
     void openConfirmation(id);
   };
   const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="보고서 확정·이력" className="report-controls" gap={2}>
-    <ReportCorrectionControls confirmations={confirmations} onOpen={id => void openConfirmation(id)} onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerNavigationGuard={registerCorrectionNavigation} />
+    <ManualEntryControls onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerStart={registerManualStart} registerNavigationGuard={registerManualNavigation}/>
+    <ReportCorrectionControls onNewManualEntry={trigger => void (async () => { if (correctionNavigation.current && !await correctionNavigation.current()) return; manualStart.current?.(trigger); })()} confirmations={confirmations} onOpen={id => void openConfirmation(id)} onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerNavigationGuard={registerCorrectionNavigation} />
     {inReport && archived === null && <VStack gap={2} align="start">
       {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}
       <Button label={confirmationBusy ? '확정 중' : candidatePreparing ? '후보 준비 중' : currentRevision !== null && currentRevision > 0 ? '정정 확정' : '보고서 확정'} variant="secondary"
@@ -415,7 +424,8 @@ export default function AifrmDashboardPage() {
                     <ReportHistoryControls history={history} summary={displayHistorySources} />}
                   {confirmationControls(true)}
                 </ReportControlSurface>
-                <FinancialReportPreview report={displayReport} onBack={() => { void (async () => { if (correctionNavigation.current && !await correctionNavigation.current()) return; openGeneration.current++; setArchived(null); setReportOpenedAt(null); })(); }} />
+                <FinancialReportPreview report={displayReport} onBack={() => { void (async () => { if (manualNavigation.current && !await manualNavigation.current()) return;
+    if (correctionNavigation.current && !await correctionNavigation.current()) return; openGeneration.current++; setArchived(null); setReportOpenedAt(null); })(); }} />
               </VStack>
             </LayoutContent>
           }
@@ -470,7 +480,8 @@ export default function AifrmDashboardPage() {
                 label="HTML 보고서 보기"
                 variant="primary"
                 onClick={async () => {
-                  if (correctionNavigation.current && !await correctionNavigation.current()) return;
+                  if (manualNavigation.current && !await manualNavigation.current()) return;
+    if (correctionNavigation.current && !await correctionNavigation.current()) return;
                   setReportOpenedAt(new Date());
                   window.scrollTo({ top: 0 });
                 }}
