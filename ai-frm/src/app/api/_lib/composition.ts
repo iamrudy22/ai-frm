@@ -34,6 +34,15 @@ export async function historyCorrectionProvider(): Promise<{ readonly scopeId: s
   return { scopeId, deps: { ...deps, nextId: randomUUID, ecosCatalog: ECOS_SERIES, documentFactory: reportDocumentFactory(deps, scopeId) } };
 }
 
+/** Manual entry only composes local raw sources; live adapters and credentials are never constructed. */
+export async function historyManualEntryProvider(): Promise<{ readonly scopeId: string; readonly deps: import('@/application/report-history/manual-entry').ManualEntryDependencies }> {
+  const unavailable = async (): Promise<never> => { throw Error('MANUAL_ENTRY_MUST_USE_LOCAL_SOURCES'); };
+  const { scopeId, deps } = await historyProvider({ fetchAll: unavailable }, { dailyYields: unavailable }, () => new Date());
+  return { scopeId, deps: { ...deps, repository: historyRepository!, nextId: randomUUID,
+    ecosCatalog: ECOS_SERIES.map(definition => ({ key: definition.key, name: definition.key, statistic: definition.stat, items: definition.items })),
+    documentFactory: reportDocumentFactory(deps, scopeId) } };
+}
+
 export function indicatorSource(): EconomicIndicatorSource {
   cachedSource ??= new CachedIndicatorSource(new EcosIndicatorSource(process.env.ECOS_API_KEY), ECOS_CACHE_MS);
   return cachedSource;

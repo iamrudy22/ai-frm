@@ -72,6 +72,8 @@ function decodedContext(deps: HistoryDependencies, value: JsonValue): { request?
 }
 
 export async function prepareReportCandidate(deps: HistoryDependencies, input: PrepareCandidateInput, documentFactory: ReportDocumentFactory): Promise<PreparedCandidate> {
+  const metadata = input.sourceMetadata as Record<string, unknown>;
+  if (metadata?.kind === 'manual-input' || (metadata?.schemaVersion === 1 && deps.decode?.<{ kind?: string }>(input.sourceMetadata)?.kind === 'manual-input')) return fail('MANUAL_ENTRY_REQUIRED');
   if (!validHistorySelectionBasis(input.basis) || input.basis.constructionBaseMonth !== addMonths(input.basis.reportCycle, -2) || input.basis.gapMonth !== input.basis.reportCycle)
     return fail('INVALID_BASIS');
   const authoredAt = new Date(input.authoredAt);
@@ -90,6 +92,7 @@ export async function prepareReportCandidate(deps: HistoryDependencies, input: P
   const construction = await deps.repository.getCalculation(input.scopeId, input.constructionCalculationId);
   const funding = await deps.repository.getCalculation(input.scopeId, input.fundingCalculationId);
   if (!construction || !funding) return fail('CALCULATION_NOT_FOUND');
+  if (construction.derivation.kind === 'manual-input' || funding.derivation.kind === 'manual-input') return fail('MANUAL_ENTRY_REQUIRED');
   if (construction.scopeId !== input.scopeId || funding.scopeId !== input.scopeId || construction.calculationVersion !== deps.calculationVersion || funding.calculationVersion !== deps.calculationVersion ||
     construction.indicator !== 'construction' || funding.indicator !== 'funding' || construction.effectiveMonth !== input.basis.constructionBaseMonth || funding.effectiveMonth !== input.basis.fundingObservedMonth ||
     construction.inputHash !== deps.hash(ledgerInput) || funding.inputHash !== deps.hash({ judgedMonth: input.basis.fundingJudgedMonth })) return fail('CALCULATION_CONTEXT_MISMATCH');
@@ -127,6 +130,7 @@ export async function prepareReportCandidate(deps: HistoryDependencies, input: P
 export async function confirmMonthlyReport(deps: HistoryDependencies, scopeId: string, cmd: ConfirmationCommand): Promise<ConfirmationResult> {
   const candidate = await deps.repository.getCandidate(scopeId, cmd.candidateId);
   if (!candidate) return { kind: 'not-ready', reason: 'CANDIDATE_NOT_FOUND' };
+  if (candidate.manualEntry) return { kind: 'not-ready', reason: 'MANUAL_ENTRY_REQUIRED' };
   if (candidate.correctionPreviewId !== null) return { kind: 'not-ready', reason: 'CORRECTION_PREVIEW_REQUIRED' };
   return deps.repository.commitConfirmation(scopeId, cmd);
 }

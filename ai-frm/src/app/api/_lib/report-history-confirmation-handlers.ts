@@ -9,6 +9,8 @@ import { qualifiedSelectionView, selectionView } from './report-history-selectio
 import { bodyOf, json, localOrigin } from './report-history-handlers';
 import type { PerceptionResponse } from '@/app/api/construction-perception/dto';
 import type { FundingRiskResponse } from '@/app/api/funding-risk/dto';
+import type { ManualEntrySourceMetadataV1 } from '@/domain/report-history/manual-entry';
+import { calendarOf } from '@/domain/cashflow/statement';
 import type { FinancialReport } from '@/app/aifrm/report-model';
 
 type Provider = () => Promise<{ readonly scopeId: string; readonly deps: HistoryDependencies }>;
@@ -37,10 +39,53 @@ function prepareInput(body: Record<string, unknown>, scopeId: string): PrepareCa
     authoredAt: body.authoredAt, inputGeneration: body.inputGeneration };
 }
 
+function manualMetadata(deps: HistoryDependencies, input: Parameters<ReportDocumentFactory>[0]): ManualEntrySourceMetadataV1 | null {
+  const wire = input.sourceMetadata as Record<string, unknown>;
+  if (Array.isArray(wire?.files)) return null;
+  const raw = wire?.schemaVersion === 1 ? deps.decode?.<unknown>(input.sourceMetadata) : wire;
+  if (!raw || typeof raw !== 'object' || (raw as { kind?: unknown }).kind !== 'manual-input') throw Error('INVALID_SOURCE_METADATA');
+  const metadata = raw as ManualEntrySourceMetadataV1;
+  const keys = ['kind','payloadVersion','draftId','draftRevision','rawInputHash','recordedAt','statementSources','economicSource','fundingSource','note'];
+  if (Object.keys(metadata).some(key => !keys.includes(key) && key !== 'inputSummary') || !keys.every(key => Object.hasOwn(metadata, key)) ||
+    metadata.payloadVersion !== 1 || !uuid.test(metadata.draftId) || !Number.isSafeInteger(metadata.draftRevision) || metadata.draftRevision < 1 ||
+    typeof metadata.rawInputHash !== 'string' || !/^[0-9a-f]{64}$/.test(metadata.rawInputHash) ||
+    typeof metadata.recordedAt !== 'string' || !Number.isFinite(Date.parse(metadata.recordedAt)) || new Date(metadata.recordedAt).toISOString() !== metadata.recordedAt ||
+    metadata.economicSource !== 'user-entered-published-series' || metadata.fundingSource !== 'user-entered-published-averages' ||
+    typeof metadata.note !== 'string' || metadata.note.length > 2000 || !Array.isArray(metadata.statementSources) || metadata.statementSources.length !== input.statements.length) throw Error('INVALID_SOURCE_METADATA');
+  metadata.statementSources.forEach((source, index) => {
+    const statement = input.statements[index], round = calendarOf(statement, statement.defaultBaseMonth);
+    const asOf = { year: statement.asOf.getFullYear(), month: statement.asOf.getMonth() + 1, day: statement.asOf.getDate() };
+    const label = `직접 입력 · 자료 ${round} · 기준일 ${asOf.year}-${String(asOf.month).padStart(2, '0')}-${String(asOf.day).padStart(2, '0')}`;
+    if (!source || source.round !== round || deps.hash(source.asOf) !== deps.hash(asOf) || source.label !== label) throw Error('INVALID_SOURCE_METADATA');
+  });
+  return metadata;
+}
+function manualSourceText(text: string): string {
+  return text.replace(/ECOS에 이 지표의 값이 하나도 없습니다\./g, '직접 입력 원자료에 이 지표의 값이 없습니다.')
+    .replace(/아직 공표 전입니다\(ECOS 최신 [^)]+\)\./g, '직접 입력 원자료에 해당 기준월의 값이 없습니다.')
+    .replace(/ECOS 조회 실패:/g, '직접 입력 원자료 확인 필요:');
+}
+/** Only provenance prose changes. Calculated values, grades, dates, chart geometry and template stay exact. */
+function projectManualReport(report: FinancialReport, deps: HistoryDependencies, basis: ReportBasis): FinancialReport {
+  const projected = { ...report, metrics: report.metrics.map(metric => ({ ...metric,
+    source: metric.id === 'construction' ? '직접 입력 · 공표 경제지표 9종 · 자금자료 분양회수 예측오차'
+      : metric.id === 'funding' ? '직접 입력 · 공표 3사평균 · 관측월 마지막 평가일' : `직접 입력 · ${metric.source}`,
+    narrative: manualSourceText(metric.narrative), historyNote: manualSourceText(metric.historyNote),
+    points: metric.points.map(point => point.kind !== 'available' && ((metric.id === 'construction' && point.month === basis.constructionBaseMonth) || (metric.id === 'funding' && point.month === basis.fundingObservedMonth)) ? { ...point, reason: manualSourceText(point.reason) } : point),
+  })) };
+  const invariant = (value: FinancialReport) => ({ ...value, metrics: value.metrics.map(({ source, narrative, historyNote, points, ...metric }) => {
+    void source; void narrative; void historyNote;
+    return { ...metric, points: points.map(point => point.kind !== 'available' ? { ...point, reason: manualSourceText(point.reason) } : point) };
+  }) });
+  if (deps.hash(invariant(projected)) !== deps.hash(invariant(report))) throw Error('INVALID_MANUAL_DOCUMENT');
+  return projected;
+}
+
 export function reportDocumentFactory(deps: HistoryDependencies, scopeId: string): ReportDocumentFactory {
   return (input, selection) => {
     const metadata = input.sourceMetadata as Record<string, unknown>;
-    const names = metadata?.files;
+    const manual = manualMetadata(deps, input);
+    const names = manual ? manual.statementSources.map(source => source.label) : metadata?.files;
     if (!Array.isArray(names) || names.length !== input.statements.length || !names.every(name => typeof name === 'string' && name.length > 0 && name.length <= 255)) throw Error('INVALID_SOURCE_METADATA');
     const arranged = arrangeRounds(input.statements.map((statement, index) => ({ statement, file: names[index] })));
     if (!arranged.ok) throw Error('INVALID_ROUNDS');
@@ -48,7 +93,8 @@ export function reportDocumentFactory(deps: HistoryDependencies, scopeId: string
       perception: JSON.parse(JSON.stringify(input.constructionOutcome)) as PerceptionResponse,
       funding: JSON.parse(JSON.stringify(input.fundingOutcome)) as FundingRiskResponse, generatedAt: input.authoredAt });
     const view = selectionView(selection, value => deps.decode?.(value));
-    const report = withExternalRiskHistory(raw, view, { construction: input.basis.constructionBaseMonth, funding: input.basis.fundingObservedMonth, scopeId });
+    const original = withExternalRiskHistory(raw, view, { construction: input.basis.constructionBaseMonth, funding: input.basis.fundingObservedMonth, scopeId });
+    const report = manual ? projectManualReport(original, deps, input.basis) : original;
     const plain = JSON.parse(JSON.stringify(report)) as JsonValue;
     return { schemaVersion: 1, templateVersion: HISTORY_TEMPLATE_VERSION, contentHash: deps.hash(plain), json: plain, historyCalculationIds: selection.historyCalculationIds };
   };
@@ -59,7 +105,7 @@ function failure(error: unknown): Response {
   const status = code === 'CONFIRMATION_NOT_FOUND' || code === 'CALCULATION_NOT_FOUND' ? 404 :
     code === 'BODY_TOO_LARGE' ? 413 :
     code === 'STALE_BASE' || code === 'IDEMPOTENCY_KEY_REUSED' ? 409 :
-    /^INVALID_|_MISMATCH$|^UNSUPPORTED_|^HISTORY_SELECTION_MISMATCH$/.test(code) ? 422 : 503;
+    code === 'MANUAL_ENTRY_REQUIRED' || /^INVALID_|_MISMATCH$|^UNSUPPORTED_|^HISTORY_SELECTION_MISMATCH$/.test(code) ? 422 : 503;
   return json({ ok: false, code: status === 503 ? 'STORAGE_UNAVAILABLE' : code }, status, status === 503 ? { 'Retry-After': '1' } : undefined);
 }
 export async function handleConfirmationPost(request: Request, provider: Provider): Promise<Response> {
