@@ -106,9 +106,9 @@
 
 ### L3: 검토·QA·로컬반영·인계
 
-- [ ] 집중/전체verify·lint·별도실제소스production build·독립review를완료한다. 발견은RED→GREEN으로보완하고보호83파일SHA변경0확인.
-- [ ] 업무env/DB없는격리합성앱에서첫홈/선택·산출결과/과거등록→보관·다음월·재접속/안전복귀·모바일·기존3쪽HTML/PDF·문서해시보존을확인한다. native파일선택기장시간대기는반복하지않고기존합성캡처/실제세션fixture와공개API를사용하며검증경계를정확히기록한다.
-- [ ] 단계커밋·README/컨텍스트갱신. 운영DBreadonlyfingerprint/onlinebackup후스키마변경없이최종Node26.12.1서버를loopback3002에실행하고기록보존/읽기API/홈·진입QA를확인한다. push/merge/외부공개는실행하지않는다.
+- [x] 집중/전체verify·lint·별도실제소스production build·독립review를완료한다. 발견은RED→GREEN으로보완하고보호83파일SHA변경0확인.
+- [x] 업무env/DB없는격리합성앱에서첫홈/선택·산출결과/과거등록→보관·다음월·재접속/안전복귀·모바일·기존3쪽HTML/PDF·문서해시보존을확인한다. native파일선택기장시간대기는반복하지않고기존합성캡처/실제세션fixture와공개API를사용하며검증경계를정확히기록한다.
+- [x] 단계커밋·README/컨텍스트갱신. 운영DBreadonlyfingerprint/onlinebackup후스키마변경없이최종Node26.12.1서버를loopback3002에실행하고기록보존/읽기API/홈·진입QA를확인한다. push/merge/외부공개는실행하지않는다.
 
 Ruling: 최신승인목업의‘중복선택버튼·확장자안내줄제거’가앞H1파일설명의초기표현보다우선한다. 파일별용도·판독중/실패·산출상태는필요할때계속제공한다. 목업툴바/예시상태버튼/파일명연월추정/가짜산출은실제제품에옮기지않는다. 새CSS수작업은추가하지않으며공식Astryx theme build 산출물과필수font자산만UI스코프에추가한다.
 
@@ -130,3 +130,15 @@ Ruling: 최신승인목업의‘중복선택버튼·확장자안내줄제거’�
 - 실제 격리 3006에서 기존 1월 원값 수정→보관 목록 복귀→이어쓰기, 새 2025/10 등록→원값 123.45 보관→다음 달 2025/11 생성→새로고침→2025/10 재개 시 같은 값 복원을 확인했다. 390px 편집 가로 넘침 0, 실제 포커스는 해당 월 h1로 이동했다. 모두 임시 합성 원장만 사용했다.
 - 기존 8월 확정본을 열어 3쪽·5개 SVG와 홈 테마가 제거된 DocumentTheme 경계를 확인했다. UI 변경 전 합성 문서와 contentHash·JSON hash가 같았다. 실제 Chrome PDF 저장 결과 871,578bytes/3A4이며 독립 시각 검토에서 제목·5차트·참고표2·잘림/버튼 혼입 없음으로 통과했다. 독립 기대값이나 골든셋 픽셀 동일성을 새로 입증한 것은 아니다.
 - 증거: `/private/tmp/aifrm-l2-manual-report.md`, `aifrm-l2-document-check.json`, `aifrm-l2-pdf-review.md`와 visualizations의 `landing-live-qa-20261027/`. L1 커밋의 외부 라이선스 원문 한 줄에 있던 trailing whitespace를 정리했다. 라이선스 문구는 동일하다.
+
+
+### L3 완료 및 재개 지점
+
+- 단계 커밋: L1 `714103e`(홈 전용 Astryx 테마·첫 화면·업로드), L2 `e844adc`(과거 월 등록·편집 화면 및 사용자 안내).
+- 최종 `npm run verify`는 타입 포함 1,275 passed / 기존 2 skipped, 전체 린트 오류·경고 0. `astryx theme build ... --check`, 별도 실제 소스 production webpack 빌드와 독립 코드·PDF 검토를 통과했다. 기존 skip은 독립 기대값 CSV 미보유 및 opt-in KOFIA live이며 새 통과로 처리하지 않았다.
+- 업무 환경변수와 업무 원장을 제외한 `/private/tmp/aifrm-landing-release-z0iilh8c/app`에서 빌드했다. 이 임시 앱에서만 기존 합성 QA 원장을 복제해 실화면·저장·다음 월·이어쓰기·3쪽 PDF를 확인했다. 외부 ECOS/KOFIA 대역 코드나 임시 QA route는 빌드에 포함하지 않았다.
+- 운영 반영 전 업무 원장 online backup을 검증하고 읽기 전용 23테이블 행 해시와 schema/trigger 해시를 보관했다. 최종 앱과 빌드 원본의 runtime/public/config 127파일 일치를 확인한 뒤 검증한 `.next`를 설치했다. 이전 `.next`는 위 staging의 `previous-next`에 보존해 되돌릴 수 있다.
+- 실제 서버는 Node.js v26.12.1, `127.0.0.1:3002`의 production(PID 8833, exec session 51952)이다. 홈과 확정 이력·직접 입력 목록 API 200, 이력 API no-store를 확인했다. 실제 UI에서는 홈·과거 월 picker·목록 복귀만 확인하고 생성·수정·확정은 실행하지 않았다.
+- 반영 후 업무 원장의 schema5/23테이블 전체 행 hash·schema/trigger hash가 직전과 동일하며 integrity=ok/FK=0이다. 보호83파일 SHA 변경0이다. 업무 DB·환경변수·백업·합성 fixture·PDF를 Git에 추가하지 않았다.
+- 최종 증거: `/private/tmp/aifrm-l2-release-{verify,lint}.log`, `aifrm-l2-build.log`, `aifrm-l2-independent-review.md`, `aifrm-l2-pdf-review.md`, `aifrm-l2-business-{before,after}.json`. visualizations의 `landing-live-qa-20261027/local-product-home.png`, `local-product-past.png`, `synthetic-existing-report-202608.pdf`도 보관했다.
+- 요청한 목업의 실제 반영·TDD·검토·QA·로컬 커밋·컨텍스트 정리는 완료했다. 기존 계산식·보고서 양식과 세션/API 계약을 유지했다. 이번 작업에서 push·merge·외부 공개는 실행하지 않았다. 남은 필수 구현 단계는 없다.
