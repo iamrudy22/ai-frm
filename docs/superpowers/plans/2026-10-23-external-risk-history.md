@@ -703,7 +703,7 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 - [x] **통합 QA:** 구형/신형 합성 원장에서 새 수정안→자동 보관→재시작/재개→검토→명시적 확정→이전/새 차수 읽기→다른 달 불변, 종료→readonly→새 복사→재검증, 같은값 자동 정리·두 탭·응답 유실·저장 명령 실패/rollback·전체테이블 온라인 백업/복원을 연결한다. 물리 디스크 고장이나 전원 차단 시험을 수행했다는 뜻이 아니다.
 - [x] **자동·구조 회귀 QA:** 보호51파일 SHA-256/diff0, 3용지/5차트 영역·본문/서체/참고표·용지 안 제어부0을 확인했다. 자료가 없는 차트의 기존 산출불가 표시도 유지했다. 전체 `npm run lint` → `npm run build -- --webpack` → `npm run verify -- --maxWorkers=4` 순차 실행. 최종1068개 통과/기존2skip이며 과거896개를 재사용하지 않는다.
-- [ ] **수동 최종 인수:** 실제 저장 PDF의3쪽 경계와 native200% 확대를 확인한다. 현재 Mac 잠금으로 미검수이며 사용자에게 잠금 해제를 요청했다. DOM/뷰포트/자동 테스트 통과로 대체하지 않는다.
+- [x] **수동 최종 인수:** 2026-10-27 D5에서 Mac 잠금 해소를 실제 확인하고 전용 Chrome QA 탭의 합성 확정본을 native PDF로 저장했다. A4 3쪽 파일을 모두 렌더·시각검토해 페이지 경계를 확인했다. native200% toolbar/dpr와 보고서·직접입력·기존정정 동작/넘침을 검사한 뒤100%로 복구했다. DOM/뷰포트 검사로 대체하지 않았다.
 - [x] **운영 문서:** ACK 전후 보관 의미, 실패 시 입력 보존/재시도, 기존안 재개와 새작성, 종료와 정정 확정, readonly 내용/새복사, schema4 백업/복구를 README에 반영한다. 원장 파일은 사용자 편집 대상으로 노출하지 않는다.
 - [x] **인수 한계:** 구형 Excel 저장/파일선택기 QA는 종료한 기능의 과거 미완료 기록으로 유지하고 새 기능의 필수 인수로 요구하지 않는다. 실제 PDF/200% 등 유지 기능의 미검수는 이번 자동 테스트 통과와 구분해 남긴다. 기존 보호 SVG 라벨 겹침은 수정하지 않는다.
 - [x] **독립 검토·커밋·컨텍스트:** 전체 변경을 독립 검토하고 필요한 수정의 RED→GREEN/재검토 후 `fix(history): complete web correction review and recovery`. 단계별 커밋·증거·한계·정확한 재개 지점을 기록한다. 외부 공개·Tunnel·인증·push·merge·배포는 이 계획 범위에 없다.
@@ -787,7 +787,11 @@ CLI의 검색 결과는 추천일 뿐이며 이 업무에 맞지 않는 ChatTool
 
 **Files:** 통합 테스트·README·기존 계획/journal/context. **Consumes:** D1–D4. **Produces:** 검증된 실동작·로컬 서버.
 
-- [ ] 통합: manual첫확정→일반정정, 기존파일업로드, 같은월경쟁/의존변경,23테이블온라인백업복구와4→5/구버전거부, 네트워크0/수치/기존기록 불변을 확인한다.
-- [ ] 전체독립검토→필요한 RED/GREEN 수정·재검토→lint→webpack build→verify(maxWorkers4)→보호51hash0. 기존2skip과 수동 미검수는 정확히 구분한다.
-- [ ] 실제 업무DB는 쓰기 전 online backup하고 schema4기록 보존을 metadata/hash로 확인한 뒤 로컬3002를 재시작한다. 합성자료를 업무DB에 넣지 않는다.
-- [ ] README/plan/journal/context 기록과 최종 커밋 `test(history): verify manual entry and history compatibility`. 단계별 완료 증거 및 남은 인수를 명시한다.
+- [x] 통합: manual첫확정→일반정정, 기존파일업로드, 같은월경쟁/의존변경,23테이블온라인백업복구와4→5/구버전거부, 네트워크0/수치/기존기록 불변을 확인한다.
+- [x] 전체독립검토→필요한 RED/GREEN 수정·재검토→lint→webpack build→verify(maxWorkers4)→보호51hash0. 기존2skip과 수동 미검수는 정확히 구분한다.
+- [x] 실제 업무DB는 쓰기 전 online backup하고 schema4기록 보존을 metadata/hash로 확인한 뒤 로컬3002를 재시작한다. 합성자료를 업무DB에 넣지 않는다.
+- [x] README/plan/journal/context 기록과 최종 커밋 `fix(ui): preserve manual saves and print targets`. 단계별 완료 증거 및 남은 인수를 명시한다.
+
+#### D5 보완 인수 — 직접 입력 검토 문서 PDF (잠금 해제 대기)
+
+- [ ] 최종 I1 수정 후 직접입력 검토의 native PDF가 현재 보고월만 3A4로 출력되는지 확인한다. 뒤의 다른 월 확정본/빈홈/검토종료후archive복원을 구분하고 인쇄전후 head0/review binding을 보존한다. 2026-10-27 수정·자동회귀·범위재검토는 통과했으나 실제인쇄창을연뒤Mac이잠겨 미검수다. 사용자에게잠금해제를요청했으며기존archivePDF/native200%통과로대체하지않는다. 코드·운영반영과이수동인수완료를구분한다.

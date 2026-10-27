@@ -23,6 +23,7 @@ import type { ManualEntryContentV1, ManualEntryDraftDto, ManualEntryFieldError, 
 import { addMonths, yearMonth } from '@/domain/shared/year-month';
 import { ManualEntryClientError, ManualEntrySession, createManualEntryClient, manualEntryErrorMessage, loadManualEntryPage, useManualEntry, type ManualEntryClient } from './use-manual-entry';
 import { FinancialReportPreview } from './report-preview';
+import { ManualEntryPrintHost } from './manual-entry-print-host';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import type { FinancialReport } from './report-model';
 const items:readonly ItemName[]=['기초시재','수입계','수입','분양회수','기타수입','지출'];
@@ -115,7 +116,7 @@ export function ManualEntryEditor({session,onLeave,onConfirmed,embedded=false}:{
  {accept&&<Banner status="warning" title="내 미보관 입력을 버리고 전환할까요?" description="서버에 보관된 내용으로 전환하며 내 미보관 입력을 버립니다." endContent={<HStack gap={2}><Button label="내 입력 유지" variant="ghost" onClick={()=>setAccept(false)}/><Button label="미보관 입력 버리고 전환" variant="secondary" onClick={()=>{session.acceptConflictLatest();setAccept(false);}}/></HStack>}/>}
  {discard&&<Banner status="warning" title="미보관 입력을 포기할까요?" description="화면의 미보관 입력을 버리고 목록으로 돌아갑니다. 마지막으로 확인된 보관 내용은 서버에 남습니다." endContent={<HStack gap={2}><Button label="입력 계속하기" variant="ghost" onClick={()=>setDiscard(false)}/><Button label="미보관 입력 포기하고 목록으로" variant="secondary" onClick={onLeave}/></HStack>}/>}
  </VStack>
- {state.review&&<DocumentThemeProvider><FinancialReportPreview report={state.review.document.json as unknown as FinancialReport}/></DocumentThemeProvider>}
+ {state.review&&<><DocumentThemeProvider><FinancialReportPreview report={state.review.document.json as unknown as FinancialReport}/></DocumentThemeProvider><ManualEntryPrintHost review={state.review}/></>}
  </VStack>;
 }
 export function ManualEntryControls({onConfirmed,refreshRevision=0,registerStart,registerNavigationGuard,client:provided}:{onConfirmed:(id:string)=>void;refreshRevision?:number;registerStart:(start:((trigger?:HTMLElement)=>void)|null)=>void;registerNavigationGuard:(guard:(()=>Promise<boolean>)|null)=>void;client?:ManualEntryClient}){

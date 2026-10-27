@@ -20,6 +20,21 @@ function draft(v:unknown):v is ManualEntryDraftDto {
  if (v.currentReview!==null && !ref(v.currentReview)) return false;
  return v.review===undefined || (object(v.review) && ref(v.review.ref) && v.review.ref.draftId===v.draftId && v.review.ref.draftRevision===v.draftRevision && v.review.ref.rawInputHash===v.rawInputHash && document(v.review.document) && v.review.document.contentHash===v.review.ref.documentHash && summary(v.review.inputSummary));
 }
+/** JSON raw equality ignores object key order and preserves every string and array position. */
+function sameRaw(a:unknown,b:unknown):boolean {
+ if(Object.is(a,b))return true;
+ if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>sameRaw(v,b[i]));
+ if(!object(a)||!object(b))return false;
+ const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(key=>Object.hasOwn(b,key)&&sameRaw(a[key],b[key]));
+}
+function saveAcknowledges(ack:ManualEntryDraftDto,command:SaveManualEntryCommand,base?:ManualEntryDraftDto){
+ if(ack.draftId!==command.draftId||![command.expectedDraftRevision,command.expectedDraftRevision+1].includes(ack.draftRevision)||!sameRaw(ack.content,command.content))return false;
+ if(!base)return true;
+ if(ack.reportCycle!==base.reportCycle||!sameRaw(ack.catalog,base.catalog))return false;
+ const changed=!sameRaw(command.content,base.content);
+ return changed?ack.draftRevision===command.expectedDraftRevision+1:
+  ack.draftRevision===command.expectedDraftRevision&&ack.rawInputHash===base.rawInputHash&&ack.savedAt===base.savedAt;
+}
 export function createManualEntryClient(request:typeof fetch=fetch) {
  const path='/api/report-history/manual-entries';
  async function json(url:string,body?:unknown) {
@@ -32,7 +47,7 @@ export function createManualEntryClient(request:typeof fetch=fetch) {
  async function draftCommand(action:string,command:unknown) { const data=await json(path,{action,...command as object}); wire(draft(data.draft)); return data.draft; }
  return {
   create:async(cmd:CreateManualEntryCommand)=>{const ack=await draftCommand('create',cmd);wire(ack.catalog.basis.reportTitleMonth===cmd.reportTitleMonth);return ack;},
-  save:async(cmd:SaveManualEntryCommand)=>{const ack=await draftCommand('save',cmd);wire(ack.draftId===cmd.draftId&&ack.draftRevision===cmd.expectedDraftRevision+1);return ack;},
+  save:async(cmd:SaveManualEntryCommand)=>{const ack=await draftCommand('save',cmd);wire(saveAcknowledges(ack,cmd));return ack;},
   resume:async (draftId:string)=> { const data=await json(`${path}?${new URLSearchParams({draftId})}`); wire(draft(data.draft)&&data.draft.draftId===draftId); return data.draft; },
   list:async (cursor?:string):Promise<{items:readonly ManualEntrySummary[];nextCursor:string|null}>=> { const data=await json(`${path}?${new URLSearchParams({limit:'12',...(cursor?{cursor}:{})})}`); wire(Array.isArray(data.items) && data.items.every(v=>object(v)&&uuid(v.draftId)&&month(v.reportTitleMonth)&&month(v.reportCycle)&&positive(v.draftRevision)&&typeof v.savedAt==='string'&&['editing','review-ready','stale-review','month-conflict'].includes(String(v.state))) && (data.nextCursor===null || typeof data.nextCursor==='string')); return {items:data.items as ManualEntrySummary[],nextCursor:data.nextCursor as string|null}; },
   prepare:async (cmd:PrepareManualEntryCommand)=> { const data=await json(path,{action:'prepare',...cmd}); const r=data.result; wire(object(r)&&r.kind==='ready'&&ref(r.review)&&document(r.document)&&summary(r.inputSummary)&&r.review.draftId===cmd.draftId&&r.review.draftRevision===cmd.expectedDraftRevision&&r.document.contentHash===r.review.documentHash); return r as {kind:'ready';review:ManualEntryReviewRef;document:PreparedDocument;inputSummary:ManualEntryInputSummary}; },
@@ -86,7 +101,7 @@ export class ManualEntrySession {
   if(!this.pending&&!force&&Date.now()<this.deadline)return;
   if(!this.pending)this.pending={version:this.version,command:{draftId:this.value.draft.draftId,expectedDraftRevision:this.value.draft.draftRevision,idempotencyKey:this.nextKey(),content:this.value.content}};
   const sent=this.pending;this.emit({saveStatus:'saving'});
-  try{const ack=await this.client.save(sent.command);if(ack.draftId!==sent.command.draftId||ack.draftRevision!==sent.command.expectedDraftRevision+1)throw new ManualEntryClientError(0,'ACK_MISMATCH');this.pending=null;this.ackVersion=sent.version;this.emit({draft:ack,saveStatus:this.version===this.ackVersion?'saved':'saving'});}
+  try{const ack=await this.client.save(sent.command);if(!saveAcknowledges(ack,sent.command,this.value.draft))throw new ManualEntryClientError(0,'ACK_MISMATCH');this.pending=null;this.ackVersion=sent.version;this.emit({draft:ack,saveStatus:this.version===this.ackVersion?'saved':'saving'});}
   catch(error){if(error instanceof ManualEntryClientError&&error.status===409){this.pending=null;this.prepareCommand=null;this.confirmCommand=null;this.emit({saveStatus:'conflict',conflict:{latest:null,version:this.version},review:null,message:manualEntryErrorMessage(error)});}else{if(error instanceof ManualEntryClientError&&[422,413].includes(error.status))this.pending=null;this.emit({saveStatus:'error',errors:error instanceof ManualEntryClientError?error.errors:[],message:manualEntryErrorMessage(error)});}throw error;}
  }}
  private async flush(force:boolean):Promise<void>{if(force&&this.timer){clearTimeout(this.timer);this.timer=null;}if(this.running){await this.running;return this.flush(force);}if(this.value.conflict)throw Error('CONFLICT_REVIEW_REQUIRED');if(this.value.saveStatus==='error'||this.value.uncertain)throw Error('RETRY_REQUIRED');if(this.version===this.ackVersion&&!this.pending)return;const run=this.pump(force);this.running=run;try{await run;}finally{if(this.running===run)this.running=null;}}
