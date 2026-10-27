@@ -102,7 +102,7 @@
 ### L2: 실제 원자료 등록 편집 화면
 
 - Files: manual-entry-editor.tsx/.test.tsx만. workspace h1/보고월/원자료설명·여백을정리하고Dialog호환을유지한다.
-- [ ] RED→GREEN: 파일/이력0에서보고월t·자료회차t+1입력, 이어쓰기/임시보관/다음월·충돌·응답불명/숨은오류초점·인쇄owner의기존동작을보존한다. 새저장/계산/예시값/메모리초안은이식하지않는다.
+- [x] RED→GREEN: 파일/이력0에서보고월t·자료회차t+1입력, 이어쓰기/임시보관/다음월·충돌·응답불명/숨은오류초점·인쇄owner의기존동작을보존한다. 새저장/계산/예시값/메모리초안은이식하지않는다.
 
 ### L3: 검토·QA·로컬반영·인계
 
@@ -121,3 +121,12 @@ Ruling: 최신승인목업의‘중복선택버튼·확장자안내줄제거’�
 - 로컬 Geist 자산과 OFL을 포함했다. 출처는 Next 번들 `next/dist/next-devtools/server/font/geist-latin.woff2`, 라이선스는 공식 `https://github.com/vercel/geist-font/blob/main/OFL.txt`이다. 홈에서만 해당 family를 사용하며 전역·문서 테마는 그대로다.
 - 통합 verify는 1,275 passed / 기존 2 skipped. 별도 production webpack 빌드와 테마 `--check` 통과. 독립 코드 검토 P1/P2 없음, 보호 83파일 SHA 변경 0. 격리 서버의 360px 홈과 390px 입력 화면에서 문서 가로 넘침 0을 확인했다.
 - 증거: `/private/tmp/aifrm-l2-home-contract-red.log`, `aifrm-l2-home-green.log`, `aifrm-l2-verify.log`, `aifrm-l2-build.log`, `aifrm-l2-independent-review.md`. 파일 선택 전·후/기존 결과 유지 계약은 테스트로 검증했으며 네이티브 파일 선택기 업로드를 이번에 반복 실행한 것은 아니다.
+
+
+### L2 검증 기록
+
+- workspace의 과거 등록·월별 편집 제목을 h1로 정리하고 보고월 명칭과 원자료 안내를 목업에 맞췄다. Dialog 호환, 원값·카탈로그·저장·충돌·응답불명·검토·인쇄 로직은 유지했다.
+- TDD RED 3건 → 관련 62건 GREEN. 새 테스트의 미사용 인자는 제거하고 실제 생성 명령 검증을 유지했다. 집중 린트 경고 0이며 통합 결과와 별도 빌드에서도 통과했다.
+- 실제 격리 3006에서 기존 1월 원값 수정→보관 목록 복귀→이어쓰기, 새 2025/10 등록→원값 123.45 보관→다음 달 2025/11 생성→새로고침→2025/10 재개 시 같은 값 복원을 확인했다. 390px 편집 가로 넘침 0, 실제 포커스는 해당 월 h1로 이동했다. 모두 임시 합성 원장만 사용했다.
+- 기존 8월 확정본을 열어 3쪽·5개 SVG와 홈 테마가 제거된 DocumentTheme 경계를 확인했다. UI 변경 전 합성 문서와 contentHash·JSON hash가 같았다. 실제 Chrome PDF 저장 결과 871,578bytes/3A4이며 독립 시각 검토에서 제목·5차트·참고표2·잘림/버튼 혼입 없음으로 통과했다. 독립 기대값이나 골든셋 픽셀 동일성을 새로 입증한 것은 아니다.
+- 증거: `/private/tmp/aifrm-l2-manual-report.md`, `aifrm-l2-document-check.json`, `aifrm-l2-pdf-review.md`와 visualizations의 `landing-live-qa-20261027/`. L1 커밋의 외부 라이선스 원문 한 줄에 있던 trailing whitespace를 정리했다. 라이선스 문구는 동일하다.

@@ -26,13 +26,32 @@ async function controlsScreen(env:ManualEnv,client:Record<string,unknown>,entryE
  const registerStart=vi.fn();const registerNavigationGuard=(next:typeof guard)=>{guard=next;};
  const render=()=>env.render(()=>ManualEntryControls({client:client as never,onConfirmed:vi.fn(),registerStart,registerNavigationGuard,presentation:'workspace',...entryEvents,render:(surfaces:{entry:ReactNode;pending:ReactNode})=>[surfaces.entry,surfaces.pending]}));
  const editor=(nodes:ScreenNode[])=>nodes.find(node=>typeof node.type==='function'&&(node.type as {name:string}).name==='ManualEntryEditor');
- const choose=(year:string,month:string)=>{let nodes=render();(nodes.find(node=>node.props.label==='보고 연도')!.props.onChange as (v:string)=>void)(year);nodes=render();(nodes.find(node=>node.props.label==='보고월 월')!.props.onChange as (v:string)=>void)(month);nodes=render();(nodes.find(node=>node.props.label==='선택한 월 자료 입력')!.props.onClick as ()=>void)();};
+ const choose=(year:string,month:string)=>{let nodes=render();(nodes.find(node=>node.props.label==='보고 연도')!.props.onChange as (v:string)=>void)(year);nodes=render();(nodes.find(node=>node.props.label==='보고월')!.props.onChange as (v:string)=>void)(month);nodes=render();(nodes.find(node=>node.props.label==='선택한 월 자료 입력')!.props.onClick as ()=>void)();};
  return {render,editor,choose,guard:()=>guard!(),registerStart};
 }
 it('workspace surfaces expose a past month picker without opening a dialog or requiring uploaded files',async()=>manualScreen(async env=>{
  const client={list:vi.fn(async()=>({items:[],nextCursor:null})),create:vi.fn(),resume:vi.fn()};const view=await controlsScreen(env,client);const nodes=view.render();
  expect(nodes.some(node=>node.props.label==='보고 연도')).toBe(true);expect(nodes.some(node=>node.props.label==='선택한 월 자료 입력')).toBe(true);
  expect(nodes.some(node=>node.props.isOpen===true&&node.props.purpose==='form')).toBe(false);expect(client.create).not.toHaveBeenCalled();
+}));
+it('past workspace has a page heading and selecting the report month creates its existing next-cycle draft',async()=>manualScreen(async env=>{
+ const current=monthDraft('2026/12');const client={list:async()=>({items:[],nextCursor:null}),create:vi.fn(async()=>current),resume:vi.fn(async()=>current)};const view=await controlsScreen(env,client);
+ let nodes=view.render();expect(nodes.find(node=>node.props.children==='과거 자료 등록')!.props.level).toBe(1);
+ const month=nodes.find(node=>node.props.label==='보고월');expect(month).toBeDefined();
+ (nodes.find(node=>node.props.label==='보고 연도')!.props.onChange as (value:string)=>void)('2026');(month!.props.onChange as (value:string)=>void)('12');nodes=view.render();
+ expect(nodes.some(node=>Array.isArray(node.props.children)&&(node.props.children as unknown[]).join('')==='보고월 2026/12 · 자금자료 기준회차 2027/01')).toBe(true);
+ expect(client.create).not.toHaveBeenCalled();(nodes.find(node=>node.props.label==='선택한 월 자료 입력')!.props.onClick as ()=>void)();
+ await vi.waitFor(()=>expect(view.editor(view.render())).toBeDefined());expect(client.create).toHaveBeenCalledWith(expect.objectContaining({reportTitleMonth:'2026/12'}));expect((view.editor(view.render())!.props.session as import('./use-manual-entry').ManualEntrySession).snapshot.draft.reportCycle).toBe('2027/01');
+}));
+it('workspace raw editor owns the page heading while dialog content keeps its existing title contract',async()=>{
+ const {ManualEntryEditor}=await subject();const {ManualEntrySession}=await import('./use-manual-entry');const session=new ManualEntrySession(draft,{} as never);
+ try{const workspace=renderToStaticMarkup(<ManualEntryEditor session={session} workspace onLeave={vi.fn()} onConfirmed={vi.fn()}/>);expect(workspace).toMatch(/<h1\b[^>]*>2026\/09 자료 입력<\/h1>/);
+ const embedded=renderToStaticMarkup(<ManualEntryEditor session={session} embedded onLeave={vi.fn()} onConfirmed={vi.fn()}/>);expect(embedded).not.toMatch(/<h1\b/);expect(embedded).toContain('자금자료');}finally{session.dispose();}
+});
+it.each(['workspace','dialog'] as const)('pending month navigation uses the heading beneath its %s owner',async presentation=>manualScreen(async env=>{
+ const {ManualEntryControls}=await env.load();const client={list:async()=>({items:[{draftId:draft.draftId,reportTitleMonth:'2026/09',reportCycle:'2026/10',draftRevision:1,savedAt:draft.savedAt,state:'editing'}],nextCursor:null})};
+ const render=()=>env.render(()=>ManualEntryControls({client:client as never,presentation,onConfirmed:vi.fn(),registerStart:vi.fn(),registerNavigationGuard:vi.fn()}));render();await vi.waitFor(()=>expect(render().some(node=>node.props.children==='입력 중인 월')).toBe(true));
+ expect(render().find(node=>node.props.children==='입력 중인 월')!.props.level).toBe(presentation==='workspace'?2:3);
 }));
 it('opening the past workspace focuses its month picker heading after leaving the prior report',async()=>manualScreen(async env=>{
  const client={list:async()=>({items:[],nextCursor:null})};const view=await controlsScreen(env,client);view.render();
