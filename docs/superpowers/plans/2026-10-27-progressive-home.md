@@ -58,8 +58,8 @@
 
 **Files:** H1/H2에서 발견된 UI 결함 및 테스트, ai-frm/README.md, 기존 UI 컨텍스트 문서.
 
-- [ ] 전체 독립 검토. 중요한 발견은 실패 재현 테스트→수정→집중/전체 회귀로 해결한다.
-- [ ] 별도 앱에서 production webpack build와 합성 업무 흐름, 모바일·키보드·3쪽 보고서/차트/인쇄 host 및 PDF 경로를 확인한다. 보호 해시는 변경0이어야 한다.
+- [x] 전체 독립 검토. 중요한 발견은 실패 재현 테스트→수정→집중/전체 회귀로 해결한다.
+- [x] 별도 앱에서 production webpack build와 합성 업무 흐름, 모바일·키보드·3쪽 보고서/차트/인쇄 host 및 PDF 경로를 확인한다. 보호 해시는 변경0이어야 한다.
 - [ ] 운영 DB online backup 후 기존 기록/무결성을 확인한다. 스키마 변경 없이 Node26.12.1 운영3002를 새 코드로 재시작하고 읽기/홈/진입만 확인한다. 합성 원본·키·DB·백업을 Git에 넣지 않는다.
 - [ ] 최종 커밋·컨텍스트 정리. 실제로 미검수한 항목과 기존 skip은 완료로 표시하지 않는다.
 
@@ -76,3 +76,9 @@
 - H2 TDD·검토: 수동 입력 회차/기간별6행, 원값 보존·임시보관·다음 달/기존 월 재개·연말·unknown 동일 키 및 외부 guard를 RED→GREEN으로 검증했다. 독립 리뷰에서 늦은 확정본 응답의 탭 덮어쓰기와 충돌 비교의 선택월 불일치를 재현해 수정했다. 정정 확정의 성공 handoff와 응답불명 시 owner 보존도 추가 회귀로 해결했다. picker 초점과 중첩 Astryx bleed는 공식 props로 보완했다. 최종 verify(타입 포함)1253 passed/기존2skip, 전체 lint/diffcheck 통과, 보호83파일 변경0.
 - H2 실제 합성 QA: 격리3005에서 이력0→1월 작성(원값123.45)→임시보관→2월→1월 재개→새로고침/보관 목록 재개 값을 확인했다. 저장된8월 검토 문서 hash/JSON은 H2 전과 같고, 명시 확정 후 기존3쪽 보고서가 열렸다. 보고서→과거 등록의 문서/인쇄 상태 정리도 확인했다. SQLite 쓰기 실패 주입에서 변경 원값456.78 유지·이동차단, 같은 보관 요청 재확인 후 보관됨→홈 이동을 확인했다.390px에서 자금/경제 탭 문서 가로 넘침0·표 내부 스크롤, viewport 원복. 모든 fixture/DB는 임시 QA 전용이며 업무DB는 변경하지 않았다.
 - H2 증거: /private/tmp/aifrm-h2-{manual-report,manual-review,correction-report,home-review}.md, root-final-{verify,lint}.log, late-response-{red,green}.log. 최초 root lint는 ref 선언 순서의 React 규칙 오류1건으로 실패했고 선언을 callback 위로 옮긴 후 재통과했다. 다음 H3는 최종 독립 검토/production build·인쇄/운영 백업·재시작·최종 안내다.
+
+- H3 코드·검토 인수: 최종 독립 검토에서 copy/reapply의 명확4xx 뒤 미확인 명령 ref가 남아 이동이 막히는 문제와 종료unknown 뒤 명령 회복 경계를 RED5→수정했다. 명확 거절은 원안·오류를 유지하며 보류 명령만 해제하고, network/408/429/503은 원래 key/command로 재확인한다. 공통 배너가 동일 요청을 실행하므로 상세·확인창을 닫아도 결과를 확인할 수 있다. 요청 진행 중은 닫기 차단, settle된unknown은 검토 복귀를 허용하되 외부 이동은 ACK 전까지 차단한다. 최종 scoped77개(정정UI33+Session44)·독립 검토 중요 미해결0.
+- H3 최종 자동 QA: release verify(타입 포함)1269passed/기존2skip, 전체lint 및 별도 실제소스 production webpack build 통과. 보호83파일 변경0. 단계 로그 /private/tmp/aifrm-h3-release-{verify,lint,build}.log, 최종 검토 /private/tmp/aifrm-h3-final-review.md. README를 새 홈·과거 등록/입력 중인 월·다음 달·파일 안내 흐름에 맞췄다.
+- H3 실제 종료 복구 QA: 격리3005에서 합성 수정 원값/사유 저장→ACK후 목록 복귀를 확인했다. correction_resolution INSERT 실패 주입에서 종료503 뒤 기록0 유지→원요청 재확인 ACK로1건 생성, 두 번째 실패에서도 기존1건 유지→확인창 닫기/배너유지/홈이동차단→원요청 재확인 후2건/홈정상 이동을 확인했다. 주입trigger는 제거했으며 업무 원장은 사용하지 않았다.
+- H3 PDF 인수: 실제소스 production3006의 합성7월 검토 보고서를 nativeChrome에서 PDF 저장했다. 868714bytes/3A4, 독립 검수자가3쪽 전체 PNG를 확인해 올바른7월 제목/페이지1·2·3/5차트/두원본참고표·잘림/앱버튼혼입없음을 통과했다. 증거 progressive-home-qa-20261027/synthetic-past-review-202607.pdf, /private/tmp/aifrm-h3-pdf-review.md. 수치의 독립 기대값·골든셋 픽셀동등성을 새 입증한 것은 아니다.
+- H3 운영 준비: 업무23테이블/schema5의 행hash·schema/triggerhash를 읽기 전용으로 보관하고 README 원문 online backup을 실행해 전체 동일함·integrityok/FK0을 확인했다. data/backups 내부의 백업은 Git 제외이며 실제값/키를 로그·fixture로 내보내지 않았다. 로컬3002 재시작 및 최종 기록 비교는 다음에 수행한다.

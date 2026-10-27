@@ -17,7 +17,7 @@ type CorrectionScreen = {
   editorAction: (label: string) => void;
   editorControls: () => TestElement[];
   monthAction: (label: string) => void;
-  workAction: (name: 'onView' | 'onCopy') => void;
+  workAction: (name: 'onView' | 'onCopy' | 'onClose') => void;
   navigate: () => Promise<boolean>;
   events: string[];
   handoffs: Promise<boolean>[];
@@ -65,7 +65,7 @@ async function withCorrectionScreen(request: (url: string, init?: RequestInit) =
       const button = elements(columns.find(column => column.key === 'actions')!.renderCell(navigationMonth)).find(node => node.props.label === label)!;
       (button.props.onClick as (event: unknown) => void)({ currentTarget: trigger });
     };
-    const workAction = (name: 'onView' | 'onCopy') => {
+    const workAction = (name: 'onView' | 'onCopy' | 'onClose') => {
       const table = render().find(node => node.props.idKey === 'reportCycle')!;
       const expansion = (table.props.plugins as { expansion: { renderExpanded: (month: unknown) => TestElement } }).expansion;
       (expansion.renderExpanded(navigationMonth).props[name] as (ref: unknown, trigger: unknown) => void)(summary.ref, trigger);
@@ -476,5 +476,176 @@ it('an unknown session confirmation keeps its owner and request key until a conf
     await vi.waitFor(() => expect(screen.events).toEqual(['confirmed']));
     expect(await screen.handoffs[0]).toBe(true);
     expect(screen.owner()).toBeUndefined();
+  });
+});
+
+it.each([404, 409, 422])('a definite copy rejection %i releases navigation without claiming a successful copy', async status => {
+  await withCorrectionScreen(async (_url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'copy') return Response.json({ ok: false, code: status === 409 ? 'HEAD_CHANGED' : 'INVALID_DRAFT' }, { status });
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    expect(screen.owner()).toBeUndefined();
+    expect(await screen.navigate()).toBe(true);
+    expect(screen.events).toEqual([]);
+  });
+});
+
+it.each([408, 429, 503])('an uncertain copy response %i keeps its command until the same key succeeds', async status => {
+  const keys: string[] = [];
+  await withCorrectionScreen(async (_url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'copy') {
+      keys.push(command.idempotencyKey);
+      return keys.length === 1 ? Response.json({ ok: false, code: 'RETRY_REQUIRED' }, { status }) : Response.json({ ok: true, result: { kind: 'no-change' } });
+    }
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    expect(await screen.navigate()).toBe(false);
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(keys).toHaveLength(2));
+    expect(keys[1]).toBe(keys[0]);
+    await vi.waitFor(() => expect(screen.render().some(node => String(node.props.description).includes('이미 같은 값'))).toBe(true));
+    expect(await screen.navigate()).toBe(true);
+  });
+});
+
+it.each([409, 422])('a definite reapply rejection %i preserves its proposal and releases external navigation', async status => {
+  await withCorrectionScreen(async (url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'copy') return Response.json({ ok: true, result: { ...navigationDraft, requiresReapply: true } });
+    if (command?.action === 'open') return Response.json({ ok: true, editor: navigationEditor });
+    if (command?.action === 'reapply') return Response.json({ ok: false, code: 'INVALID_DRAFT' }, { status });
+    if (url.includes('refKind=')) return Response.json({ ok: true, detail });
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(screen.owner()).toBeDefined());
+    const session = screen.owner()!.session;
+    screen.owner()!.onRefreshComparison!();
+    await vi.waitFor(() => expect(screen.owner()!.comparison).not.toBeNull());
+    screen.owner()!.onReapply!();
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    expect(screen.owner()?.session).toBe(session);
+    expect(session.snapshot.draft?.requiresReapply).toBe(true);
+    expect(await screen.navigate()).toBe(true);
+  });
+});
+
+it.each([0, 408, 429, 503])('a settled unknown close response %i can dismiss its dialog while preserving the original request for banner recovery', async status => {
+  const keys: string[] = [];
+  await withCorrectionScreen(async (url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'close') {
+      keys.push(command.idempotencyKey);
+      if (keys.length === 1) {
+        if (!status) throw new TypeError('Close ACK lost');
+        return Response.json({ ok: false, code: 'RETRY_REQUIRED' }, { status });
+      }
+      return Response.json({ ok: true, result: summary });
+    }
+    if (url.includes('refKind=')) return Response.json({ ok: true, detail });
+    if (url.includes('draftId=')) return Response.json({ ok: true, draft: navigationDraft });
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onClose');
+    const dialog = () => screen.render().find(node => node.props.title === '검토를 종료할까요?')!;
+    await vi.waitFor(() => expect(dialog().props.isOpen).toBe(true));
+    (dialog().props.onAction as () => void)();
+    (dialog().props.onOpenChange as (open: boolean) => void)(false);
+    expect(dialog().props.isOpen).toBe(true);
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    expect(await screen.navigate()).toBe(false);
+    expect(dialog().props.actionLabel).toBe('같은 요청으로 결과 확인');
+    expect(dialog().props.description).toContain('종료 결과를 확인하지 못했습니다');
+    (dialog().props.onOpenChange as (open: boolean) => void)(false);
+    expect(dialog().props.isOpen).toBe(false);
+    expect(await screen.navigate()).toBe(false);
+    const retry = screen.render().find(node => node.props.label === '같은 요청으로 결과 확인');
+    expect(retry).toBeDefined();
+    (retry!.props.onClick as () => void)();
+    await vi.waitFor(() => expect(keys).toHaveLength(2));
+    expect(keys[1]).toBe(keys[0]);
+    await vi.waitFor(() => expect(dialog().props.isOpen).toBe(false));
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.label === '같은 요청으로 결과 확인')).toBe(false));
+    expect(await screen.navigate()).toBe(true);
+  });
+});
+
+it.each([409, 422])('a definite close rejection %i allows cancellation and navigation without closing the work', async status => {
+  await withCorrectionScreen(async (url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'close') return Response.json({ ok: false, code: 'INVALID_DRAFT' }, { status });
+    if (url.includes('refKind=')) return Response.json({ ok: true, detail });
+    if (url.includes('draftId=')) return Response.json({ ok: true, draft: navigationDraft });
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onClose');
+    const dialog = () => screen.render().find(node => node.props.title === '검토를 종료할까요?')!;
+    await vi.waitFor(() => expect(dialog().props.isOpen).toBe(true));
+    (dialog().props.onAction as () => void)();
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    expect(dialog().props.actionLabel).toBe('검토 종료');
+    (dialog().props.onOpenChange as (open: boolean) => void)(false);
+    expect(dialog().props.isOpen).toBe(false);
+    expect(await screen.navigate()).toBe(true);
+    expect(screen.events).toEqual([]);
+  });
+});
+
+it('a close action cannot replace an unknown copy command before its original request resolves', async () => {
+  const keys: string[] = [];
+  await withCorrectionScreen(async (_url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (command?.action === 'copy') {
+      keys.push(command.idempotencyKey);
+      if (keys.length === 1) throw new TypeError('Copy ACK lost');
+      return Response.json({ ok: true, result: { kind: 'no-change' } });
+    }
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    screen.workAction('onClose');
+    await vi.waitFor(() => expect(screen.render().find(node => node.props.title === '검토를 종료할까요?')?.props.isOpen).toBe(false));
+    expect(await screen.navigate()).toBe(false);
+    screen.workAction('onCopy');
+    await vi.waitFor(() => expect(keys).toHaveLength(2));
+    expect(keys[1]).toBe(keys[0]);
+    await vi.waitFor(() => expect(screen.render().some(node => String(node.props.description).includes('이미 같은 값'))).toBe(true));
+    expect(await screen.navigate()).toBe(true);
+  });
+});
+
+it('an unknown legacy confirmation can resolve its original command after the detail has closed', async () => {
+  const keys: string[] = [];
+  await withCorrectionScreen(async (url, init) => {
+    const command = init?.body ? JSON.parse(String(init.body)) : null;
+    if (url === '/api/report-history/corrections') {
+      keys.push(command.idempotencyKey);
+      if (keys.length === 1) throw new TypeError('Confirmation ACK lost');
+      return Response.json({ ok: true, result: { kind: 'already-confirmed', confirmationId: 'confirmed', revision: 2 } });
+    }
+    if (url.includes('refKind=')) return Response.json({ ok: true, detail: { ...navigationPendingDetail, summary: { ...navigationPendingDetail.summary, ref: { kind: 'legacy-preview', id: 'legacy' } } } });
+    return Response.json({ ok: true, items: [navigationMonth], nextCursor: null });
+  }, async screen => {
+    screen.workAction('onView');
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.label === '정정 확정')).toBe(true));
+    (screen.render().find(node => node.props.label === '정정 확정')!.props.onClick as () => void)();
+    await vi.waitFor(() => expect(screen.render().some(node => node.props.title === '수정안 안내')).toBe(true));
+    (screen.render().find(node => node.props.label === '내용 닫기')!.props.onClick as () => void)();
+    expect(screen.render().some(node => node.props.children === '수정안 내용 보기')).toBe(false);
+    expect(await screen.navigate()).toBe(false);
+    const retry = screen.render().find(node => node.props.label === '같은 요청으로 결과 확인');
+    expect(retry).toBeDefined();
+    (retry!.props.onClick as () => void)();
+    await vi.waitFor(() => expect(screen.events).toContain('confirmed'));
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+    expect(await screen.handoffs[0]).toBe(true);
   });
 });

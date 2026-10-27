@@ -31,6 +31,7 @@ type Confirmation = {
   confirmedAt: string;
 };
 const categoryLabel = { cashflow: '자금자료', economic: '경제지표', funding: '조달금리' };
+const isDefiniteRejection = (error: unknown) => error instanceof CorrectionClientError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 const dateText = (date: string) => { const value = new Date(date); return Number.isNaN(value.getTime()) ? date : value.toLocaleString('ko-KR'); };
 const identity = (row: CorrectionEditorRow) => `${row.label} · 자료 ${row.sourceRound} · ${row.period} · ${row.unit}`;
 type WorkRow = CorrectionWorkSummary & Record<string, unknown>;
@@ -276,6 +277,8 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
   } | null>(null);
   const pendingConfirmation = useRef<CorrectionSession | null>(null);
   const [confirmationUnresolved, setConfirmationUnresolved] = useState(false);
+  const [closeUnresolved, setCloseUnresolved] = useState(false);
+  const [mutationUnresolved, setMutationUnresolved] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -371,11 +374,28 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
       setError(correctionErrorMessage(error));
     }
     finally {
+      setMutationUnresolved(mutation.current !== null);
       actionInFlight.current = false;
       setActionBusy(false);
     }
     afterAck?.();
   };
+  const retryMutation = () => void act(async () => {
+    const pending = mutation.current;
+    if (!pending) return;
+    try {
+      const afterAck = await pending.run();
+      mutation.current = null;
+      setCloseUnresolved(false);
+      return afterAck;
+    } catch (error) {
+      if (isDefiniteRejection(error)) {
+        mutation.current = null;
+        setCloseUnresolved(false);
+      }
+      throw error;
+    }
+  });
   const confirmSession = async (current: CorrectionSession) => {
     if (!current.canConfirm)
       return null;
@@ -421,10 +441,17 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
     setSession(next);
   };
   const start = async (month: CorrectionMonthSummary, trigger?: HTMLElement) => { rememberTrigger(trigger); const editor = await client.open(month.latestConfirmationId); setComparison(null); setDetail(null); setSession(new CorrectionSession(editor, null, client)); };
-  const prepareClose = async (ref: CorrectionWorkRef) => { const stored = await client.detail(ref); const draft = ref.kind === 'draft' ? await client.resume(ref.id) : null; setClosing({ detail: stored, revision: draft?.draftRevision ?? null, key: crypto.randomUUID() }); };
+  const prepareClose = async (ref: CorrectionWorkRef) => {
+    if (mutation.current) throw Error('UNRESOLVED_CORRECTION');
+    const stored = await client.detail(ref);
+    const draft = ref.kind === 'draft' ? await client.resume(ref.id) : null;
+    setCloseUnresolved(false);
+    setClosing({ detail: stored, revision: draft?.draftRevision ?? null, key: crypto.randomUUID() });
+  };
   const copy = async (ref: CorrectionWorkRef) => {
     const key = `copy:${workKey(ref)}`;
-    if (!mutation.current || mutation.current.key !== key) {
+    if (mutation.current && mutation.current.key !== key) throw Error('UNRESOLVED_CORRECTION');
+    if (!mutation.current) {
       const idempotencyKey = crypto.randomUUID();
       mutation.current = { key, run: async () => {
           const copied = await client.copy(ref, idempotencyKey);
@@ -438,8 +465,13 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
           refresh();
         } };
     }
-    await mutation.current.run();
-    mutation.current = null;
+    try {
+      await mutation.current.run();
+      mutation.current = null;
+    } catch (error) {
+      if (isDefiniteRejection(error)) mutation.current = null;
+      throw error;
+    }
   };
   const refreshComparison = async () => {
     if (!session?.snapshot.draft)
@@ -463,7 +495,8 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
       return;
     const draft = session.snapshot.draft;
     const key = `reapply:${draft.draftId}:${draft.draftRevision}:${comparison.confirmationId}`;
-    if (!mutation.current || mutation.current.key !== key) {
+    if (mutation.current && mutation.current.key !== key) throw Error('UNRESOLVED_CORRECTION');
+    if (!mutation.current) {
       const command = { draftId: draft.draftId, expectedDraftRevision: draft.draftRevision, expectedLatestConfirmationId: comparison.confirmationId, idempotencyKey: crypto.randomUUID() };
       mutation.current = { key, run: async () => {
           try {
@@ -479,7 +512,7 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
             refresh();
           }
           catch (error) {
-            if (error instanceof Error && 'status' in error && error.status === 409) {
+            if (isDefiniteRejection(error)) {
               setComparison(null);
               mutation.current = null;
             }
@@ -507,16 +540,17 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
     { key: 'actions', header: '동작', width: proportional(1), renderCell: month => { const primary = primaryMonthAction(month); return <HStack gap={1} wrap="wrap"><Button label="확정본 열기" size="sm" variant="ghost" isDisabled={actionBusy} onClick={() => onOpen(month.latestConfirmationId)}/><Button label={primary.label} size="sm" variant="secondary" isDisabled={actionBusy} onClick={event => primary.ref ? void act(() => resume(primary.ref, event.currentTarget)) : setExpanded(previous => new Set([...previous, month.reportCycle]))}/><Button label="새 수정안" size="sm" variant="ghost" isDisabled={actionBusy} onClick={event => void act(() => start(month, event.currentTarget))}/></HStack>; } },
   ];
   return <VStack className="report-controls" gap={3}>
-   {session && <VStack gap={3}><CorrectionEditor session={session} comparison={comparison} onConfirm={() => confirmSession(session)} isConfirmationUnresolved={confirmationUnresolved} onAsyncActionStart={() => { actionGeneration.current++; }} onRefreshComparison={() => void act(refreshComparison)} onReapply={() => void act(reapply)} onLeave={() => { if (pendingConfirmation.current) return; session.dispose(); setSession(null); setComparison(null); refresh(); restoreTrigger(); }} onConfirmed={id => { setSession(null); setComparison(null); refresh(); onConfirmed(id); }}/>{error && <Banner status="warning" title="수정안 안내" description={error}/>}</VStack>}
+   {session && <VStack gap={3}><CorrectionEditor session={session} comparison={comparison} onConfirm={() => confirmSession(session)} isConfirmationUnresolved={confirmationUnresolved} onAsyncActionStart={() => { actionGeneration.current++; }} onRefreshComparison={() => void act(refreshComparison)} onReapply={() => void act(reapply)} onLeave={() => { if (pendingConfirmation.current) return; session.dispose(); setSession(null); setComparison(null); refresh(); restoreTrigger(); }} onConfirmed={id => { setSession(null); setComparison(null); refresh(); onConfirmed(id); }}/>{(error || mutationUnresolved) && <Banner status="warning" title="수정안 안내" description={error || '처리 결과를 같은 요청으로 확인해 주세요.'} endContent={mutationUnresolved ? <Button label="같은 요청으로 결과 확인" size="sm" variant="secondary" isLoading={actionBusy} onClick={retryMutation}/> : undefined}/>}</VStack>}
    <Activity mode={session ? 'hidden' : 'visible'}><VStack as="section" className="report-controls" aria-label="월별 확정 이력" gap={3}>
   <HStack gap={2} wrap="wrap"><Heading level={3} tabIndex={-1} ref={heading}>월별 확정 이력</Heading>{onNewManualEntry && !(listLoaded && !busy && !error && latest === null && months.length === 0) && <Button label="과거 자료 등록" variant="secondary" size="sm" onClick={event=>onNewManualEntry?.(event.currentTarget)}/>}</HStack>
   {!(listLoaded && !busy && !error && latest === null && months.length === 0) && <HStack gap={2} wrap="wrap" align="end"><Selector label="보고 기간" value={period} size="sm" options={[{ value: 'recent', label: '최근 12개월' }, ...years.map(value => ({ value, label: `${value}년` })), { value: 'all', label: '전체 기간' }]} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPeriod(value); setExpanded(new Set()); }} isDisabled={pendingOnly || busy}/><CheckboxInput label="전체 기간 미처리만" size="sm" value={pendingOnly} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPendingOnly(value); setExpanded(new Set()); }}/><Button label="확정 이력 다시 조회" size="sm" variant="ghost" isDisabled={busy} onClick={() => { setLatest(null); refresh(); }}/></HStack>}
   {months.length > 0 ? <Table data={months.map(month => ({ ...month }))} idKey="reportCycle" columns={columns} plugins={{ expansion, sticky }} density="compact"/> : <ConfirmedHistoryEmpty state={busy || (!listLoaded && !error) ? 'loading' : error ? 'error' : latest === null ? 'global' : 'filtered'} onCreate={onNewManualEntry} onReset={() => { generation.current++; loadedMonths.current=[]; setPeriod('all'); setPendingOnly(false); setExpanded(new Set()); }} onRetry={() => void load()}/>}
   {cursor && <Button label="보고월 더 보기" variant="secondary" size="sm" isDisabled={busy} onClick={() => void load(cursor)}/>}
-  {error && <Banner status="warning" title="수정안 안내" description={error}/>}
+  {(error || mutationUnresolved) && <Banner status="warning" title="수정안 안내" description={error || '처리 결과를 같은 요청으로 확인해 주세요.'} endContent={mutationUnresolved ? <Button label="같은 요청으로 결과 확인" size="sm" variant="secondary" isLoading={actionBusy} onClick={retryMutation}/> : undefined}/>}
   {detail && <VStack gap={3}><Heading level={4} tabIndex={-1} ref={detailHeading}>수정안 내용 보기</Heading><CorrectionReviewDetails detail={detail}/>{detail.summary.ref.kind === 'legacy-preview' && detail.summary.state === 'pending' && detail.preview && <Button label="정정 확정" variant="secondary" isDisabled={actionBusy} onClick={() => void act(async () => {
           const key = `confirm:${workKey(detail.summary.ref)}`;
-          if (!mutation.current || mutation.current.key !== key) {
+          if (mutation.current && mutation.current.key !== key) throw Error('UNRESOLVED_CORRECTION');
+          if (!mutation.current) {
             const command = { previewId: detail.preview!.previewId, previewHash: detail.preview!.previewHash, expectedBaseRevision: detail.summary.baseRevision, idempotencyKey: crypto.randomUUID(), reason: detail.reason };
             mutation.current = { key, run: async () => {
                 try {
@@ -541,15 +575,32 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
           return afterAck;
         })}/>}<Button label="내용 닫기" size="sm" variant="ghost" onClick={() => { actionGeneration.current++; setDetail(null); restoreTrigger(); }}/></VStack>}
   <AlertDialog isOpen={closing !== null} onOpenChange={open => {
-      if (!open)
+      if (!open && !actionInFlight.current)
         setClosing(null);
-    }} title="검토를 종료할까요?" description={closing ? `${closing.detail.summary.summary} · 사유: ${closing.detail.reason || '입력 전'}. 확정본은 바뀌지 않습니다.` : ''} actionLabel="검토 종료" cancelLabel="계속 검토" isActionLoading={actionBusy} onAction={() => void act(async () => {
+    }} title="검토를 종료할까요?" description={closing ? `${closing.detail.summary.summary} · 사유: ${closing.detail.reason || '입력 전'}. 확정본은 바뀌지 않습니다.${closeUnresolved ? ' 종료 결과를 확인하지 못했습니다. 같은 요청으로 결과를 확인한 뒤 이동할 수 있습니다.' : ''}` : ''} actionLabel={closeUnresolved ? '같은 요청으로 결과 확인' : '검토 종료'} cancelLabel="계속 검토" isActionLoading={actionBusy} onAction={() => void act(async () => {
       if (!closing)
         return;
-      await client.close(closing.detail.summary.ref, closing.revision, closing.key);
-      setClosing(null);
-      setDetail(null);
-      refresh();
+      const key = `close:${workKey(closing.detail.summary.ref)}:${closing.revision}`;
+      if (mutation.current && mutation.current.key !== key) throw Error('UNRESOLVED_CORRECTION');
+      if (!mutation.current) {
+        const command = closing;
+        mutation.current = { key, run: async () => {
+          await client.close(command.detail.summary.ref, command.revision, command.key);
+          setClosing(null);
+          setDetail(null);
+          refresh();
+        } };
+      }
+      try {
+        await mutation.current.run();
+        mutation.current = null;
+        setCloseUnresolved(false);
+      } catch (error) {
+        const rejected = isDefiniteRejection(error);
+        if (rejected) mutation.current = null;
+        setCloseUnresolved(!rejected);
+        throw error;
+      }
     })}/>
  </VStack></Activity></VStack>;
 }
