@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { Token } from '@astryxdesign/core/Token';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
-import { Card } from '@astryxdesign/core/Card';
 import { Collapsible } from '@astryxdesign/core/Collapsible';
 import { Divider } from '@astryxdesign/core/Divider';
-import { Grid } from '@astryxdesign/core/Grid';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Layout, LayoutContent } from '@astryxdesign/core/Layout';
@@ -70,7 +68,8 @@ import type { FinancialReport } from './report-model';
 import { acceptPreparedCandidate, attemptAfterFailureResponse, confirmationAttemptForClick, correctionSuccessState, fetchArchivedDocument, reportDisplayOf, revisionForCycle,
   type AcceptedCandidate, type ConfirmationAttempt } from './report-confirmation-state';
 import { ReportCorrectionControls } from './report-correction-editor';
-import { ManualEntryControls } from './manual-entry-editor';
+import { ManualEntryControls, type ManualEntrySurfaces } from './manual-entry-editor';
+import { HomeWorkspace, navigateAfterEditors, type HomeSection } from './home-workspace';
 import { INITIAL_UPLOAD_SESSION, uploadSessionReducer, type ReadyRounds as Loaded } from './upload-session';
 import { UploadPanel } from './upload-panel';
 
@@ -92,6 +91,16 @@ const CHECK_UPLOAD_SOURCE = '원본 항목·회차를 확인한 뒤 파일을 �
  * 산출하기는 읽어 둔 회차로 결과를 펼치기만 한다.
  */
 export default function AifrmDashboardPage() {
+  const [homeSection, setHomeSection] = useState<HomeSection>('create');
+  const workspaceNavigating = useRef(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailFocus, setDetailFocus] = useState<{ target: string } | null>(null);
+  useEffect(() => {
+    if (!detailsOpen || !detailFocus) return;
+    const heading = document.getElementById(detailFocus.target);
+    heading?.focus();
+    heading?.scrollIntoView({ block: 'start' });
+  }, [detailsOpen, detailFocus]);
   const [upload, dispatchUpload] = useReducer(uploadSessionReducer, INITIAL_UPLOAD_SESSION);
   const { files, prepared, committed } = upload;
   const loaded = committed?.rounds ?? null;
@@ -115,10 +124,45 @@ export default function AifrmDashboardPage() {
   const correctionNavigation = useRef<(() => Promise<boolean>) | null>(null);
   const manualNavigation = useRef<(() => Promise<boolean>) | null>(null);
   const manualStart = useRef<((trigger?:HTMLElement) => void) | null>(null);
+  const openGeneration = useRef(0);
   const registerManualStart = useCallback((start: ((trigger?:HTMLElement) => void) | null) => { manualStart.current = start; }, []);
   const registerManualNavigation = useCallback((guard: (() => Promise<boolean>) | null) => { manualNavigation.current = guard; }, []);
   const registerCorrectionNavigation = useCallback((guard: (() => Promise<boolean>) | null) => { correctionNavigation.current = guard; }, []);
-  const openGeneration = useRef(0);
+  const beforeManualEntryOpen = useCallback(() => navigateAfterEditors([correctionNavigation.current], () => {}), []);
+  const manualEntryOpened = useCallback(() => {
+    openGeneration.current++;
+    setArchived(null);
+    setReportOpenedAt(null);
+    setHomeSection('past');
+  }, []);
+  const navigateWorkspace = async (section: HomeSection) => {
+    if (workspaceNavigating.current || section === homeSection) return;
+    workspaceNavigating.current = true;
+    try {
+      await navigateAfterEditors([manualNavigation.current, correctionNavigation.current], () => {
+        openGeneration.current++;
+        setHomeSection(section);
+        requestAnimationFrame(() => {
+          const heading = document.getElementById('workspace-heading') ?? document.getElementById('dashboard-results-heading');
+          heading?.focus({ preventScroll: true });
+          heading?.scrollIntoView({ block: 'start' });
+        });
+      });
+    } finally { workspaceNavigating.current = false; }
+  };
+  const openPastWorkspace = async (trigger?: HTMLElement) => {
+    if (workspaceNavigating.current) return;
+    workspaceNavigating.current = true;
+    try {
+      await navigateAfterEditors([correctionNavigation.current], () => {
+        openGeneration.current++;
+        setArchived(null);
+        setReportOpenedAt(null);
+        setHomeSection('past');
+        manualStart.current?.(trigger);
+      });
+    } finally { workspaceNavigating.current = false; }
+  };
   const [correctionRefreshRevision, setCorrectionRefreshRevision] = useState(0);
   const [correctionReason, setCorrectionReason] = useState('');
   const [candidateState, setCandidateState] = useState<AcceptedCandidate | null>(null);
@@ -395,8 +439,7 @@ export default function AifrmDashboardPage() {
     void openConfirmation(id);
   };
   const confirmationControls = (inReport: boolean) => <VStack as="section" aria-label="보고서 확정·이력" className="report-controls" gap={2}>
-    <ManualEntryControls onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerStart={registerManualStart} registerNavigationGuard={registerManualNavigation}/>
-    <ReportCorrectionControls onNewManualEntry={trigger => void (async () => { if (correctionNavigation.current && !await correctionNavigation.current()) return; manualStart.current?.(trigger); })()} confirmations={confirmations} onOpen={id => void openConfirmation(id)} onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerNavigationGuard={registerCorrectionNavigation} />
+    <ReportCorrectionControls onNewManualEntry={trigger => void openPastWorkspace(trigger)} confirmations={confirmations} onOpen={id => void openConfirmation(id)} onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision} registerNavigationGuard={registerCorrectionNavigation} />
     {inReport && archived === null && <VStack gap={2} align="start">
       {currentRevision !== null && currentRevision > 0 && <TextInput label="정정 사유" value={correctionReason} onChange={setCorrectionReason} isRequired />}
       <Button label={confirmationBusy ? '확정 중' : candidatePreparing ? '후보 준비 중' : currentRevision !== null && currentRevision > 0 ? '정정 확정' : '보고서 확정'} variant="secondary"
@@ -409,7 +452,8 @@ export default function AifrmDashboardPage() {
     {confirmationError && <Banner status="warning" title="확정 이력 안내" description={confirmationError} />}
   </VStack>;
 
-  if (displayReport !== null && displayReport !== undefined) {
+  const renderWorkspace = (manual: ManualEntrySurfaces) => {
+    if (displayReport !== null && displayReport !== undefined) {
     return (
       <DocumentThemeProvider>
         <Layout
@@ -434,18 +478,11 @@ export default function AifrmDashboardPage() {
     );
   }
 
-  return (
-    <Layout
-      contentWidth={960}
-      padding={6}
-      content={
-        <LayoutContent>
-          <VStack gap={6}>
-            <Heading level={1}>{loaded === null ? '자금수지표 등록' : '재무위험 확인'}</Heading>
-            <ReportHistoryControls history={history} summary={displayHistorySources} />
-            {confirmationControls(false)}
-
-            <UploadPanel
+    return <HomeWorkspace section={homeSection}
+      onNavigate={section => void navigateWorkspace(section)} onPast={trigger => void openPastWorkspace(trigger)}
+      pending={manual.pending} entry={manual.entry} records={confirmationControls(false)}
+      backfill={<ReportHistoryControls history={history} summary={displayHistorySources} />} backfillRunning={history.running}
+      upload={<UploadPanel
               files={files}
               prepared={prepared}
               isApplied={prepared.kind === 'ready' && loaded === prepared.rounds}
@@ -456,8 +493,8 @@ export default function AifrmDashboardPage() {
                 void prepare(list, id);
               }}
               onSubmit={handleSubmit}
-            />
-
+            />}
+      notices={<>
             {prepared.kind === 'error' && (
               <Banner status="error" title="새 파일을 확인하지 못했습니다" description={prepared.reason} />
             )}
@@ -473,11 +510,17 @@ export default function AifrmDashboardPage() {
               />
             )}
 
-            {loaded !== null && dashboard !== null && readiness !== null && <VStack gap={1} align="start">
-              <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
+            {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
+      </>}
+      results={loaded !== null && dashboard !== null && readiness !== null ? <VStack gap={5}>
+            <HStack gap={4} wrap="wrap" hAlign="between" vAlign="center">
+              <VStack gap={2}>
+                <Heading level={2} id="dashboard-results-heading" tabIndex={-1}>산출 결과</Heading>
+                <Text color="secondary">보고월 {addMonths(loaded.latest.round, -1)} · 자금수지표 기준월 {loaded.latest.round}</Text>
+              </VStack>
               <Button
                 id="report-entry"
-                label="HTML 보고서 보기"
+                label="보고서 보기"
                 variant="primary"
                 onClick={async () => {
                   if (manualNavigation.current && !await manualNavigation.current()) return;
@@ -486,6 +529,7 @@ export default function AifrmDashboardPage() {
                   window.scrollTo({ top: 0 });
                 }}
               />
+            </HStack>
               <Text type="supporting"
                 role="status" aria-live="polite" aria-atomic aria-label="보고서 준비 상태">
                 {`지표 5개 중 ${[
@@ -494,16 +538,11 @@ export default function AifrmDashboardPage() {
                   readiness.unavailable > 0 ? `${readiness.unavailable}개 산출 불가` : null,
                 ].filter(Boolean).join(' · ')}`}
               </Text>
-            </VStack>}
-
-            {dashboard !== null && <Diagnostics diagnostics={dashboard.diagnostics} />}
-
-            {loaded !== null && dashboard !== null && (
-              <VStack gap={6}>
-                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception, fundingRisk.response)} />
-
-                <Divider />
-
+                <Summary tiles={summaryTiles(loaded, dashboard, gapMonth, perception, fundingRisk.response)}
+                  onDetail={target => { setDetailsOpen(true); setDetailFocus({ target }); }} />
+            </VStack> : undefined}
+      details={loaded !== null && dashboard !== null ? <Collapsible trigger="지표별 산출 내역" isOpen={detailsOpen} onOpenChange={setDetailsOpen}>
+              <VStack gap={6} paddingBlock={4}>
                 <VStack gap={3}>
                   <Heading level={2} id="risk-recovery" tabIndex={-1}>대금 회수 위험</Heading>
                   <RecoveryResult
@@ -537,22 +576,18 @@ export default function AifrmDashboardPage() {
                     <AdequateCashResult adequateCash={dashboard.adequateCash} statement={loaded.latest.statement} />
                   </VStack>
                 </VStack>
-              </VStack>
-            )}
-
-            {loaded !== null && (
-              <>
                 <Divider />
                 <ConstructionPerceptionCard perception={perception} />
                 <Divider />
                 <FundingRiskCard fundingRisk={fundingRisk} />
-              </>
-            )}
-          </VStack>
-        </LayoutContent>
-      }
-    />
-  );
+              </VStack>
+            </Collapsible> : undefined}
+    />;
+  };
+  return <ManualEntryControls presentation="workspace" render={renderWorkspace}
+    onConfirmed={correctionConfirmed} refreshRevision={correctionRefreshRevision}
+    beforeEntryOpen={beforeManualEntryOpen} onEntryOpened={manualEntryOpened}
+    registerStart={registerManualStart} registerNavigationGuard={registerManualNavigation} />;
 }
 
 // ── 요약 ─────────────────────────────────────────────────────────────────
@@ -588,37 +623,18 @@ const RESULT_TARGETS: Record<string, string> = {
   '조달위험 인식 지수': 'risk-funding',
 };
 
-/** 다섯 요약과 상세 이동. 좁은 화면에서는 카드 줄을 바꾼다. */
-function Summary({ tiles }: { tiles: readonly SummaryTile[] }) {
-  return (
-    <Grid gap={4} columns={{ minWidth: 160, repeat: 'fit' }}>
-      {tiles.map((tile) => (
-        <Card key={tile.title}>
-          <VStack gap={2}>
-            <Text type="label">{tile.title}</Text>
-            {tile.status.kind === 'grade' && <StatusMark status={tile.status} />}
-            <HStack gap={2} vAlign="center" wrap="wrap">
-              <Text type="display-3">{tile.value}</Text>
-              {tile.status.kind === 'dot' && <StatusMark status={tile.status} />}
-            </HStack>
-            <Text type="supporting" size="xsm">
-              {tile.note}
-            </Text>
-            {RESULT_TARGETS[tile.title] && (
-              <Button label="상세 보기" aria-label={`${tile.title} 상세 보기`} variant="ghost" size="sm"
-                href={`#${RESULT_TARGETS[tile.title]}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  const heading = document.getElementById(RESULT_TARGETS[tile.title]);
-                  heading?.focus();
-                  heading?.scrollIntoView({ block: 'start' });
-                }} />
-            )}
-          </VStack>
-        </Card>
-      ))}
-    </Grid>
-  );
+/** 기존 산출값·등급을 행으로 보여 주고 요청한 상세만 펼친다. */
+function Summary({ tiles, onDetail }: { tiles: readonly SummaryTile[]; onDetail: (target: string) => void }) {
+  return <Table data={tiles.map(tile => ({ ...tile }))} idKey="title" density="balanced" columns={[
+    { key: 'title', header: '위험지표', width: proportional(1.5) },
+    { key: 'value', header: '산출값', width: proportional(1), renderCell: tile => <Text hasTabularNumbers>{tile.value}</Text> },
+    { key: 'status', header: '판정·상태', width: proportional(1), renderCell: tile => <StatusMark status={tile.status} /> },
+    { key: 'note', header: '기준·확인', width: proportional(2), renderCell: tile => <VStack gap={1}>
+      <Text color="secondary">{tile.note}</Text>
+      {RESULT_TARGETS[tile.title] && <HStack><Button label="상세 보기" aria-label={`${tile.title} 상세 보기`} variant="ghost" size="sm"
+        onClick={() => onDetail(RESULT_TARGETS[tile.title])} /></HStack>}
+    </VStack> },
+  ]} />;
 }
 
 function StatusMark({ status }: { status: SummaryStatus }) {

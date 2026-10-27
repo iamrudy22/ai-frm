@@ -81,7 +81,7 @@ function CorrectionBasisDetails({ editor }: {
 }) {
   return <VStack gap={2}><Text>{editor.basis.reportTitleMonth} 보고서 · 최신 {editor.baseRevision}차</Text><Table data={editor.rows.map(row => ({ ...row, item: identity(row), value: originalValue(row) }))} idKey="rowId" density="compact" columns={[{ key: 'item', header: '항목·자료회차·기간·단위', width: pixel(270) }, { key: 'value', header: '최신 확정값', width: proportional(1) }]}/></VStack>;
 }
-export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, onRefreshComparison, onReapply }: {
+export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, onRefreshComparison, onReapply, onAsyncActionStart, onConfirm, isConfirmationUnresolved = false }: {
   session: CorrectionSession;
   onLeave: () => void;
   onConfirmed: (id: string) => void;
@@ -92,6 +92,9 @@ export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, on
   } | null;
   onRefreshComparison?: () => void;
   onReapply?: () => void;
+  onAsyncActionStart?: () => void;
+  onConfirm?: () => ReturnType<CorrectionSession['confirm']>;
+  isConfirmationUnresolved?: boolean;
 }) {
   const state = useReportCorrection(session);
   const compact = useMediaQuery('(max-width: 800px)');
@@ -135,21 +138,22 @@ export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, on
               inputRefs.current.set(row.rowId, input);
             else
               inputRefs.current.delete(row.rowId);
-          }} label={`${identity(row)} 수정 값`} isLabelHidden value={edit?.action === 'set' ? edit.rawValue ?? '' : ''} onChange={value => session.change(updateDraftEdit(state.content, row.rowId, value))} type="text" size="sm" placeholder="빈칸은 변경 없음" isDisabled={!row.allowedActions.includes('set') || edit?.action === 'set-missing' || state.busy || state.completed || state.draft?.requiresReapply} status={error ? { type: 'error', message: error.message } : undefined}/>
-   {row.allowedActions.includes('set-missing') && <CheckboxInput size="sm" label={`${row.label} ${row.period} 값 없음`} value={edit?.action === 'set-missing'} isDisabled={state.busy || state.completed || state.draft?.requiresReapply} onChange={checked => session.change(updateDraftEdit(state.content, row.rowId, checked ? null : ''))}/>}
+          }} label={`${identity(row)} 수정 값`} isLabelHidden value={edit?.action === 'set' ? edit.rawValue ?? '' : ''} onChange={value => session.change(updateDraftEdit(state.content, row.rowId, value))} type="text" size="sm" placeholder="빈칸은 변경 없음" isDisabled={!row.allowedActions.includes('set') || edit?.action === 'set-missing' || state.busy || state.completed || state.draft?.requiresReapply || isConfirmationUnresolved} status={error ? { type: 'error', message: error.message } : undefined}/>
+   {row.allowedActions.includes('set-missing') && <CheckboxInput size="sm" label={`${row.label} ${row.period} 값 없음`} value={edit?.action === 'set-missing'} isDisabled={state.busy || state.completed || state.draft?.requiresReapply || isConfirmationUnresolved} onChange={checked => session.change(updateDraftEdit(state.content, row.rowId, checked ? null : ''))}/>}
   </VStack>;
       } },
   ];
   const saveLabel = { idle: '입력 전', saving: '저장 중', saved: '보관됨', error: '저장 실패', conflict: '충돌 · 비교 필요' }[state.saveStatus];
+  const beginAction = <T,>(action: () => T) => { onAsyncActionStart?.(); return action(); };
   const safePreview = async () => {
     try {
-      await session.preview();
+      await beginAction(() => session.preview());
     }
     catch { /* the queue keeps the error and raw inputs */ }
   };
   const leave = async () => {
     try {
-      await session.drain();
+      await beginAction(() => session.drain());
       onLeave();
     }
     catch { /* remain in the editor */ }
@@ -169,12 +173,12 @@ export function CorrectionEditor({ session, onLeave, onConfirmed, comparison, on
    <Table data={rows} idKey="rowId" columns={columns} plugins={{ sticky }} density="compact"/>
   </VStack>
   <Text color="secondary">빈 수정 칸은 변경 없음 · 0과 값 없음은 구분합니다.</Text>
-  <TextArea ref={reasonRef} label="전체 정정 사유" value={state.content.reason} onChange={reason => session.change({ ...state.content, reason })} maxLength={2000} isRequired isReadOnly={state.busy || state.completed} status={state.errors.find(error => error.field === 'reason') ? { type: 'error', message: state.errors.find(error => error.field === 'reason')!.message } : undefined}/>
-  <TextArea ref={noteRef} label="근거 메모" value={state.content.evidenceNote} onChange={evidenceNote => session.change({ ...state.content, evidenceNote })} maxLength={2000} isOptional isReadOnly={state.busy || state.completed} status={state.errors.find(error => error.field === 'evidenceNote') ? { type: 'error', message: state.errors.find(error => error.field === 'evidenceNote')!.message } : undefined}/>
+  <TextArea ref={reasonRef} label="전체 정정 사유" value={state.content.reason} onChange={reason => session.change({ ...state.content, reason })} maxLength={2000} isRequired isReadOnly={state.busy || state.completed || isConfirmationUnresolved} status={state.errors.find(error => error.field === 'reason') ? { type: 'error', message: state.errors.find(error => error.field === 'reason')!.message } : undefined}/>
+  <TextArea ref={noteRef} label="근거 메모" value={state.content.evidenceNote} onChange={evidenceNote => session.change({ ...state.content, evidenceNote })} maxLength={2000} isOptional isReadOnly={state.busy || state.completed || isConfirmationUnresolved} status={state.errors.find(error => error.field === 'evidenceNote') ? { type: 'error', message: state.errors.find(error => error.field === 'evidenceNote')!.message } : undefined}/>
   {state.preview && state.comparison && <CorrectionPreviewDetails preview={state.comparison} confirmation={{ kind: 'unconfirmed' }}/>}
   {state.errors.length > 0 && <Banner status="error" title="입력을 확인해 주세요" description={state.errors.map(error => error.message).join(' ')}/>}
   </>}
-   </VStack></LayoutContent>} footer={<LayoutFooter><HStack gap={2} wrap="wrap"><Button label="목록으로" variant="ghost" isDisabled={state.busy} onClick={() => void leave()}/>{state.conflict && <><Button label="최신 내용 조회·비교" variant="secondary" isDisabled={state.busy} onClick={() => void session.readConflictLatest().catch(() => { })}/><Button label="서버의 최신 내용으로 전환" variant="secondary" isDisabled={!state.conflict.latest || state.busy} onClick={() => setAcceptLatestOpen(true)}/></>}{state.saveStatus === 'error' && <Button label="저장 다시 시도" variant="secondary" onClick={() => void session.retry().catch(() => { })}/>}{!state.draft?.requiresReapply && <><Button label="변경 내용 확인" variant="secondary" isDisabled={state.busy || state.completed || state.stale || !!state.conflict || state.saveStatus === 'error'} onClick={() => void safePreview()}/><Button label="정정 확정" isDisabled={!session.canConfirm} isLoading={state.busy} onClick={() => void session.confirm().then(result => {
+   </VStack></LayoutContent>} footer={<LayoutFooter><HStack gap={2} wrap="wrap"><Button label="목록으로" variant="ghost" isDisabled={state.busy || isConfirmationUnresolved} onClick={() => void leave()}/>{state.conflict && <><Button label="최신 내용 조회·비교" variant="secondary" isDisabled={state.busy} onClick={() => void beginAction(() => session.readConflictLatest()).catch(() => { })}/><Button label="서버의 최신 내용으로 전환" variant="secondary" isDisabled={!state.conflict.latest || state.busy} onClick={() => setAcceptLatestOpen(true)}/></>}{state.saveStatus === 'error' && <Button label="저장 다시 시도" variant="secondary" onClick={() => void beginAction(() => session.retry()).catch(() => { })}/>}{!state.draft?.requiresReapply && <><Button label="변경 내용 확인" variant="secondary" isDisabled={state.busy || state.completed || state.stale || !!state.conflict || state.saveStatus === 'error' || isConfirmationUnresolved} onClick={() => void safePreview()}/><Button label="정정 확정" isDisabled={!session.canConfirm} isLoading={state.busy} onClick={() => void beginAction(() => onConfirm ? onConfirm() : session.confirm()).then(result => {
           if (result)
             onConfirmed(result.confirmationId);
         }).catch(() => { })}/></>}</HStack></LayoutFooter>}/>
@@ -265,10 +269,13 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
   const generation = useRef(0);
   const actionGeneration = useRef(0);
   const [actionBusy, setActionBusy] = useState(false);
+  const actionInFlight = useRef(false);
   const mutation = useRef<{
     key: string;
-    run: () => Promise<void>;
+    run: () => Promise<void | (() => void)>;
   } | null>(null);
+  const pendingConfirmation = useRef<CorrectionSession | null>(null);
+  const [confirmationUnresolved, setConfirmationUnresolved] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -280,15 +287,28 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
     detailHeading.current?.scrollIntoView({ block: 'start' });
   } }, [detail]);
   useEffect(() => {
-    registerNavigationGuard?.(session ? async () => {
+    registerNavigationGuard?.(async () => {
+      if (actionInFlight.current || mutation.current || pendingConfirmation.current)
+        return false;
+      const token = actionGeneration.current;
       try {
-        await session.drain();
-        return !session.snapshot.busy;
+        await session?.drain();
+        if (actionInFlight.current || mutation.current || pendingConfirmation.current || token !== actionGeneration.current || session?.snapshot.busy || session?.hasUnacknowledged)
+          return false;
+        actionGeneration.current++;
+        session?.dispose();
+        setSession(null);
+        setComparison(null);
+        setDetail(null);
+        setClosing(null);
+        if (session)
+          setEpoch(value => value + 1);
+        return true;
       }
       catch {
         return false;
       }
-    } : null);
+    });
     return () => registerNavigationGuard?.(null);
   }, [session, registerNavigationGuard]);
   const refresh = () => setEpoch(value => value + 1);
@@ -336,19 +356,45 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
     });
     return () => { live = false; };
   }, [load, epoch, refreshRevision]);
-  const act = async (work: () => Promise<void>) => {
-    if (actionBusy)
+  const act = async (work: () => Promise<void | (() => void)>) => {
+    if (actionInFlight.current)
       return;
+    actionInFlight.current = true;
+    actionGeneration.current++;
     setActionBusy(true);
     setError('');
+    let afterAck: (() => void) | void = undefined;
     try {
-      await work();
+      afterAck = await work();
     }
     catch (error) {
       setError(correctionErrorMessage(error));
     }
     finally {
+      actionInFlight.current = false;
       setActionBusy(false);
+    }
+    afterAck?.();
+  };
+  const confirmSession = async (current: CorrectionSession) => {
+    if (!current.canConfirm)
+      return null;
+    pendingConfirmation.current = current;
+    setConfirmationUnresolved(true);
+    try {
+      const result = await current.confirm();
+      if (result) {
+        pendingConfirmation.current = null;
+        setConfirmationUnresolved(false);
+      }
+      return result;
+    }
+    catch (error) {
+      if (error instanceof CorrectionClientError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)) {
+        pendingConfirmation.current = null;
+        setConfirmationUnresolved(false);
+      }
+      throw error;
     }
   };
   const view = async (ref: CorrectionWorkRef, trigger?: HTMLElement) => {
@@ -461,9 +507,9 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
     { key: 'actions', header: '동작', width: proportional(1), renderCell: month => { const primary = primaryMonthAction(month); return <HStack gap={1} wrap="wrap"><Button label="확정본 열기" size="sm" variant="ghost" isDisabled={actionBusy} onClick={() => onOpen(month.latestConfirmationId)}/><Button label={primary.label} size="sm" variant="secondary" isDisabled={actionBusy} onClick={event => primary.ref ? void act(() => resume(primary.ref, event.currentTarget)) : setExpanded(previous => new Set([...previous, month.reportCycle]))}/><Button label="새 수정안" size="sm" variant="ghost" isDisabled={actionBusy} onClick={event => void act(() => start(month, event.currentTarget))}/></HStack>; } },
   ];
   return <VStack className="report-controls" gap={3}>
-   {session && <VStack gap={3}><CorrectionEditor session={session} comparison={comparison} onRefreshComparison={() => void act(refreshComparison)} onReapply={() => void act(reapply)} onLeave={() => { session.dispose(); setSession(null); setComparison(null); refresh(); restoreTrigger(); }} onConfirmed={id => { setSession(null); setComparison(null); refresh(); onConfirmed(id); }}/>{error && <Banner status="warning" title="수정안 안내" description={error}/>}</VStack>}
+   {session && <VStack gap={3}><CorrectionEditor session={session} comparison={comparison} onConfirm={() => confirmSession(session)} isConfirmationUnresolved={confirmationUnresolved} onAsyncActionStart={() => { actionGeneration.current++; }} onRefreshComparison={() => void act(refreshComparison)} onReapply={() => void act(reapply)} onLeave={() => { if (pendingConfirmation.current) return; session.dispose(); setSession(null); setComparison(null); refresh(); restoreTrigger(); }} onConfirmed={id => { setSession(null); setComparison(null); refresh(); onConfirmed(id); }}/>{error && <Banner status="warning" title="수정안 안내" description={error}/>}</VStack>}
    <Activity mode={session ? 'hidden' : 'visible'}><VStack as="section" className="report-controls" aria-label="월별 확정 이력" gap={3}>
-  <HStack gap={2} wrap="wrap"><Heading level={3} tabIndex={-1} ref={heading}>월별 확정 이력</Heading>{onNewManualEntry && !(listLoaded && !busy && !error && latest === null && months.length === 0) && <Button label="새 보고서 직접 입력" variant="secondary" size="sm" onClick={event=>onNewManualEntry?.(event.currentTarget)}/>}</HStack>
+  <HStack gap={2} wrap="wrap"><Heading level={3} tabIndex={-1} ref={heading}>월별 확정 이력</Heading>{onNewManualEntry && !(listLoaded && !busy && !error && latest === null && months.length === 0) && <Button label="과거 자료 등록" variant="secondary" size="sm" onClick={event=>onNewManualEntry?.(event.currentTarget)}/>}</HStack>
   {!(listLoaded && !busy && !error && latest === null && months.length === 0) && <HStack gap={2} wrap="wrap" align="end"><Selector label="보고 기간" value={period} size="sm" options={[{ value: 'recent', label: '최근 12개월' }, ...years.map(value => ({ value, label: `${value}년` })), { value: 'all', label: '전체 기간' }]} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPeriod(value); setExpanded(new Set()); }} isDisabled={pendingOnly || busy}/><CheckboxInput label="전체 기간 미처리만" size="sm" value={pendingOnly} onChange={value => { generation.current++;loadedMonths.current=[]; setMonths([]); setCursor(null); setPendingOnly(value); setExpanded(new Set()); }}/><Button label="확정 이력 다시 조회" size="sm" variant="ghost" isDisabled={busy} onClick={() => { setLatest(null); refresh(); }}/></HStack>}
   {months.length > 0 ? <Table data={months.map(month => ({ ...month }))} idKey="reportCycle" columns={columns} plugins={{ expansion, sticky }} density="compact"/> : <ConfirmedHistoryEmpty state={busy || (!listLoaded && !error) ? 'loading' : error ? 'error' : latest === null ? 'global' : 'filtered'} onCreate={onNewManualEntry} onReset={() => { generation.current++; loadedMonths.current=[]; setPeriod('all'); setPendingOnly(false); setExpanded(new Set()); }} onRetry={() => void load()}/>}
   {cursor && <Button label="보고월 더 보기" variant="secondary" size="sm" isDisabled={busy} onClick={() => void load(cursor)}/>}
@@ -479,7 +525,7 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
                     throw Error('UNKNOWN_CONFIRMATION');
                   setDetail(null);
                   refresh();
-                  onConfirmed(result.confirmationId);
+                  return () => onConfirmed(result.confirmationId);
                 }
                 catch (error) {
                   if (error instanceof CorrectionClientError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)) {
@@ -490,8 +536,9 @@ export function ReportCorrectionControls({ confirmations, onOpen, onConfirmed, r
                 }
               } };
           }
-          await mutation.current.run();
+          const afterAck = await mutation.current.run();
           mutation.current = null;
+          return afterAck;
         })}/>}<Button label="내용 닫기" size="sm" variant="ghost" onClick={() => { actionGeneration.current++; setDetail(null); restoreTrigger(); }}/></VStack>}
   <AlertDialog isOpen={closing !== null} onOpenChange={open => {
       if (!open)
