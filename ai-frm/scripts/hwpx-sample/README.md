@@ -70,4 +70,6 @@ python3 scripts/hwpx-sample/generate_sample.py --mode probe-table --assets /abso
 
 사용자 승인 후 합성 probe3개를 MYBOX에 올렸으며 실제 Naver 변환 뷰어에서 각1쪽과 정상 흐름을 확인했다. `probe-table`은 MYBOX **더보기→인쇄→PDF로 저장** 경로로 A4 1쪽 PDF를 확보했고 독립 육안 검토도 통과했다. 이 결과를 전체3쪽 보고서나 편집/재저장 성공으로 확대하지 않는다.
 
-3단계의 text/image 인쇄 PDF와 별도 편집 환경 재저장 검사는 아직 끝나지 않아 단계 인수는 대기다. 정확한 상태는 visualizations의 `recovery-20261029/stage3-verification.md`/`stage3-qa.json`. 직접 docviewer 브라우저 일반 인쇄는 썸네일 UI까지 출력된 실패 진단물이며 대체 검증으로 인정하지 않는다. 4단계는 인수 후 진행한다.
+3단계의 text/image 정상 인쇄 PDF도 확보해 **세 probe의 MYBOX 인쇄 gate를 통과**했다. text는 A4 1쪽/48,115bytes/SHA `5a212ddc5e32c971ac21685bb4a1a552360c15b50e8a56d056746853de7107eb`, image는 A4 1쪽/86,688bytes/SHA `80d8fe73eaccb4fc26ded10985db50434e3c4949a7b718f940ae22f5a25b7fc6`다. 두 PDF 전쪽을 root/독립 검토자가 원문과 대조했다. image의 기존 MYBOX 리소스는 일시적 뷰어 오류가 있어 같은 SHA의 합성 파일을 새 이름으로 올린 후 정상 인쇄했다. 기존 파일은 보존했다.
+
+편집/재저장 환경은 여전히 미검증이며5단계에 남는다. probe의400×110 그림 치수는 흐름 시험용으로, 전체 보고서는 원본 그림 비율을 보존해야 한다. 이 결과를 전체3쪽 보고서 양식 재현이나 편집성 검증 완료로 확대하지 않는다. 정확한 상태는 visualizations의 `recovery-20261029/stage3-verification.md`/`stage3-qa.json`. 직접 docviewer 브라우저 일반 인쇄는 실패 진단물이며 인수 증거에서 제외한다. 다음 단계는4A의 계산 완료 표시값 투영이다.

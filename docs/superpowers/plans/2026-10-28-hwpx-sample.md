@@ -2,7 +2,7 @@
 
 > **현재 상태 정정:** 사용자가 확인한 실제 경로는 **네이버 MYBOX → HWPX 열기 → 인쇄/PDF 저장**이다. 반환된 `test_report.pdf`는 4쪽이며 겹침·넘침이 있어 이전 샘플은 이 경로의 호환성 **불합격**이다. 아래 완료 기록은 로컬 샘플 실험의 이력이며 배포 가능한 HWPX의 인수 완료를 뜻하지 않는다. 대응 계획은 아래의 2026-10-29 실행 기준 1~7단계를 따른다.
 
-사용자 승인 범위는 HWPX 샘플을 먼저 만들고 기존 3쪽 보고서와 비교 검증하는 것이다. 웹 다운로드 버튼 추가는 이 단계에 포함하지 않는다. 기존 계산식·HTML/PDF 템플릿·앱 소스·의존성은 변경하지 않는다.
+아래 2026-10-28 기록은 최초 샘플 실험 범위다. 당시에는 웹 다운로드 버튼을 포함하지 않았으며, 현재의 후속 구현 범위와 순서는 아래 **2026-10-29 실행 기준**을 따른다. 계산식·기존 HTML/PDF 템플릿은 전 단계에서 보호한다.
 
 기준은 기존 합성 2026/08 확정 문서 JSON과 동일 문서의 PDF다. 업무 원장·환경변수·실제 금융 자료를 샘플로 내보내거나 외부 변환 서비스에 업로드하지 않는다. 앱 소스·정적 자산·주요 설정 205개 파일의 SHA를 별도 보관해 변경 여부를 확인한다.
 
@@ -35,11 +35,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development 또는 superpowers:executing-plans. 이 절은 이전 R0–R5와 모듈 분해 보완을 통합한 최신 실행 계획이다. 단계마다 TDD·독립 검토·QA·커밋·컨텍스트 기록을 남긴다. 사용자가 단계별 실행을 승인했으며 아래 실행 기록을 이어 쓴다.
 
+**계획 갱신 당시 출발점:** HEAD `3505d98`, branch `codex/aifrm-ui-ux`. 1·2단계 완료, 3단계 코드/자동 테스트31개 완료, 당시 실제 MYBOX 요약표 probe 인쇄만 통과했다. 이후 실행 상태는 문서 끝의 최신 컨텍스트를 따른다. 전체 보고서 투영·웹 다운로드는 순서대로 구현한다.
+
 **Goal:** 기존 계산·리포트 양식을 유지한 편집 가능한 HWPX를 생성하고, **네이버 MYBOX에서 열기→인쇄/PDF 저장**한 결과가 정상 3쪽임을 입증한다.
 
 **Architecture:** 계산 완료 `FinancialReport`를 읽기 전용으로 받아 의미 단위 문서를 만들고, 검증한 HWPX 전용 기준 구조에 채운 뒤 패키지 검증·원자 저장으로 내보낸다. PDF 줄 좌표 역산은 제거한다. 작은 문서의 MYBOX 검증이 끝난 뒤 전체 3쪽 투영을 구현하고, 웹 연결은 최종 샘플 인수 이후에 진행한다.
 
-**Tech Stack:** 샘플은 Python 표준 XML/ZIP·기존 Apache-2.0 빈 패키지 기반, 앱은 기존 Node26.12.1·Next.js·React·Astryx. 독립 파서/RHWP는 보조 검사다. 스킬과 외부 구현은 버전·라이선스를 확인한 원칙/허용된 최소 코드만 참고한다.
+**Tech Stack:** 샘플은 Python 표준 XML/ZIP·기존 Apache-2.0 빈 패키지 기반, 앱은 기존 Node26.12.1·Next.js·React·Astryx. 독립 파서/RHWP는 보조 검사다. 웹용 ZIP/차트 이미지 도구는6A에서 공개 API·라이선스·실제 브라우저 동작을 확인한 뒤 버전을 고정한다. 스킬과 외부 구현은 버전·라이선스를 확인한 원칙/허용된 최소 코드만 참고한다.
 
 **Spec:** 사용자의 HWPX 채택·기존 계산식/템플릿 변경 금지·샘플 우선·MYBOX 경로 확인·작은 단위 테스트·2026-10-29 구현 계획 요청. 실패 증거는 `/Users/dong-gyu/Downloads/test_report.pdf`; 원래3쪽 PDF/문서JSON/5 Whys 진단은 visualizations `hwpx-sample-20261028/`에 있다.
 
@@ -53,6 +55,7 @@
 - 실제 자료 대신 합성 fixture로 QA한다. MYBOX 접근이 없으면 사용자 반환 PDF를 기다리고 해당 검증을 `not_run`으로 기록한다. 독립 렌더 통과로 대신하지 않는다.
 - 본문 구조 검사, 패키지 검사, 렌더, 육안 검토, MYBOX 확인은 각각 상태/입력해시/도구버전/출력해시를 기록한다. 미검증 후보는 검증 완료 파일로 소개하지 않는다.
 - 제품 앱은 1~5단계에서 수정하지 않는다. 6단계는 화면의 출력 도구만 변경하며 기존 문서 본문/인쇄는 유지한다. 상시 Python subprocess를 웹 실행 의존성으로 자동 채택하지 않는다.
+- HWPX의 본문은 native 문단/표, 그림은 기존 지표 차트5개와 원본 참고표2개다. 차트 이미지에는 기존 제목·범례·빈 자료 안내까지 포함한다. 보고서 본문 전체를 캡처하거나 별도 참고 추이 차트를 끼워 넣지 않는다.
 
 ## Review Focus
 
@@ -61,19 +64,22 @@
 3. 결측·0·음수·순유입·긴 사유에서 값/본문을 잃거나 재계산함 → 4단계 투영 단위 테스트와 내용 비교.
 4. 교체된 그림·스타일 참조가 깨지거나 저장 실패가 정상 파일을 덮어씀 → 2단계 패키지/원자 저장 및 3단계 XML 검사.
 5. 수동 입력의 숨긴 인쇄 host와 보이는 문서가 중복 내보내거나 다른 문서를 다운로드함 → 6단계 명시적 콜백/문서 소유권 회귀.
+6. SVG만 수집해 제목/범례/빈 자료 안내가 빠지거나 다른 월 차트가 섞임 → 6A 전체 figure 검증과6C 클릭 snapshot 계약.
+7. probe의 글꼴/폭/색을 그대로 전체 양식에 사용하거나 Python 성공을 웹 결과에 승계함 → 4B 출력 전용 스타일과6D 최종 파일 재검증.
 
 ## 파일별 책임과 함수 계약
 
-기본 경로는 `ai-frm/scripts/hwpx-sample/`다. 기존 파일을 편집하고 새 책임 모듈3개만 추가한다. 테스트4개는 각 책임 옆에 둔다. 파일 수 자체를 목표로 삼지 않는다.
+기본 경로는 `ai-frm/scripts/hwpx-sample/`다. 아래 모듈은 이미 분리되어 있다. 기존 파일을 보완하며 `test_report_projection.py`는4A에서 추가한다. 파일 수 자체를 목표로 삼지 않는다.
 
 | 파일 | 책임·공개 함수 | 단위 테스트 |
 |---|---|---|
-| `report_projection.py` (신규) | `project_report(report: Mapping[str, object]) -> ReportDocument`. 불변 문서형 `ReportDocument`, `PageSpec`, `TextBlock`, `MetricBlock`, `ImageBlock`도 이 파일에 정의 | `test_report_projection.py` (신규) |
-| `document_xml.py` (신규) | `build_parts(document: ReportDocument, template: Mapping[str, bytes], assets: Mapping[str, bytes]) -> dict[str, bytes]`. 의미 단위 문단/그림을 XML 부품으로 구성 | `test_document_xml.py` (신규) |
-| `package_io.py` (신규) | `read_package(payload: bytes) -> dict[str, bytes]`, `validate_parts(parts) -> tuple[PackageIssue, ...]`, `build_package(parts) -> bytes`, `write_atomic(path: Path, payload: bytes) -> None` | `test_package_io.py` (신규) |
+| `report_projection.py` | 불변 문서형은 구현됨. `project_report(report: Mapping[str, object]) -> ReportDocument`는4A에서 구현 | `test_report_projection.py` (4A 추가) |
+| `document_xml.py` | `build_parts(document: ReportDocument, template: Mapping[str, bytes], assets: Mapping[str, bytes]) -> dict[str, bytes]`. probe 지원 완료, `MetricBlock`·전체 보고서 스타일은4B에서 구현 | `test_document_xml.py` |
+| `package_io.py` | `read_package(payload: bytes) -> dict[str, bytes]`, `validate_parts(parts) -> tuple[PackageIssue, ...]`, `build_package(parts) -> bytes`, `write_atomic(path: Path, payload: bytes) -> None`. 일반 무결성과 원자 저장 구현됨 | `test_package_io.py` |
 | `generate_sample.py` (편집) | CLI의 JSON/자산 읽기→투영→XML→검증→후보 저장만 조정. `--report`, `--assets`, `--output`, `--mode probe-text/probe-image/probe-table/report` | 기존 `test_generate_sample.py`를 CLI·통합 테스트로 변경 |
 
 - `ReportDocument`는 reportMonth·generatedOn과 순서 있는 `PageSpec`을 갖고 각 쪽은 block tuple이다. `MetricBlock`은 표시 title/value/status/narrative/basis/formula/image_role을 보존한다. PDF x/y·행별 문장은 계약에 넣지 않는다.
+- 4A에서 exporter 전용 불변 `SummaryItem(label, status, tone)`·`SummaryBlock(items)`를 추가하고 지표의 표시 색도 명시한다. `tone`은 기존 출력의 색 선택을 복제하는 표현 정보다. 금융값에서 등급·판정을 새로 계산하지 않는다. 요약의 검정 제목/상태별 색을 하나의 평문으로 합쳐 잃지 않는다.
 - probe는 같은 불변 block형으로 CLI 내부의 고정 합성 예제를 조립한다. 전체5개 지표·7개 그림을 요구하는 `project_report`와 구분한다. XML/ZIP 계층은 probe의 그림1개도 지원한다.
 - core는 파일경로·DB·네트워크를 모르고 `Mapping[str, bytes]`를 받는다. 파일 I/O는 CLI 읽기와 `write_atomic`에만 둔다. 단일 저장 경로는 저장 전 payload를 다시 열어 검증하여 우회 쓰기를 막는다.
 - `PackageIssue`는 part/code/message의 불변 자료형으로 `package_io.py`에 정의한다. 문서형/함수 이름을 이후 단계에서 그대로 사용한다.
@@ -105,56 +111,120 @@
 - [x] RED: 텍스트/runs 순서·`& < >`/한글/`× ÷ − Σ` 보존, 잘못된 스타일/이미지 ID 거부, 의미 블록의 본문 완전 일치·역할 중복/그림 누락 거부, 그림 삽입 전후 본문 불변 테스트를 작성한다. placeholder 엔진은 추가하지 않는다.
 - [x] GREEN: 유효 빈 패키지에서 제목·날짜·두 줄 본문·산식의 작은 native 문서를 만든다. 포인트/밀리미터 변환은 순수 함수에 집중시켜 `1pt=100HWPUNIT`, `25.4mm=7200HWPUNIT`을 검사한다.
 - [x] `probe-text`→`probe-image`(기존 차트1개 inline)→`probe-table`(요약 TextBlock을 배경/테두리 있는 한 셀 표로 표현)의 순서로 생성한다. 범용 표 모델은 추가하지 않는다. 본문/차트를 같은 흐름에 둔다. 수작업 줄 좌표 캐시나 PDF 역산 fallback은 허용하지 않는다.
-- [ ] MYBOX에서 각 최종 파일을 열어 인쇄/PDF 저장하고 예상 쪽수·문구/그림 보존·잘림/겹침 없음·정상 줄바꿈을 확인한다. 편집 기능이 제공되는 환경이면 짧은 수정→저장→재열기도 수행한다.
-- [ ] 첫 어긋남이 생기는 probe에서 원인을 고친다. 결과가 없거나 실패면 전체3쪽으로 넘어가지 않는다. 유효한 원본 HWPX가 이미 있다고 가정하지 않으며 이 과정의 성공 구조를 HWPX 전용 기준으로 고정한다.
+- [x] `probe-text`·`probe-image`를 **MYBOX 더보기→인쇄→PDF로 저장** 경로로 저장한다. 각 A4 1쪽·원문/그림·기호·줄바꿈·겹침/잘림 없음이 기준이다. `probe-table`은 입력SHA가 유지되면 이미 통과한 실제 PDF를 재사용하며 불필요하게 반복하지 않는다.
+- [x] 직접 docviewer 탭의 브라우저 일반 인쇄는 통과 증거에서 제외한다. 같은 이름의 PDF가 있어도 SHA/인쇄 경로를 대조한다. 저장 도구 timeout 뒤에는 실제 파일 존재·크기·SHA부터 확인하고, UI가 다른 창으로 바뀌면 네이티브 조작을 중단한다.
+- [x] 편집 환경을 별도 기록했다. 현재 검증한 MYBOX 뷰어는 보기/인쇄만 제공하고 한컴오피스 Web 편집 링크는 미검증이므로 `edit=not_run`으로5단계에 남긴다. 사용 가능한 편집기에서 짧은 본문 수정→저장→재열기→인쇄를 수행한다. 링크의 존재를 편집 성공으로 단정하지 않는다.
+- [x] 세 probe의 **정상 인쇄 결과가 모두 통과**해야4단계로 간다. 실패하면 첫 어긋남이 생기는 계층에서 실패 테스트→최소 수정→새 후보 생성→영향받은 probe의 실제 인쇄 재검증 순서로 해결한다. 코드나 입력이 바뀌면 이전 SHA의 통과 결과를 새 파일에 승계하지 않는다.
 - [x] Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -v`. 단위/통합 PASS와 MYBOX gate의 실제 증거가 모두 필요하다.
-- [ ] 검토·QA·커밋·컨텍스트 기록. 커밋: `feat(hwpx): establish MYBOX-verified document flow`.
+- [x] 검토·QA·컨텍스트 기록을 마쳤다. 코드 `3505d98` 이후 추가한 검증을 `docs(qa): complete minimal MYBOX flow acceptance`로 커밋한다. 실제 편집 미검증은 별도 상태로 유지한다.
 
 ## 4단계: 계산 완료 데이터 투영과 전체3쪽 생성
 
-**Files:** `report_projection.py`의 `project_report`, `test_report_projection.py`; 검증한 XML 구성·기준 양식·CLI·기존 테스트를 필요한 만큼 확장한다.
+**착수 조건:** 3단계 세 probe의 실제 MYBOX 인쇄 통과. 제품 앱은 계속 변경하지 않는다.
 
-- [ ] RED: `test_projection_preserves_all_display_values_and_input`, `test_projection_distinguishes_zero_negative_missing_and_net_inflow`, `test_projection_rejects_duplicate_or_missing_metric`, `test_projection_preserves_print_text_and_excludes_hidden_details`를 작성한다. 독립적인 기대 문구/순서를 fixture에 명시한다.
-- [ ] GREEN: 기존 `FinancialReport`만 읽어 1쪽 종합·회수·Gap / 2쪽 건설경기·조달위험·적정시재 / 3쪽 원본 참고표를 구성한다. 기존 출력의 긴 사유 축약 규칙 외에 새 문구 수정/요약을 하지 않는다.
-- [ ] 제목·설명·산식·차트는 지표 단위로 연결하고 쪽 경계와 정상 쪽번호/바닥글을 사용한다. 이미지7개는 role→bytes로 전달하고 참고표 원본 hash를 검사한다. 기존 금융값 계산 모듈은 import하지 않는다.
-- [ ] CLI report모드는 JSON→투영→XML→패키지→독립 파서 재개방으로 통합 테스트한다. PDF 줄 좌표 `--layout` 계약과 legacy 생성 fallback을 제거한다. 실패 파일은 별도 증거로 보존한다.
-- [ ] 실제 MYBOX 반환 PDF의 전체3쪽을 원본과 비교한다. 제목·판정·문구·7개 이미지·파란 선/요약 박스·기호·쪽번호가 유지되고 겹침/잘림이 없어야 한다. RHWP는 보조 증거다.
-- [ ] 모든 단위/통합 테스트·보호 hash·독립 검토를 확인하고 커밋: `feat(hwpx): compose the original three-page report from saved values`.
+### 4A. 표시 데이터만 읽는 순수 투영
+
+**Files:** `report_projection.py`, 신규 `test_report_projection.py`, 신규 `fixtures/report-contract.json`(샘플 디렉터리 안). JSON은 작은 합성 입력과 독립 기대 문구/순서/색/이미지 역할을 담으며6단계 TypeScript와 공통으로 사용한다. 실제 업무 자료나 PDF 좌표는 넣지 않는다.
+
+- [ ] RED: `test_projection_preserves_display_strings_and_input`에서 `1.00`, `0`, 음수, `—`, 순유입·로딩 문구를 완전 일치로 검증한다. `test_projection_rejects_duplicate_or_missing_metric`에서 지표5개 ID의 중복/누락을 거부한다. 환경/문법 오류가 아니라 현재 미구현 계약 때문에 실패하는지 확인한 다음 구현한다.
+- [ ] `test_projection_preserves_summary_order_and_fixed_body_order`: 종합은 입력 `metrics` 배열 순서, 본문은 recovery/liquidity→construction/funding/cash 고정 순서를 검증한다. 입력 배열을 정렬하거나 값/등급을 다시 계산하지 않는다. 제목·작성일·기존 표시 문자열도 그대로 사용한다.
+- [ ] `test_failure_reason_matches_print_codepoint_boundaries`: 산출 불가·산출 중만60 유니코드 코드포인트까지 원문,61부터 앞59개+`… (상세는 HTML 참고)`. 59/60/61·emoji·결합문자·ZWJ 경계를 고정한다. 일반 설명을 새로 축약하지 않는다.
+- [ ] `test_projection_excludes_non_print_details`: basis는 건설경기에만 표시하고 숨긴 출처·경고·이력/회차 안내는 제외한다. 종합의 정상/위험/기본 색은 기존 표시 조건을 그대로 옮기며 금융 수치에서 재판정하지 않는다.
+- [ ] GREEN: `project_report`와 `SummaryItem`/`SummaryBlock`을 구현한다. `ReportDocument`/`PageSpec`의 불변 tuple 계약은 유지한다. 계산 모듈·DB·파일·네트워크는 이 계층에 넣지 않는다.
+- [ ] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_report_projection.py' -v`. 같은 명령의 RED→GREEN과 전체 샘플 회귀·독립 검토를 기록한다.
+- [ ] 커밋·컨텍스트: `feat(hwpx): project saved report values without recalculation`.
+
+### 4B. 전체 보고서 XML과 HWPX 전용 스타일
+
+**Files:** `document_xml.py`, `test_document_xml.py`, 필요 시 exporter 전용 문서형. 기존 HTML/PDF 템플릿·CSS·글꼴 설정은 수정하지 않는다.
+
+- [ ] RED: `test_metric_block_keeps_text_and_image_in_flow`, `test_summary_preserves_mixed_status_colors`, `test_report_styles_match_existing_print_contract`, `test_native_footer_and_page_breaks`를 먼저 추가한다. 현재 `MetricBlock` 직렬화 미구현과 probe 스타일 차이가 실제 실패로 드러나야 한다.
+- [ ] GREEN: 지표 제목/값·상태·설명·산식·차트를 한 의미 그룹으로 직렬화하고, 종합은 색 있는 native 문구를 가진 한 셀 표로 구성한다. native 문단·그림의 흐름을 유지하며 절대좌표/줄 캐시 fallback을 만들지 않는다.
+- [ ] HWPX 전용 스타일은 기존 출력의 A4 세로·좌우12mm/상하10mm·본문13pt/종합14pt/날짜12pt·산식/기준9pt·본문/종합/날짜 줄간격1.5·종합 굵게·파란 선·노란 종합 박스·상태 색·실제 바닥글 쪽번호를 재현한다. 서체 지정은 기존 Dotum/돋움→AppleGothic→Noto Sans KR 순서를 기준으로 하되 설치 여부에 따른 실제 대체 글꼴을 기록한다. 차트 내부 서체 정책은 유지한다. 기존 실제 출력과 대조해 단위 변환/가용 본문 폭을 확정한다. probe의 본문11pt·160%·맑은고딕·skeleton 폭425.2pt를 전체 보고서에 그대로 쓰지 않는다.
+- [ ] 이미지 역할은 `recovery`, `liquidity`, `construction`, `funding`, `cash`, `referenceRisk`, `referenceLcr`의7개다. 원본 PNG의 종횡비를 유지해 가용 폭 안에 놓는 테스트를 추가한다. probe의 명시적400×110 시험 치수를 전체 보고서에 재사용하지 않는다. 누락/중복·가용 폭 초과를 보고서 구성 계층에서 거부한다. 범용 package 계층에5지표/7그림/3쪽 규칙을 넣지 않는다.
+- [ ] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_document_xml.py' -v`, 이후 전체 샘플 테스트·독립 파서 재개방. 본문/이미지SHA·참조·색·흐름 검사를 수행한다. 명시적 쪽나눔2개는 실제3쪽의 증명이 아니다.
+- [ ] 커밋·컨텍스트: `feat(hwpx): serialize report groups with native styles and page numbers`. 실제3쪽 인수는4C까지 미완료로 표시한다.
+
+### 4C. CLI 전환과 실제 전체3쪽 검증
+
+**Files:** `generate_sample.py`, `test_generate_sample.py`, README·검증 manifest. 입력은 `--mode report --report /abs/report.json --assets /abs/assets.json --output /abs/report.hwpx`이며 기존 wrapper JSON 지원은 유지한다.
+
+- [ ] RED: 전체 보고서 통합 테스트에서 내용/순서·7개 이미지·출력 경로 충돌·실패 시 원본 보존을 검증한다. `--layout` 없는 실행 성공과 구형 `--layout` 인자의 명확한 거부를 고정한다. CLI 오류 뒤 부분 파일을 남기지 않는다.
+- [ ] GREEN: JSON→투영→XML→패키지→원자 저장으로 연결한다. PDF 줄 좌표 계약/legacy fallback을 삭제하고 실패 재현물은 증거 폴더에만 보존한다. 위치/FIXED 속성만 검사하던 테스트는 새 내용·흐름 계약으로 대체한다.
+- [ ] 합성 기준월 JSON과 이미지7개를 고정하고 기존3쪽 PDF와 같은 내용인지 검사한다. 그림5개의 제목·범례·빈 자료 안내까지 보존하고, 참고표2개는 원본PNG bytes/SHA를 그대로 사용한다.
+- [ ] **MYBOX 정상 인쇄 PDF 전3쪽**을 원본과 나란히 비교한다. 쪽수·페이지별 문구/판정·그림7개·선/박스/색·서체/크기·기호·쪽번호·겹침/잘림·불필요한 빈쪽을 확인한다. 글꼴 대체로 차이가 나면 잔여 차이와 영향을 기록한다. 본문 삭제/강제 축소로 맞추지 않는다.
+- [ ] Run: 전체 Python 단위/통합·독립 파서·보호205파일SHA·독립 검토. 원본 HWPX→반환PDF→전쪽PNG를 연결하고 커밋·컨텍스트: `feat(hwpx): validate the full three-page report through MYBOX`.
 
 ## 5단계: 변형 자료·재저장 회귀와 샘플 인수
 
-**Files:** 세 책임별 테스트·CLI 통합 테스트·합성 fixture·검증 manifest와 README. 제품 코드 변경 없음.
+**Files:** 4A의 합성 fixture·책임별 테스트·CLI 통합 테스트·검증 manifest·README. 제품 코드는 변경하지 않는다.
 
-- [ ] 정상월/연말·연초,0·음수·순유입,일부/전체 산출 불가·긴 사유,빈/한 점/18개월 차트·긴 축 라벨·대체 글꼴을 포함한다.
-- [ ] 자동 단위 테스트는 본문/수치·순서·이미지·참조·불변성과 저장 실패 복구를, 실제 MYBOX QA는 쪽수·겹침·잘림·그림 가독성을 검사한다. 자동 테스트만 통과하면 `mybox=not_run`이다.
-- [ ] 기본 생성 범위는 실제3쪽을 유지해야 한다. 사용자 임의 장문 편집으로 내용이 늘면 정상적인 추가쪽은 구분하되 본문 삭제·강제 축소로 통과시키지 않는다. 편집 불가능한 뷰어 경로면 편집 검증은 미수행으로 명시한다.
-- [ ] HWPX hash→MYBOX 변환PDF hash→전쪽PNG→검토 결과를 연결한다. 반환PDF가 통짜 이미지일 경우 HWPX 내용 검사와 시각 비교를 함께 사용한다. PDF 텍스트 추출이 비었다는 사실만으로 내용 누락이라고 판정하지 않는다.
-- [ ] 최종 독립 검토 후 샘플·비교PDF·통과/미검증 환경을 제공한다. 커밋: `test(hwpx): cover report variations and MYBOX round trips`. 6단계는 이 인수가 끝나야 착수한다.
+- [ ] RED→GREEN: 정상월/연말연초,0·음수·순유입,일부/전체 지표의 산출 불가/산출 중·긴 사유,빈/한 점/18개월 차트·긴 축 라벨을 조합한 작은 fixture를 추가한다. 값/본문 누락·참조 오류·불필요한 추가쪽을 재현하면 해당 책임만 수정한다.
+- [ ] 자동 검증은 본문/수치·순서·원본 불변·이미지7개·참조·저장 실패 복구를 담당한다. 실제 MYBOX는 기준 정상본,0/음수/순유입,일부/전체 결측과 긴 사유,연말연초/긴 축 라벨의 대표 후보를 **각각 정상 인쇄→전쪽 비교**한다. 결과를 아직 받지 않은 후보는 `not_run`이다.
+- [ ] 기존 양식의 기본 생성 범위는 실제3쪽이어야 한다. 임의 장문 편집으로 분량이 늘어난 경우는 내용 손실 없이 자연스럽게 넘기는지 별도 확인하며 무조건3쪽을 보장하지 않는다. 대체 글꼴 환경은 사용된 글꼴과 줄바꿈 차이를 따로 기록한다.
+- [ ] 지원할 편집기에서 본문/표의 짧은 수정→저장→재열기→MYBOX 인쇄를 확인한다. 수정한 문구만 달라지고 나머지 문구/그림/기본3쪽이 유지되어야 한다. 편집기 확보가 안 되면 편집 인수는 `not_run`으로 남기며 **편집 지원까지 포함한 최종 완료를 선언하지 않는다**. 별도 서비스 이용/인증을 시험 성공으로 가정하지 않는다.
+- [ ] HWPX SHA→MYBOX 반환PDF SHA→전쪽PNG→검토 결과/도구 버전을 연결한다. 반환PDF가 통짜 이미지면 HWPX 원문 검사와 전쪽 시각 비교를 함께 사용한다. PDF의 텍스트 추출 결과가 비었다는 사실만으로 내용 누락을 단정하지 않는다.
+- [ ] 독립 검토 후 샘플·비교PDF·상태표를 제공하고 커밋·컨텍스트: `test(hwpx): cover report variations and MYBOX round trips`. 인쇄 검증 실패/누락이면6단계로 가지 않는다. 편집 미검증은 이후 단계로 넘어가도 완료 상태로 승격하지 않는다.
 
 ## 6단계: 웹용 변환 경계와 다운로드 도구
 
-**Files:** 신규 `ai-frm/src/app/aifrm/report-hwpx-export.ts`·`.test.ts`, 필요 시 `report-hwpx-assets.ts`·`.test.ts`. `report-preview.tsx`의 출력 도구·props만 최소 변경, `page.tsx`와 `manual-entry-editor.tsx`의 보이는 문서 소유자에서 콜백 연결. 인쇄 host에는 연결하지 않는다.
+**착수 조건:** 4·5단계의 실제 MYBOX 전체 보고서 인쇄 검증 통과. 구현 전 repo `AGENTS.md`의 해당 Next 로컬 문서와 Astryx CLI를 읽는다. 계산/저장/보고서 본문과 출력 어댑터를 분리한다. 새 aggregate·업무 저장소·변환 API를 추가하지 않는다.
 
-**Interfaces:** `exportReportHwpx(report: FinancialReport, assets: ReportHwpxAssets): Promise<Blob>`. `ReportHwpxAssets`는 검증한 이미지7개의 role/bytes 계약이며 exporter 파일에서 정의한다. 공통 미리보기는 선택적 `onDownloadHwpx?: () => void`, `isDownloadingHwpx?: boolean`(기본 false), `hwpxDownloadError?: string | null`(기본 null)을 받는다. 콜백이 없으면 해당 도구를 표시하지 않는다. 진행/실패 상태는 보이는 문서 소유자가 관리하며 재시도도 같은 명시적 콜백을 사용한다.
+기본 경로는 `ai-frm/src/app/aifrm/`. 작은 순수 함수와 경계별 테스트로 나누며 기존 exporter 한 파일에 XML/ZIP/DOM/클릭 상태를 몰아넣지 않는다.
 
-- [ ] RED: 업로드 결과·직접 입력 검토·저장된 확정본 각각의 클릭 시점 표시 문서가 그대로 내보내짐, 새 계산/확정/저장 API 호출 없음, 중복 클릭 제어, 실패 재시도, 숨긴 print host에 버튼/내보내기 없음을 검사한다.
-- [ ] GREEN: 샘플에서 검증한 의미 문서/스타일·패키지 계약을 Node/브라우저 환경으로 옮긴다. 패키지 선정이 필요하면 버전/라이선스를 검토·고정하고 동일 합성 fixture/내용·이미지 hash를 재검증한다. Python 내부 구현을 무조건 복제하거나 상시 subprocess로 실행하지 않는다.
-- [ ] 자산 어댑터는 기존 `ReportChart` 표현과 문서 테마를 재사용해 독립 이미지로 만들고, CSS 변수·외부 리소스가 남지 않게 한다. 샘플용 PDF 차트 클립을 실제 다른 월의 다운로드에 재사용하지 않는다. 차트의 산식·표현 정책은 변경하지 않는다.
-- [ ] 클릭 시 문서/자산을 고정해 다른 월로 화면이 바뀌어도 다른 결과를 섞지 않는다. mount/effect나 인쇄 portal 생성으로 다운로드를 실행하지 않는다. 명시 클릭만 처리한다.
-- [ ] Astryx 출력 도구만 추가하고 기존 PDF/인쇄와 보고서 본문은 유지한다. 실패 시 부분파일을 성공으로 제공하지 않는다. 다운로드는 보고서 확정과 별개다.
-- [ ] 웹에서 내려받은 최종 파일로 MYBOX 전체 QA를 반복한다. Python 샘플에서의 성공이 이식 후 성공을 의미하지 않는다. `npm run verify`, `npm run lint`, 격리 production 빌드·기존 PDF 회귀를 수행한다.
-- [ ] 독립 검토·단계 커밋: `feat(report): add verified HWPX download controls`. 본문/계산 보호 hash와 출력 도구의 허용 변경을 구분해 기록한다.
+| 파일 | 책임/함수 계약 |
+|---|---|
+| `report-hwpx-document.ts` + `.test.ts` | exporter 전용 불변 문서형·`ReportImageRole`·`ReportHwpxAssets = Readonly<Record<ReportImageRole, Uint8Array>>`, `projectReport(report: FinancialReport): ReportDocument`. Python과 같은 합성 계약 사용 |
+| `report-hwpx-xml.ts` + `.test.ts` | `buildReportParts(document: ReportDocument, template: HwpxParts, assets: ReportHwpxAssets): HwpxParts`. 값 escape·스타일·본문/그림 참조·페이지/바닥글. DOM/UI 접근 없음 |
+| `report-hwpx-package.ts` + `.test.ts` | `HwpxParts = Readonly<Record<string, Uint8Array>>`, `readHwpxPackage(payload: Uint8Array): HwpxParts`, `buildHwpxPackage(parts: HwpxParts): Uint8Array`, `validateHwpxPackage(payload: Uint8Array): readonly PackageIssue[]`. 일반 무결성만 검사하고 전체 HWPX 스키마 검증으로 주장하지 않음 |
+| `report-hwpx-export.ts` + `.test.ts` | `exportReportHwpx(report: FinancialReport, assets: ReportHwpxAssets): Promise<Blob>`. 원본 template 로딩·투영→XML→ZIP·성공 Blob만 반환. 공개 자산형은 document 모듈에서 재수출 |
+| `report-hwpx-assets.tsx` + `.test.tsx` | `collectReportHwpxAssets(report: FinancialReport, signal?: AbortSignal): Promise<ReportHwpxAssets>`. 같은 snapshot의 기존 차트 전체5개 PNG + 원본 참고표2개, 임시 host/리소스 정리 |
+| `use-report-hwpx-download.ts` + `.test.tsx` | `useReportHwpxDownload(report: FinancialReport \| null)`. 클릭 순간 snapshot·동기 중복 잠금·busy/error·unmount 취소·Blob URL 해제를 한 곳에서 관리 |
+
+### 6A. 웹 자산 생성과 의존성의 작은 검증
+
+- [ ] 현재 의존성에는 브라우저 ZIP/DOM 이미지 도구가 없다. ZIP 후보 [fflate](https://github.com/101arrowz/fflate), DOM 전체 PNG 후보 [html-to-image](https://github.com/bubkoo/html-to-image)는 공개 API/MIT를 확인했다. **채택 확정은 구현 시점**의 실제 Chrome 동작·버전/라이선스·번들·필요 API 확인 뒤로 둔다. XML 참조 검사도 Node/브라우저에서 시험 가능한 공개 API를 선택하며 문자열 regex를 XML 파서처럼 쓰지 않는다. 기존 xlsx/Next 내부 ZIP API와 전이 sharp를 브라우저 구현에 전용하지 않는다.
+- [ ] RED→GREEN: 대표 정상·빈 차트1개씩을 기존 `ReportChart`+`DocumentThemeProvider`로 독립 렌더링해 PNG를 만든다. **SVG만 추출하지 않고 `.report-chart` figure 전체**의 제목/범례/빈 자료 안내·경계선까지 검사한다. 자료가 없어 SVG가 없는 경우도 유효한 PNG여야 한다.
+- [ ] 기준 폭/문서 테마·폰트/이미지 로딩 완료를 기다리고 CSS 변수·외부 이미지 참조가 남지 않게 한다. 기존 차트 소스/표현 정책/문서 테마는 고치지 않는다. 임시 렌더 host는 출력 전용 어댑터에 두며 숨김 인쇄 host를 재사용하지 않는다.
+- [ ] 이 단계의 브라우저 증거가 실패하면 패키지 선택/자산 어댑터만 조정하고 버튼 연결을 보류한다. 선택한 의존성만 정확한 버전으로 package/lock에 고정한다. 커밋·컨텍스트: `feat(hwpx): capture existing chart figures for document export`.
+
+### 6B. Python 인수 계약을 웹 직렬화로 이식
+
+- [ ] RED: 공통 `fixtures/report-contract.json`의 기대 문서와 `projectReport` 결과를 비교한다. Unicode 축약·종합/본문 순서·색·0/음수/결측·입력 불변을 검증한다. serializer/ZIP은 한글/특수문자 escape·그림 누락·참조·첫 MIME 무압축·정해진 메타데이터·재개방을 검사한다.
+- [ ] GREEN: document→XML→ZIP→export 모듈을 차례로 구현한다. 검증된 blank 패키지는 `ai-frm/public/aifrm/hwpx/blank.hwpx`에 출처·SHA/라이선스 고지와 함께 제공한다. same-origin 정적 template·참고표 fetch 외에 계산/확정/원장 저장/외부 변환 API를 호출하지 않는다. template 로딩 실패나 자산 누락은 성공 Blob 대신 오류다.
+- [ ] Python/TypeScript는 같은 의미 문서·표시 문자열·이미지SHA·패키지 불변식을 공유한다. ZIP 구현 간 전체 바이트 동일성은 요구하지 않고 각 구현 안에서 결정적 출력을 검사한다. TypeScript 결과를 Python 독립 파서/일반 패키지 검증기로 다시 열어 교차 확인한다. 런타임 Python 의존성은 만들지 않는다.
+- [ ] 자산형의 readonly만으로 바이트 불변성을 가정하지 않고 입력을 복사/보존한다. 날짜를 다운로드 시각으로 다시 만들지 않는다. 임의 글꼴 파일을 추가 배포하지 않는다.
+- [ ] Run(cwd `ai-frm`): `npm test -- src/app/aifrm/report-hwpx-document.test.ts src/app/aifrm/report-hwpx-xml.test.ts src/app/aifrm/report-hwpx-package.test.ts src/app/aifrm/report-hwpx-export.test.ts`. RED 로그·GREEN·독립 검토 후 커밋·컨텍스트: `feat(hwpx): port the verified document contract to browser export`.
+
+### 6C. Astryx 다운로드 도구와 클릭 시점 문서 고정
+
+**Files:** hook·자산 어댑터의 경합/정리 테스트, `report-preview.tsx`의 `.report-controls`/선택적 props와 테스트, `page.tsx`, `manual-entry-editor.tsx`의 보이는 문서 콜백·기존 테스트. `manual-entry-print-host.tsx`는 콜백을 받지 않는다.
+
+- [ ] preview props는 `onDownloadHwpx?: () => void`, `isDownloadingHwpx?: boolean`(기본 false), `hwpxDownloadError?: string | null`(기본 null). 콜백이 없으면 버튼도 없다. hook은 `{downloadHwpx, isDownloadingHwpx, hwpxDownloadError}`를 반환하고 양쪽 보이는 문서 소유자가 같은 계약을 사용한다.
+- [ ] RED: 업로드/보관본은 **최종 `displayReport`**, 직접 입력 검토는 **`state.review.document.json`**을 클릭 순간 복제하는지 검사한다. 비동기 도중 월/문서가 바뀌어도 최초 snapshot과 그 차트만 담아야 한다. 중간 `report`/`projectedReport`나 뒤늦게 읽은 화면DOM을 사용하지 않는다.
+- [ ] RED: 빠른 중복 클릭은 한 번만 실행, 자산/template/ZIP 실패는 다운로드 없음·오류 표시·재시도 가능, unmount 시 작업/임시 host/URL 정리, 숨김 print host에는 버튼/호출 없음, 재산출·확정·이력 저장 API 호출0을 검증한다. 모든 다운로드는 명시 클릭으로만 시작한다.
+- [ ] GREEN: 실제 Astryx Button·기존 상태/오류 컴포넌트를 출력 도구 영역에 추가한다. 기존 본문 `Sheet`/`MetricSection`/`ReferencePage`, 인쇄 CSS/폰트·PDF 동작은 그대로 둔다. 버튼 문구는 `한글(HWPX) 다운로드`, 생성 중에는 중복 실행을 막는다.
+- [ ] Vitest는 Node 환경이므로 기존 SSR 계약 테스트/React hook 모의 harness를 재사용한다. DOM→PNG 품질은 실제 브라우저 QA로 별도 검증한다. 새 테스트 프레임워크를 도입하는 것 자체를 목표로 삼지 않는다.
+- [ ] Run: 신규 hook/자산 테스트 및 기존 `report-preview.test.tsx`, `report-chart-view.test.ts`, `manual-entry-editor.test.tsx`, `manual-entry-print-host.test.tsx`. 독립 검토·커밋·컨텍스트: `feat(report): add Astryx HWPX download controls`.
+
+### 6D. 웹에서 받은 파일의 실제 MYBOX 재검증
+
+- [ ] 격리 합성 앱에서 업로드 결과·직접 입력 검토·과거 확정본의3경로로 다운로드한다. 비동기 중 월 전환·실패 후 재시도·짧은 시간 연속 클릭을 실제 브라우저에서 확인한다.
+- [ ] **최종 웹 다운로드 파일**로 기준 정상/결측/경계 후보의 MYBOX 인쇄·전쪽 비교를 반복한다. Python 샘플 통과를 웹 이식 결과에 자동 승계하지 않는다. 편집 round trip도 지원 환경에서 최종 웹 파일로 다시 확인한다.
+- [ ] `npm run verify`, `npm run lint`, 격리 production `npm run build`·기존 PDF 3쪽 회귀를 수행한다. 계산/템플릿 보호와 허용된 도구/props 변경은 SHA와 diff로 구분한다. 발견한 실패는 해당 모듈 RED→GREEN 뒤 영향 범위만 재검증한다.
+- [ ] 증거·독립 검토·커밋·컨텍스트: `test(report): verify web HWPX exports through MYBOX`. 인쇄 gate가 미통과면 운영 반영하지 않는다.
 
 ## 7단계: 운영 반영과 인계
 
-- [ ] 업무 DB/env가 없는 격리 앱에서 확인하고, 업무 원장에 합성 자료를 만들지 않는다.
-- [ ] 기존 절차대로 업무 원장 백업·전후 hash·빌드 원본 대조 후 Node26.12.1 로컬 서버를 갱신하고 HTTP·다운로드를 확인한다.
-- [ ] 최종 원본 HWPX·MYBOX 반환PDF·비교 결과·계산/템플릿 불변 증거·커밋·남은 미검증 환경·재개 지점을 문서화한다.
-- [ ] 문서/컨텍스트 커밋: `docs(qa): record HWPX rollout and acceptance evidence`. MYBOX 필수 gate가 미검증이면 완료로 보고하지 않는다.
+- [ ] 6D 통과 후 업무 DB/env가 없는 격리 앱의 결과를 확인하고, 업무 원장에 합성 자료를 만들지 않는다. 해당 HEAD·Node26.12.1·빌드 입력을 고정한다.
+- [ ] 기존 업무 원장을 SQLite에 맞는 방법으로 백업하고 무결성/전후 상태를 확인한다. 실행 중 WAL 때문에 파일 SHA만으로 데이터 불변을 판정하지 않고 기존 원장 검증 절차를 따른다. 환경변수/키 값을 출력하지 않는다.
+- [ ] 검증된 HEAD로 로컬3002 서버를 갱신한다. HTTP·실제 UI 접근·다운로드 도구·기존 PDF를 확인한다. 실패하면 직전 검증 HEAD로 복구하고 DB/원장은 바꾸지 않는다. 외부 공개/배포는 별도 요청 범위다.
+- [ ] 최종 HWPX·MYBOX 반환PDF·전쪽 비교·계산/템플릿 불변 증거·커밋·지원/미검증 환경을 인계한다. MYBOX 인쇄 미통과 또는 편집 미검증 상태를 전체 완료로 보고하지 않는다.
+- [ ] 문서/컨텍스트 커밋: `docs(qa): record HWPX rollout and acceptance evidence`.
 
 ## 단계별 공통 검증·테스트 구분
 
-- 순서: **실패 테스트 확인→최소 구현→단위/통합 QA→독립 검토→해당 단계의 MYBOX 반환 검증→커밋→컨텍스트 기록**.
+- 순서: **논리/DDD 계약 확인→실패 테스트 확인→최소 구현→단위/통합 QA→독립 검토→해당 단계의 실제 브라우저/MYBOX 검증→커밋→컨텍스트 기록**. 4A/4B/6B 등 순수 모듈의 완료를 실제3쪽 호환성 완료로 표현하지 않는다.
 - 단위 테스트는 함수의 계약과 원본 보존을, 통합 테스트는 실제 파일 생성·재개방을, MYBOX는 실제 레이아웃 호환성을 검증한다. 서로 대체하지 않는다.
 - 기존 9개 중 유효한 보존/참조 검사는 이동하고, PDF 위치나 FIXED 속성 존재만 검사하는 테스트는 실패한 설계를 고착시키므로 대체한다. 테스트 개수/줄 수를 완료 기준으로 사용하지 않는다.
 - 실제 한컴 데스크톱 지원을 주장하려면 해당 버전·OS를 별도로 시험한다. 이번 MYBOX 결과를 모든 한글 프로그램의 호환성으로 확대하지 않는다.
@@ -181,6 +251,8 @@
 - 3단계 실제 MYBOX gate 전에 전체 5지표 투영/3쪽 조립이나 웹 UI를 구현하지 않는다.
 - 함수/자료형 이름을 파일별 계약과 단계에서 일치시켰다. 숨긴 인쇄 host의 중복 동작은 선택적 콜백의 기본값 없음으로 차단한다.
 - 기존 계산식·본문 양식 보호와 출력 도구 추가 범위를 구분했다. 제품 변경은6단계부터다.
+- 4단계는 투영/전체 스타일/CLI 실제3쪽 검증으로,6단계는 자산 검증/직렬화 이식/클릭 도구/최종 MYBOX로 나눴다. 모든 소단계에 테스트·검토·커밋·재개 지점을 둔다.
+- Python/TypeScript의 공유 계약은 같은 표시 문서/이미지이며 각 ZIP 구현의 바이트 일치와 구분한다. 차트 전체 figure·0/결측·Unicode 경계·화면 변경 경합·숨김 인쇄본·편집 미검증 상태를 빠뜨리지 않았다.
 - 최초 계획 작성 시점에는 구현하지 않았으며, 실행 진행 상태는 아래 기록이 기준이다.
 
 
@@ -224,3 +296,18 @@
 - Chrome 화면 변경이 이어져 text/image 두 인쇄 저장은 중단 상태. 사용자 업로드 승인은 유지된다(합성 probe3개 현재 MYBOX에 있음). 남은 text/image 정상 MYBOX 반환PDF와 제공되는 편집환경의 수정→저장→재열기를 검증해야 단계가 통과한다. MYBOX 뷰어 자체는 편집이 없고 별도 한컴오피스 Web 링크만 있어 해당 환경은 미확인이다.
 - 코드/DDD 독립 재검토 중요 미해결0, 전체31개 PASS. 3단계 코드는 재개 가능한 중간 커밋으로 보존하며 **3단계 인수 완료/4단계 착수로 처리하지 않는다**. 증거 `recovery-20261029/stage3-verification.md`, `stage3-qa.json`.
 - 다음 작업: 파일 hash를 새 후보와 연결해 남은 MYBOX PDF/편집을 검증→3단계 인수 기록→4단계 전체3쪽 projection. 현재 계산식·HTML/PDF 템플릿·제품205파일·DB·운영서버는 그대로다.
+
+### 후속 구현 계획 보완 — 계획만 갱신
+
+- 현재 HEAD `3505d98`에서 기존 계획의3~7단계를 보완했다. 앱/샘플 코드·의존성·DB·서버는 변경하지 않았다. 문서 변경만 있어 기능 테스트를 새로 실행하지 않으며 `git diff --check`와 계획 자체 검토를 수행한다.
+- 다음 실행은3단계의 남은 text/image 정상 MYBOX 인쇄부터다. 세 probe 인쇄가4단계 착수 조건이고, 제공되는 환경의 편집 검증은 별도 추적한다. 편집 환경이 없으면5단계 미검증으로 남기며 최종 편집 지원 완료를 선언하지 않는다.
+- DDD 경계: 저장된 보고서는 읽기 전용 표시 DTO, HWPX는 출력 어댑터다. 투영/문서XML/일반ZIP/브라우저 자산/클릭 조정의 책임을 나누고 새 금융 계산·업무 저장을 추가하지 않는다.
+- 읽기 전용 코드 조사에서 현재 `MetricBlock` 미구현·probe와 본문 스타일 차이·종합/본문 순서 차이·SVG 밖 차트 제목/범례/빈 자료 안내·실제 `displayReport` 소유권을 확인해 계획에 반영했다. 구현 시 각 책임의 RED→GREEN과 실제 파일 검증으로 다시 입증한다.
+
+### 3단계 인쇄 gate 통과 — 전체 보고서 구현 전 재개 지점
+
+- text 정상 MYBOX 인쇄: `mybox-probe-text.pdf`, A4 1쪽/48,115bytes/SHA `5a212ddc5e32c971ac21685bb4a1a552360c15b50e8a56d056746853de7107eb`. image 정상 인쇄: `mybox-probe-image.pdf`, A4 1쪽/86,688bytes/SHA `80d8fe73eaccb4fc26ded10985db50434e3c4949a7b718f940ae22f5a25b7fc6`. 원본 table PDF는 기존 hash 그대로 재사용했다.
+- 두 새 PDF는 Title 네이버MYBOX/Chrome154/Skia154이며 root와 독립 검토자가 실제 PDF 재렌더 전체쪽을 확인했다. 원문·기호·차트 제목/범례/값·산식·마지막 문장 보존, 자연스러운 줄바꿈, 겹침/잘림 없음. PDF는 통이미지 출력이라 검색 가능한 텍스트로 소개하지 않는다.
+- 기존 image 리소스의 MYBOX iframe은 blank/일시적 오류였다. 새 탭·새로고침·직접 뷰어 진단 후에도 정상 인쇄가 안 돼 **같은 SHA의 승인된 합성 파일**을 `probe-image-recheck-20261029.hwpx`로 재업로드했다. 기존 파일은 덮어쓰지 않았다. 새 리소스에서 실제 MYBOX 더보기→인쇄→PDF 저장이 성공했다. 실제 업무 파일 업로드 없음.
+- probe는 흐름 검증용400×110 크기라 차트 원본 종횡비까지 통과한 것은 아니다. 전체 보고서의 이미지 비율 보존은4B의 명시적 테스트/구현 대상이다. 한컴오피스 Web 편집·재저장은 여전히 `not_run`,5단계 인수에 남는다.
+- 이번 단계의 코드 변경은 없고 추가 인쇄 QA이므로 인위적인 RED 테스트는 추가하지 않았다. 재개 시 전체31개 PASS·보호205파일 변경0·probe SHA 동일을 독립 감사했다. 다음: 4A의 표시 데이터 투영을 TDD로 구현, 전체3쪽 인수는4C에서 별도 확인한다.
