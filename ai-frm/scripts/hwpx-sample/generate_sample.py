@@ -15,7 +15,7 @@ import math
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
-import zipfile
+from package_io import read_package, build_package, write_atomic
 
 ROOT = Path(__file__).parent
 NS = {
@@ -181,12 +181,22 @@ def xml_bytes(root, compatibility_namespaces=None):
     return b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'+body
 
 
+def ensure_output_is_separate(output, inputs):
+    """Only the file-reading boundary knows all input paths."""
+    output=Path(output)
+    for source in map(Path,inputs):
+        if output.resolve()==source.resolve() or (output.exists() and source.exists() and output.samefile(source)):
+            raise ValueError('output must not overwrite an input file: '+str(source))
+
+
 def generate_sample(report, layout, output):
+    ensure_output_is_separate(output,[ROOT/'blank.hwpx',ROOT/'template-provenance.json',
+                                     *(image['path'] for image in layout.get('images',{}).values())])
     validate_inputs(report,layout)
     provenance=json.loads((ROOT/'template-provenance.json').read_text())
     blank=(ROOT/'blank.hwpx').read_bytes()
     if hashlib.sha256(blank).hexdigest()!=provenance['blankSha256']:raise ValueError('blank package changed')
-    with zipfile.ZipFile(ROOT/'blank.hwpx') as source:parts={name:source.read(name) for name in source.namelist()}
+    parts=read_package(blank)
     compatibility_namespaces=dict(value for _,value in ET.iterparse(io.BytesIO(parts['Contents/header.xml']),events=['start-ns']))
     for prefix,uri in compatibility_namespaces.items():ET.register_namespace(prefix,uri)
     header=ET.fromstring(parts['Contents/header.xml'])
@@ -260,10 +270,9 @@ def generate_sample(report, layout, output):
     parts['Contents/content.hpf']=xml_bytes(manifest)
     parts['Preview/PrvText.txt']='\n'.join(visible_messages(report)).encode('utf-8')
     parts.pop('Preview/PrvImage.png',None)
-    output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
-    with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED) as target:
-        for name in ['mimetype',*sorted(n for n in parts if n!='mimetype')]:
-            info=zipfile.ZipInfo(name,(1980,1,1,0,0,0));info.compress_type=zipfile.ZIP_STORED if name=='mimetype' else zipfile.ZIP_DEFLATED;target.writestr(info,parts[name])
+    output=Path(output)
+    payload=build_package(parts)
+    write_atomic(output,payload)
     return {'declaredPageLayouts':3,'declaredPageBreaks':2,'editableTextParagraphs':paragraph_id-1,'images':7,'sha256':hashlib.sha256(output.read_bytes()).hexdigest()}
 
 
@@ -273,6 +282,7 @@ def main():
     parser.add_argument('--layout',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path)
     args=parser.parse_args()
+    ensure_output_is_separate(args.output,[args.report,args.layout])
     report=json.loads(args.report.read_text());report=report.get('json',report)
     layout=json.loads(args.layout.read_text())
     print(json.dumps(generate_sample(report,layout,args.output),ensure_ascii=False))

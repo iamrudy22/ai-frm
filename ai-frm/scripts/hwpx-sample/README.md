@@ -45,3 +45,9 @@ python3 scripts/hwpx-sample/generate_sample.py \
 생성기의 `declaredPageLayouts`와 `declaredPageBreaks`는 선언된 구조 개수다. 실제 출력 페이지 수는 별도 렌더러 결과에서 확인한다. 최종 샘플은 `layout-v3.json` 입력을 사용하며, 첫 span별 문단 버전의 시각 실패는 통과로 취급하지 않는다.
 
 장식 사각형은 page의 `shapes` 배열에서 `xPt`, `yPt`, `widthPt`, `heightPt`, `fill`을 받는다. 원본 요약 박스의 얇은 테두리는 `stroke: "#B9B9B9"`, `strokeWidthPt: 0.75`로 기록한다. `stroke`가 없는 파란 선 사각형은 테두리 없이 채움만 유지한다.
+
+## 복구 2단계: 패키지와 저장 경계
+
+`package_io.py`는 보고서 지표/쪽수와 독립적으로 XML/manifest/spine·글꼴/문단/스타일·이미지 참조, ZIP CRC·중복/비정규 경로를 검사한다. `build_package`는 입력 바이트를 보존한 결정적 ZIP을 만들며, `write_atomic`은 후보 재개방 검증·임시 파일 fsync 후 단일 replace로 저장한다. 검증/교체 실패 시 기존 파일을 보존하고 임시 파일을 정리한다. 생성기/CLI는 입력 파일과 출력의 동일 경로·심링크·하드링크를 차단한다.
+
+패키지8개·생성기10개 테스트가 통과하며, 기존 실패 샘플은 재생성 SHA까지 동일하다. 이 단계는 파일 무결성 보완이며 기존 레이아웃이 고쳐졌다는 의미가 아니다. 구조 검증은 이 내보내기가 쓰는 참조에 한정되고 전체 HWPX 스키마/뷰어 조판 검증을 대체하지 않는다.

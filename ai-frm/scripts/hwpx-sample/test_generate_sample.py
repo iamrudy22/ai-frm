@@ -3,6 +3,8 @@ import copy
 import importlib.util
 from pathlib import Path
 import tempfile
+from unittest.mock import patch
+import json
 import unittest
 import xml.etree.ElementTree as ET
 import zipfile
@@ -31,6 +33,32 @@ def fixture(folder):
     return report, {'pageWidthPt':595.28,'pageHeightPt':841.89,'fontFamily':'맑은 고딕','pages':pages,'images':images}
 
 class SampleContract(unittest.TestCase):
+    def test_output_never_overwrites_input_or_template_alias(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); report,layout=fixture(root)
+            image=Path(layout['images']['recovery']['path']); before=image.read_bytes()
+            with self.assertRaisesRegex(ValueError,'output.*input'):
+                writer.generate_sample(report,layout,image)
+            self.assertEqual(image.read_bytes(),before)
+            hardlink=root/'image-alias.hwpx'; hardlink.hardlink_to(image)
+            with self.assertRaisesRegex(ValueError,'output.*input'):
+                writer.generate_sample(report,layout,hardlink)
+            self.assertEqual(image.read_bytes(),before)
+            template=root/'blank.hwpx'; template.write_bytes((ROOT/'blank.hwpx').read_bytes())
+            (root/'template-provenance.json').write_bytes((ROOT/'template-provenance.json').read_bytes())
+            alias=root/'alias.hwpx'; alias.symlink_to(template)
+            with patch.object(writer,'ROOT',root):
+                with self.assertRaisesRegex(ValueError,'output.*input'):
+                    writer.generate_sample(report,layout,alias)
+            self.assertEqual(template.read_bytes(),(ROOT/'blank.hwpx').read_bytes())
+            report_path=root/'report.json'; report_path.write_text(json.dumps(report))
+            layout_path=root/'layout.json'; layout_path.write_text(json.dumps(layout))
+            before=report_path.read_bytes()
+            with patch('sys.argv',['generate_sample','--report',str(report_path),'--layout',str(layout_path),'--output',str(report_path)]):
+                with self.assertRaisesRegex(ValueError,'output.*input'):
+                    writer.main()
+            self.assertEqual(report_path.read_bytes(),before)
+
     def test_native_flow_groups_pdf_spans_into_styled_runs_with_real_paragraph_margins(self):
         with tempfile.TemporaryDirectory() as td:
             report,layout=fixture(Path(td));line=layout['pages'][0]['texts'][0]

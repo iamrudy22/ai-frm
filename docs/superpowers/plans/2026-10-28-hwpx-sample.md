@@ -92,11 +92,11 @@
 
 **Files:** `package_io.py`, `test_package_io.py`, 기존 생성기의 패키징/저장 호출부.
 
-- [ ] RED: `test_rejects_missing_part_and_broken_reference`, `test_rejects_duplicate_entries_and_corrupt_crc`, `test_preserves_existing_output_on_validation_or_replace_failure`를 먼저 작성한다. 실패가 실제 미구현 기능 때문인지 실행 로그로 확인한다.
-- [ ] GREEN: XML/manifest/spine·이미지/스타일 참조 검사와 무압축 첫 MIME 엔트리, 고정 메타데이터의 결정적 ZIP을 구현한다. 실패 payload는 최종 경로를 바꾸지 않는다.
-- [ ] 기존 원본 bytes/이미지SHA 불변, 같은 입력의 반복 결과, PNG 누락, `os.replace` 실패를 검증한다. 입력 경로를 아는 CLI/생성기에서 output과 템플릿·JSON·이미지의 resolve/samefile 충돌을 차단한다. package_io에 입력 경로 지식을 넣지 않는다. ZIP 읽기는 CRC/중복 파일명을 검사한다.
-- [ ] Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_package_io.py' -v` (cwd `ai-frm`). 전체 PASS가 기준이다. 통과를 페이지 호환성으로 표현하지 않는다.
-- [ ] 독립 검토·생성기 관련 회귀·커밋·컨텍스트 기록. 커밋: `refactor(hwpx): isolate package validation and atomic output`.
+- [x] RED: `test_rejects_missing_part_and_broken_reference`, `test_rejects_duplicate_entries_and_corrupt_crc`, `test_preserves_existing_output_on_validation_or_replace_failure`를 먼저 작성한다. 실패가 실제 미구현 기능 때문인지 실행 로그로 확인한다.
+- [x] GREEN: XML/manifest/spine·이미지/스타일 참조 검사와 무압축 첫 MIME 엔트리, 고정 메타데이터의 결정적 ZIP을 구현한다. 실패 payload는 최종 경로를 바꾸지 않는다.
+- [x] 기존 원본 bytes/이미지SHA 불변, 같은 입력의 반복 결과, PNG 누락, `os.replace` 실패를 검증한다. 입력 경로를 아는 CLI/생성기에서 output과 템플릿·JSON·이미지의 resolve/samefile 충돌을 차단한다. package_io에 입력 경로 지식을 넣지 않는다. ZIP 읽기는 CRC/중복 파일명을 검사한다.
+- [x] Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_package_io.py' -v` (cwd `ai-frm`). 전체 PASS가 기준이다. 통과를 페이지 호환성으로 표현하지 않는다.
+- [x] 독립 검토·생성기 관련 회귀·커밋·컨텍스트 기록. 커밋: `refactor(hwpx): isolate package validation and atomic output`.
 
 ## 3단계: 의미 문서형·최소 XML probe와 MYBOX 첫 gate
 
@@ -196,3 +196,12 @@
 - 다음: 2단계 패키지 검증/원자 저장을 TDD로 분리. 3002 서버·업무 DB·제품 코드 변경 없음.
 
 - 1단계 독립 검토 완료: MYBOX 미확인 설정은 추정하지 않음. 다음 단계의 경로 alias 차단은 CLI 책임, font ID는 언어별 범위, probe-table은 요약 TextBlock→한 셀 표, 슬롯 검사는 의미 블록 완전성으로 구체화했다. 계산/템플릿 보호와 순서에 모순 없음.
+
+### 2단계: 패키지/원자 저장 검증
+
+- 1단계 커밋 `be62a84`. 2단계는 `package_io.py`/테스트를 분리하고 기존 CLI에 단일 검증/저장 경계를 연결했다. 패키지 계층에는 지표 개수·3쪽·업무 도메인 지식이 없다.
+- TDD: 패키지7개 최초 RED(errors0)→GREEN, section 없는 spine/이미지 아닌 참조 추가 RED→GREEN으로 최종8개. CLI 입력파일 덮어쓰기 RED→GREEN 및 심링크/하드링크/JSON 보존. 통합 총18개 PASS. 실패 검증/`os.replace` 오류에서 기존파일·임시파일 정리 확인.
+- 실제 합성JSON/기존 layout로 CLI 재생성: SHA `ba96596d68319fa8058b082705bdfbfd184ab567c68401c23b0111047f174010`, 기존 실패 샘플 바이트 동일. 내용을 바꾸지 않는 추출임을 확인했으며 레이아웃 복구로 소개하지 않는다. 빈 템플릿·샘플 재개방/결정적 재패키징, 보호205파일 변경0.
+- 증거: visualizations `hwpx-sample-20261028/recovery-20261029/stage2-qa.json`과 RED/GREEN 로그. 다음은 의미 문서형·최소 native flow probe이며 전체 보고서 투영은 아직 구현하지 않았다.
+
+- 2단계 독립 코드/DDD 재검토: 중요·치명 결함0, 독립 실행18/18 PASS. 입력경로 차단은 CLI, 일반 참조/원자 저장은 인프라로 책임이 일치한다. 실제 MYBOX 호환성은 아직 미검증이다.
