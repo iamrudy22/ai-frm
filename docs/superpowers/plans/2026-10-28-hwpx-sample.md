@@ -126,13 +126,13 @@
 
 **Files:** `report_projection.py`, 신규 `test_report_projection.py`, 신규 `fixtures/report-contract.json`(샘플 디렉터리 안). JSON은 작은 합성 입력과 독립 기대 문구/순서/색/이미지 역할을 담으며6단계 TypeScript와 공통으로 사용한다. 실제 업무 자료나 PDF 좌표는 넣지 않는다.
 
-- [ ] RED: `test_projection_preserves_display_strings_and_input`에서 `1.00`, `0`, 음수, `—`, 순유입·로딩 문구를 완전 일치로 검증한다. `test_projection_rejects_duplicate_or_missing_metric`에서 지표5개 ID의 중복/누락을 거부한다. 환경/문법 오류가 아니라 현재 미구현 계약 때문에 실패하는지 확인한 다음 구현한다.
-- [ ] `test_projection_preserves_summary_order_and_fixed_body_order`: 종합은 입력 `metrics` 배열 순서, 본문은 recovery/liquidity→construction/funding/cash 고정 순서를 검증한다. 입력 배열을 정렬하거나 값/등급을 다시 계산하지 않는다. 제목·작성일·기존 표시 문자열도 그대로 사용한다.
-- [ ] `test_failure_reason_matches_print_codepoint_boundaries`: 산출 불가·산출 중만60 유니코드 코드포인트까지 원문,61부터 앞59개+`… (상세는 HTML 참고)`. 59/60/61·emoji·결합문자·ZWJ 경계를 고정한다. 일반 설명을 새로 축약하지 않는다.
-- [ ] `test_projection_excludes_non_print_details`: basis는 건설경기에만 표시하고 숨긴 출처·경고·이력/회차 안내는 제외한다. 종합의 정상/위험/기본 색은 기존 표시 조건을 그대로 옮기며 금융 수치에서 재판정하지 않는다.
-- [ ] GREEN: `project_report`와 `SummaryItem`/`SummaryBlock`을 구현한다. `ReportDocument`/`PageSpec`의 불변 tuple 계약은 유지한다. 계산 모듈·DB·파일·네트워크는 이 계층에 넣지 않는다.
-- [ ] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_report_projection.py' -v`. 같은 명령의 RED→GREEN과 전체 샘플 회귀·독립 검토를 기록한다.
-- [ ] 커밋·컨텍스트: `feat(hwpx): project saved report values without recalculation`.
+- [x] RED: `test_projection_preserves_display_strings_and_input`에서 `1.00`, `0`, 음수, `—`, 순유입·로딩 문구를 완전 일치로 검증한다. `test_projection_rejects_duplicate_or_missing_metric`에서 지표5개 ID의 중복/누락을 거부한다. 환경/문법 오류가 아니라 현재 미구현 계약 때문에 실패하는지 확인한 다음 구현한다.
+- [x] `test_projection_preserves_summary_order_and_fixed_body_order`: 종합은 입력 `metrics` 배열 순서, 본문은 recovery/liquidity→construction/funding/cash 고정 순서를 검증한다. 입력 배열을 정렬하거나 값/등급을 다시 계산하지 않는다. 제목·작성일·기존 표시 문자열도 그대로 사용한다.
+- [x] `test_failure_reason_matches_print_codepoint_boundaries`: 산출 불가·산출 중만60 유니코드 코드포인트까지 원문,61부터 앞59개+`… (상세는 HTML 참고)`. 59/60/61·emoji·결합문자·ZWJ 경계를 고정한다. 일반 설명을 새로 축약하지 않는다.
+- [x] `test_projection_excludes_non_print_details`: basis는 건설경기에만 표시하고 숨긴 출처·경고·이력/회차 안내는 제외한다. 종합의 정상/위험/기본 색은 기존 표시 조건을 그대로 옮기며 금융 수치에서 재판정하지 않는다.
+- [x] GREEN: `project_report`와 `SummaryItem`/`SummaryBlock`을 구현한다. `ReportDocument`/`PageSpec`의 불변 tuple 계약은 유지한다. 계산 모듈·DB·파일·네트워크는 이 계층에 넣지 않는다.
+- [x] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_report_projection.py' -v`. 같은 명령의 RED→GREEN과 전체 샘플 회귀·독립 검토를 기록한다.
+- [x] 커밋·컨텍스트: `feat(hwpx): project saved report values without recalculation`.
 
 ### 4B. 전체 보고서 XML과 HWPX 전용 스타일
 
@@ -311,3 +311,10 @@
 - 기존 image 리소스의 MYBOX iframe은 blank/일시적 오류였다. 새 탭·새로고침·직접 뷰어 진단 후에도 정상 인쇄가 안 돼 **같은 SHA의 승인된 합성 파일**을 `probe-image-recheck-20261029.hwpx`로 재업로드했다. 기존 파일은 덮어쓰지 않았다. 새 리소스에서 실제 MYBOX 더보기→인쇄→PDF 저장이 성공했다. 실제 업무 파일 업로드 없음.
 - probe는 흐름 검증용400×110 크기라 차트 원본 종횡비까지 통과한 것은 아니다. 전체 보고서의 이미지 비율 보존은4B의 명시적 테스트/구현 대상이다. 한컴오피스 Web 편집·재저장은 여전히 `not_run`,5단계 인수에 남는다.
 - 이번 단계의 코드 변경은 없고 추가 인쇄 QA이므로 인위적인 RED 테스트는 추가하지 않았다. 재개 시 전체31개 PASS·보호205파일 변경0·probe SHA 동일을 독립 감사했다. 다음: 4A의 표시 데이터 투영을 TDD로 구현, 전체3쪽 인수는4C에서 별도 확인한다.
+
+### 4A 완료 — 순수 투영 TDD·검토·QA
+
+- 시작 커밋 a18ac78 이후 report_projection.py·test_report_projection.py·합성 fixtures/report-contract.json만 구현했다. 표시 문자열/순서/상태색/Unicode60축약/입력불변을 보존하며 계산·원장·제품앱·HTML/PDF템플릿·XML·CLI·의존성은 변경하지 않았다.
+- TDD 최초8개 RED→GREEN, 명시 style_profile 추가 RED→GREEN, 독립 리뷰 P2 두 건을 별도 실패 테스트로 재현→수정했다. 참고는 reference-header, 생략 basis는 None/빈 construction basis는 빈문자열로 구분한다. 재검토 승인. 최종 투영11개/전체Python42개 PASS, 앱1275개 PASS·기존2skip. root의 최종 전체Python42 PASS 및 보호205파일 변경0 확인.
+- ImageBlock의 None 치수는4B에서 PNG비율/가용폭으로 맞추라는 의미다. ReportDocument.style_profile 기본probe/투영결과report를 분리해 기존 승인 probe3개가 바이트까지 그대로임을 확인했다. 새 SummaryBlock/MetricBlock/참고머리말/basis는4B에서 직렬화하므로 아직 전체보고서HWPX 생성완료가 아니다.
+- 상세RED/GREEN·검토는 .superpowers/sdd/2026-10-28-hwpx-sample/task-4a-* 로그/보고서, 인수 요약은 recovery-20261029/stage4a-qa.json. 다음은4B 전체보고서의 native XML/스타일/바닥글/그림 비율을 TDD로 구현한다.

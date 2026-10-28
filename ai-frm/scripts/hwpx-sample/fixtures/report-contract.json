@@ -1,0 +1,93 @@
+{
+  "description": "합성 표시 DTO와 독립 기대값. 금융 계산·실제 업무 자료·PDF 좌표 없음.",
+  "report": {
+    "title": "합성 <재무> & 위험 보고서",
+    "reportMonth": "2026/08",
+    "latestRound": "숨긴 최신 회차",
+    "generatedOn": "2026.10.29",
+    "isTemplate": false,
+    "warnings": ["숨긴 부가 경고"],
+    "referenceTrends": null,
+    "metrics": [
+      {
+        "id": "cash", "title": "적정 시재", "value": "-17 억원",
+        "status": "적정시재 부족", "grade": null,
+        "basis": "숨긴 cash 기준", "narrative": "현재시재 -17 억원입니다.",
+        "formula": "20% × 분양회수 + 10% × 기타수입",
+        "source": "숨긴 cash 출처", "points": [],
+        "historyNote": "숨긴 cash 이력", "historyCoverage": {"from": null, "to": null, "totalMonths": 0, "availableMonths": [], "missingMonths": [], "notApplicableMonths": [], "kind": "empty"}
+      },
+      {
+        "id": "construction", "title": "건설경기 인식 지수", "value": "0",
+        "status": "정상", "grade": "정상",
+        "basis": "2026/07 합성 기준", "narrative": "지수 0도 유효한 표시값입니다.",
+        "formula": "Σ(세부지표 점수 × 가중치)",
+        "source": "숨긴 construction 출처", "points": [],
+        "historyNote": "숨긴 construction 이력", "historyCoverage": {"from": null, "to": null, "totalMonths": 0, "availableMonths": [], "missingMonths": [], "notApplicableMonths": [], "kind": "empty"}
+      },
+      {
+        "id": "recovery", "title": "대금 회수 위험", "value": "1.00",
+        "status": "주의", "grade": "주의",
+        "basis": "숨긴 recovery 기준", "narrative": "회수율 1.00의 기존 판정을 유지합니다.",
+        "formula": "분양회수 실적 ÷ 분양회수 계획",
+        "source": "숨긴 recovery 출처", "points": [],
+        "historyNote": "숨긴 recovery 이력", "historyCoverage": {"from": null, "to": null, "totalMonths": 0, "availableMonths": [], "missingMonths": [], "notApplicableMonths": [], "kind": "empty"}
+      },
+      {
+        "id": "funding", "title": "조달위험 인식 지수", "value": "—",
+        "status": "산출 중", "grade": null,
+        "basis": "숨긴 funding 기준", "narrative": "조달위험 자료를 조회하고 있습니다.",
+        "formula": "공사채 AAA 1년 금리 − 국고채 1년 금리",
+        "source": "숨긴 funding 출처", "points": [],
+        "historyNote": "숨긴 funding 이력", "historyCoverage": {"from": null, "to": null, "totalMonths": 0, "availableMonths": [], "missingMonths": [], "notApplicableMonths": [], "kind": "empty"}
+      },
+      {
+        "id": "liquidity", "title": "유동성 Gap", "value": "—",
+        "status": "정상 순유입", "grade": null,
+        "basis": "숨긴 liquidity 기준", "narrative": "정상 순유입으로 비율을 적용하지 않습니다.",
+        "formula": "기초시재 ÷ (향후 3개월 지출 − 수입)",
+        "source": "숨긴 liquidity 출처", "points": [{"month": "2026/07", "kind": "available", "value": 0}],
+        "historyNote": "숨긴 liquidity 이력", "historyCoverage": {"from": "2026/07", "to": "2026/07", "totalMonths": 1, "availableMonths": ["2026/07"], "missingMonths": [], "notApplicableMonths": [], "kind": "single"}
+      }
+    ]
+  },
+  "expected": {
+    "styleProfile": "report",
+    "reportMonth": "2026/08",
+    "generatedOn": "2026.10.29",
+    "textPages": [
+      [
+        {"text": "합성 <재무> & 위험 보고서", "style": "title"},
+        {"text": "(2026.10.29, 자금기획팀)", "style": "date"},
+        {"text": "□ 재무위험지수 종합", "style": "heading"},
+        {"text": "□ 위험수준 측정결과", "style": "heading"}
+      ],
+      [{"text": "□ 적정시재 산정결과", "style": "heading"}],
+      [
+        {"text": "참고", "style": "reference-header"},
+        {"text": "□ 위험단계 기준", "style": "heading"},
+        {"text": "□ 적정시재 산정방식 (LCR 방식)", "style": "heading"}
+      ]
+    ],
+    "summary": [
+      {"label": "적정 시재", "status": "적정시재 부족", "tone": "crisis"},
+      {"label": "건설경기 인식 지수", "status": "정상", "tone": "blue"},
+      {"label": "대금 회수 위험", "status": "주의", "tone": "crisis"},
+      {"label": "조달위험 인식 지수", "status": "산출 중", "tone": "ink"},
+      {"label": "유동성 Gap", "status": "정상 순유입", "tone": "ink"}
+    ],
+    "metricPages": [
+      [
+        {"title": "대금 회수 위험", "value": "1.00", "status": "주의", "narrative": "회수율 1.00의 기존 판정을 유지합니다.", "basis": null, "formula": "분양회수 실적 ÷ 분양회수 계획", "image_role": "recovery", "tone": "crisis"},
+        {"title": "유동성 Gap", "value": "—", "status": "정상 순유입", "narrative": "정상 순유입으로 비율을 적용하지 않습니다.", "basis": null, "formula": "기초시재 ÷ (향후 3개월 지출 − 수입)", "image_role": "liquidity", "tone": "ink"}
+      ],
+      [
+        {"title": "건설경기 인식 지수", "value": "0", "status": "정상", "narrative": "지수 0도 유효한 표시값입니다.", "basis": "2026/07 합성 기준", "formula": "Σ(세부지표 점수 × 가중치)", "image_role": "construction", "tone": "blue"},
+        {"title": "조달위험 인식 지수", "value": "—", "status": "산출 중", "narrative": "조달위험 자료를 조회하고 있습니다.", "basis": null, "formula": "공사채 AAA 1년 금리 − 국고채 1년 금리", "image_role": "funding", "tone": "ink"},
+        {"title": "적정 시재", "value": "-17 억원", "status": "적정시재 부족", "narrative": "현재시재 -17 억원입니다.", "basis": null, "formula": "20% × 분양회수 + 10% × 기타수입", "image_role": "cash", "tone": "crisis"}
+      ],
+      []
+    ],
+    "imageRoles": ["recovery", "liquidity", "construction", "funding", "cash", "referenceRisk", "referenceLcr"]
+  }
+}
