@@ -51,3 +51,23 @@ python3 scripts/hwpx-sample/generate_sample.py \
 `package_io.py`는 보고서 지표/쪽수와 독립적으로 XML/manifest/spine·글꼴/문단/스타일·이미지 참조, ZIP CRC·중복/비정규 경로를 검사한다. `build_package`는 입력 바이트를 보존한 결정적 ZIP을 만들며, `write_atomic`은 후보 재개방 검증·임시 파일 fsync 후 단일 replace로 저장한다. 검증/교체 실패 시 기존 파일을 보존하고 임시 파일을 정리한다. 생성기/CLI는 입력 파일과 출력의 동일 경로·심링크·하드링크를 차단한다.
 
 패키지8개·생성기10개 테스트가 통과하며, 기존 실패 샘플은 재생성 SHA까지 동일하다. 이 단계는 파일 무결성 보완이며 기존 레이아웃이 고쳐졌다는 의미가 아니다. 구조 검증은 이 내보내기가 쓰는 참조에 한정되고 전체 HWPX 스키마/뷰어 조판 검증을 대체하지 않는다.
+
+## 복구 3단계: 최소 native flow 시험
+
+```sh
+python3 scripts/hwpx-sample/generate_sample.py --mode probe-text --output /absolute/path/probe-text.hwpx
+python3 scripts/hwpx-sample/generate_sample.py --mode probe-image --assets /absolute/path/assets.json --output /absolute/path/probe-image.hwpx
+python3 scripts/hwpx-sample/generate_sample.py --mode probe-table --assets /absolute/path/assets.json --output /absolute/path/probe-table.hwpx
+```
+
+`assets.json`은 `{"chart": "/absolute/path/synthetic-chart.png"}` 형식이다. 상대 경로는 자산 JSON의 폴더 기준이다. probe는 원자료/보고서 JSON·PDF layout을 받지 않고 고정 합성 문단만 쓴다. 문서형은 불변 값이며 XML 조립은 bytes만 받아 파일·DB·네트워크에 접근하지 않는다. 전체 FinancialReport 투영은 최소 MYBOX 인수 이후의 작업이다.
+
+본문은 의미 문단, 그림은 같은 흐름의 글자처럼 취급하는 개체, 요약은 편집 가능한 한 셀 표다. 수동 줄 좌표 캐시와 FIXED 줄간격을 쓰지 않는다. 참고한 Apache-2.0 python-hwpx6.10.0의 문단·그림·표 구조, 굵기 순서, case/default 여백1배/2배, version manifest 등록을 테스트로 고정했다.
+
+현재 자동 테스트31개, 독립 파서 문제0, RHWP 보조 렌더 각1쪽이다. 실제 MYBOX 열기·인쇄/PDF·편집 재저장 인수는 별도 기록하며 자동 통과로 대신하지 않는다. 복구 증거 `recovery-20261029/stage3-qa.json`이 최신 인수 상태다.
+
+### 2026-10-29 실제 MYBOX 확인
+
+사용자 승인 후 합성 probe3개를 MYBOX에 올렸으며 실제 Naver 변환 뷰어에서 각1쪽과 정상 흐름을 확인했다. `probe-table`은 MYBOX **더보기→인쇄→PDF로 저장** 경로로 A4 1쪽 PDF를 확보했고 독립 육안 검토도 통과했다. 이 결과를 전체3쪽 보고서나 편집/재저장 성공으로 확대하지 않는다.
+
+3단계의 text/image 인쇄 PDF와 별도 편집 환경 재저장 검사는 아직 끝나지 않아 단계 인수는 대기다. 정확한 상태는 visualizations의 `recovery-20261029/stage3-verification.md`/`stage3-qa.json`. 직접 docviewer 브라우저 일반 인쇄는 썸네일 UI까지 출력된 실패 진단물이며 대체 검증으로 인정하지 않는다. 4단계는 인수 후 진행한다.

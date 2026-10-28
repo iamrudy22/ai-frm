@@ -33,6 +33,34 @@ def fixture(folder):
     return report, {'pageWidthPt':595.28,'pageHeightPt':841.89,'fontFamily':'맑은 고딕','pages':pages,'images':images}
 
 class SampleContract(unittest.TestCase):
+    def test_probe_modes_create_one_flow_page_without_report_or_layout(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); image=root/'chart.png'; image.write_bytes(PNG)
+            assets=root/'assets.json'; assets.write_text(json.dumps({'chart':str(image)}))
+            for mode,images,tables in [('probe-text',0,0),('probe-image',1,0),('probe-table',1,1)]:
+                output=root/(mode+'.hwpx')
+                args=['generate_sample','--mode',mode,'--output',str(output)]
+                if images:args+=['--assets',str(assets)]
+                try:
+                    with patch('sys.argv',args), patch('builtins.print'):
+                        writer.main()
+                except SystemExit as exc:
+                    self.fail('probe CLI must accept a mode without financial input: '+str(exc))
+                with zipfile.ZipFile(output) as z:
+                    section=ET.fromstring(z.read('Contents/section0.xml'))
+                    self.assertEqual(len(section.findall('.//hp:pic',NS)),images)
+                    self.assertEqual(len(section.findall('.//hp:tbl',NS)),tables)
+                    self.assertEqual(len(section.findall('.//hp:linesegarray',NS)),0)
+                    self.assertEqual(len(section.findall('hp:p[@pageBreak="1"]',NS)),0)
+                    self.assertIn('합성 자료',''.join(section.itertext()))
+                    self.assertIn('× ÷ − Σ',''.join(section.itertext()))
+                    if images:self.assertEqual(z.read('BinData/chart.png'),PNG)
+            before=assets.read_bytes()
+            with patch('sys.argv',['generate_sample','--mode','probe-image','--assets',str(assets),'--output',str(assets)]):
+                with self.assertRaisesRegex(ValueError,'output.*input'):
+                    writer.main()
+            self.assertEqual(assets.read_bytes(),before)
+
     def test_output_never_overwrites_input_or_template_alias(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); report,layout=fixture(root)

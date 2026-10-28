@@ -102,12 +102,12 @@
 
 **Files:** `report_projection.py`의 불변 자료형만 우선 정의; `document_xml.py`, `test_document_xml.py`, CLI probe모드·테스트. 전체 보고서 projection은 아직 구현하지 않는다.
 
-- [ ] RED: 텍스트/runs 순서·`& < >`/한글/`× ÷ − Σ` 보존, 잘못된 스타일/이미지 ID 거부, 의미 블록의 본문 완전 일치·역할 중복/그림 누락 거부, 그림 삽입 전후 본문 불변 테스트를 작성한다. placeholder 엔진은 추가하지 않는다.
-- [ ] GREEN: 유효 빈 패키지에서 제목·날짜·두 줄 본문·산식의 작은 native 문서를 만든다. 포인트/밀리미터 변환은 순수 함수에 집중시켜 `1pt=100HWPUNIT`, `25.4mm=7200HWPUNIT`을 검사한다.
-- [ ] `probe-text`→`probe-image`(기존 차트1개 inline)→`probe-table`(요약 TextBlock을 배경/테두리 있는 한 셀 표로 표현)의 순서로 생성한다. 범용 표 모델은 추가하지 않는다. 본문/차트를 같은 흐름에 둔다. 수작업 줄 좌표 캐시나 PDF 역산 fallback은 허용하지 않는다.
+- [x] RED: 텍스트/runs 순서·`& < >`/한글/`× ÷ − Σ` 보존, 잘못된 스타일/이미지 ID 거부, 의미 블록의 본문 완전 일치·역할 중복/그림 누락 거부, 그림 삽입 전후 본문 불변 테스트를 작성한다. placeholder 엔진은 추가하지 않는다.
+- [x] GREEN: 유효 빈 패키지에서 제목·날짜·두 줄 본문·산식의 작은 native 문서를 만든다. 포인트/밀리미터 변환은 순수 함수에 집중시켜 `1pt=100HWPUNIT`, `25.4mm=7200HWPUNIT`을 검사한다.
+- [x] `probe-text`→`probe-image`(기존 차트1개 inline)→`probe-table`(요약 TextBlock을 배경/테두리 있는 한 셀 표로 표현)의 순서로 생성한다. 범용 표 모델은 추가하지 않는다. 본문/차트를 같은 흐름에 둔다. 수작업 줄 좌표 캐시나 PDF 역산 fallback은 허용하지 않는다.
 - [ ] MYBOX에서 각 최종 파일을 열어 인쇄/PDF 저장하고 예상 쪽수·문구/그림 보존·잘림/겹침 없음·정상 줄바꿈을 확인한다. 편집 기능이 제공되는 환경이면 짧은 수정→저장→재열기도 수행한다.
 - [ ] 첫 어긋남이 생기는 probe에서 원인을 고친다. 결과가 없거나 실패면 전체3쪽으로 넘어가지 않는다. 유효한 원본 HWPX가 이미 있다고 가정하지 않으며 이 과정의 성공 구조를 HWPX 전용 기준으로 고정한다.
-- [ ] Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -v`. 단위/통합 PASS와 MYBOX gate의 실제 증거가 모두 필요하다.
+- [x] Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -v`. 단위/통합 PASS와 MYBOX gate의 실제 증거가 모두 필요하다.
 - [ ] 검토·QA·커밋·컨텍스트 기록. 커밋: `feat(hwpx): establish MYBOX-verified document flow`.
 
 ## 4단계: 계산 완료 데이터 투영과 전체3쪽 생성
@@ -205,3 +205,22 @@
 - 증거: visualizations `hwpx-sample-20261028/recovery-20261029/stage2-qa.json`과 RED/GREEN 로그. 다음은 의미 문서형·최소 native flow probe이며 전체 보고서 투영은 아직 구현하지 않았다.
 
 - 2단계 독립 코드/DDD 재검토: 중요·치명 결함0, 독립 실행18/18 PASS. 입력경로 차단은 CLI, 일반 참조/원자 저장은 인프라로 책임이 일치한다. 실제 MYBOX 호환성은 아직 미검증이다.
+
+### 3단계: 최소 문서 구현·자동 QA 완료, MYBOX gate 진행 중
+
+- 2단계 커밋 `542d995`. 불변 문서형과 native flow XML 조립을 분리하고 CLI에 probe-text/image/table을 추가했다. 전체 project_report와 제품 앱은 수정하지 않았다.
+- TDD: CLI mode 미지원 RED→GREEN, 의미문서9개 RED→GREEN, 굵기 순서·여백 case/default 배율·version manifest ID충돌 회귀 RED→GREEN. 최종31개 PASS. 독립 리뷰 중요 미해결0.
+- 합성 probe3개: text `09506e780332d4de493dbf6d160fac3db163f7abf42a897366008793334fc0b3`, image `3a8417c638c894e52e3fa01f0a0011fd71b8205ea3d80b7c6a41a5723a876ccb`, table `b6c6df230b921cfd4ce42704a05d71078c337aba4de72ad86a50843199d3e84b`. 각 python-hwpx6.10.0 package/document issues0, RHWP0.8.7 보조 렌더1쪽. 보조 미리보기 원문/그림/줄바꿈 육안 확인, MYBOX 인수와 구분한다.
+- 보호205파일 SHA 변경0. 계산식·HTML/PDF 보고서·앱 의존성·DB·3002 서버 변경 없음.
+- 사용자에게 외부 업로드 확인을 받고 세 합성 HWPX만 MYBOX에 업로드했다. Chrome 확장 경로는 file URL 권한이 없어 실패했으나 권한 변경 없이 native 파일 선택창으로 성공(3/3). 실제 업무 파일은 업로드하지 않았다.
+- 현재 probe-text 뷰어 iframe이 about:blank에 머물러 아직 실제 쪽수·인쇄PDF·편집을 확인하지 못했다. 로딩 경로 진단 중이며 4단계 전체 투영을 시작하지 않는다. 증거와 테스트 로그는 visualizations `hwpx-sample-20261028/recovery-20261029/`.
+
+### 3단계 최신 재개 지점: 자동 QA 완료·MYBOX 요약표 PDF 통과, 인수 미완료
+
+- 이전 about:blank 로딩은 이후 정상 해소됐다. 합성 probe3개가 실제 Naver 변환 뷰어에서 각1쪽, 본문/그림/표 순서와 정상 줄바꿈을 유지했다.
+- **정상 인쇄 경로** MYBOX 더보기→인쇄→PDF로 저장으로 `mybox-probe-table.pdf` 확보. Title 네이버MYBOX/Chrome154·Skia154/A4/실제1쪽/96,279bytes, SHA `113e7cc97a6f18c22e226cb52d635bf2f14e10fb4950ac84be327936b226ed6f`. root·독립 검토에서 요약표2줄·본문·차트·산식·기호·마지막문장 보존, 겹침/잘림없음 확인.
+- 직접 docviewer 탭의 일반 브라우저 인쇄는 UI까지 출력되어 실패했다. `diagnostic-direct-viewer-print-clipped.pdf`로 구분했고 통과 증거에서 제외했다.
+- 파일 대화상자는 `com.apple.appkit.xpc.openAndSavePanelService`의 SavePanel에 연결해야 한다. Chrome 본체에 키 입력하면 다른 창으로 갈 수 있으므로 파일명 AX 설정+저장 클릭을 사용한다. 도구 timeout이어도 저장은 끝날 수 있어 재실행 전 파일 존재/SHA부터 확인한다.
+- Chrome 화면 변경이 이어져 text/image 두 인쇄 저장은 중단 상태. 사용자 업로드 승인은 유지된다(합성 probe3개 현재 MYBOX에 있음). 남은 text/image 정상 MYBOX 반환PDF와 제공되는 편집환경의 수정→저장→재열기를 검증해야 단계가 통과한다. MYBOX 뷰어 자체는 편집이 없고 별도 한컴오피스 Web 링크만 있어 해당 환경은 미확인이다.
+- 코드/DDD 독립 재검토 중요 미해결0, 전체31개 PASS. 3단계 코드는 재개 가능한 중간 커밋으로 보존하며 **3단계 인수 완료/4단계 착수로 처리하지 않는다**. 증거 `recovery-20261029/stage3-verification.md`, `stage3-qa.json`.
+- 다음 작업: 파일 hash를 새 후보와 연결해 남은 MYBOX PDF/편집을 검증→3단계 인수 기록→4단계 전체3쪽 projection. 현재 계산식·HTML/PDF 템플릿·제품205파일·DB·운영서버는 그대로다.

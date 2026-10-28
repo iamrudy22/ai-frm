@@ -1,8 +1,9 @@
-"""A local, sample-only HWPX serializer. It never imports calculations or writes a ledger.
+"""Local HWPX compatibility probes and legacy failure reproduction.
 
-Input text coordinates are measured from the existing PDF. Text stays native editable
-HWPX paragraphs; only the existing five charts and two reference tables are images.
-Package skeleton: python-hwpx 6.10.0, Apache-2.0 (see template-provenance.json).
+Probes serialize semantic native-flow blocks. The old coordinate-based report
+mode remains solely to reproduce the failed sample until the MYBOX probe gate.
+Neither path imports calculations or writes a business ledger.
+Skeleton: python-hwpx 6.10.0, Apache-2.0 (template-provenance.json).
 """
 from __future__ import annotations
 
@@ -276,15 +277,59 @@ def generate_sample(report, layout, output):
     return {'declaredPageLayouts':3,'declaredPageBreaks':2,'editableTextParagraphs':paragraph_id-1,'images':7,'sha256':hashlib.sha256(output.read_bytes()).hexdigest()}
 
 
+def make_probe_document(mode):
+    """Synthetic semantic blocks for viewer QA; never a financial calculation."""
+    from report_projection import TextBlock, ImageBlock, PageSpec, ReportDocument
+    blocks=[TextBlock('문서 호환성 시험 (합성 자료)','title'),
+            TextBlock('(2026.10.29, HWPX 검증)','date')]
+    if mode=='probe-table':
+        blocks.append(TextBlock('◇ 시험 지표 (정상)\n표 안의 본문도 편집 가능한 합성 자료입니다.','summary'))
+    blocks.extend([
+        TextBlock('□ 문단과 차트 흐름 확인','heading'),
+        TextBlock('이 문서는 실제 업무 자료를 포함하지 않는 합성 자료입니다. 한글 문장이 문단 너비에 따라 자연스럽게 줄바꿈되고 다음 차트와 겹치지 않는지 확인합니다. 그림 뒤에 이어지는 산식과 문장도 순서대로 보존되어야 합니다. & < > 기호도 그대로 표시합니다.'),
+    ])
+    if mode!='probe-text':blocks.append(ImageBlock('chart',400,110))
+    blocks.extend([TextBlock('* 시험 산식: (120 − 20) × 100 ÷ 200 = 50%, Σ = 100; × ÷ − Σ','formula'),
+                   TextBlock('그림 다음 문장입니다. 본문·그림·산식이 같은 흐름을 유지하는지 확인합니다.')])
+    return ReportDocument('2026/08','2026.10.29',(PageSpec(tuple(blocks)),))
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--report',required=True,type=Path)
-    parser.add_argument('--layout',required=True,type=Path)
+    parser.add_argument('--mode',choices=['probe-text','probe-image','probe-table','report'],default='report')
+    parser.add_argument('--report',type=Path)
+    parser.add_argument('--layout',type=Path,help='legacy failed-layout reproduction only; removed after MYBOX probe gate')
+    parser.add_argument('--assets',type=Path,help='JSON mapping of image role to local PNG path')
     parser.add_argument('--output',required=True,type=Path)
     args=parser.parse_args()
-    ensure_output_is_separate(args.output,[args.report,args.layout])
-    report=json.loads(args.report.read_text());report=report.get('json',report)
-    layout=json.loads(args.layout.read_text())
-    print(json.dumps(generate_sample(report,layout,args.output),ensure_ascii=False))
+    inputs=[ROOT/'blank.hwpx',ROOT/'template-provenance.json',
+            *(path for path in [args.report,args.layout,args.assets] if path is not None)]
+    ensure_output_is_separate(args.output,inputs)
+    if args.mode=='report':
+        if args.report is None or args.layout is None:
+            parser.error('report mode currently requires --report and legacy --layout; native report awaits MYBOX probe acceptance')
+        report=json.loads(args.report.read_text());report=report.get('json',report)
+        layout=json.loads(args.layout.read_text())
+        print(json.dumps(generate_sample(report,layout,args.output),ensure_ascii=False))
+        return
+    if args.report is not None or args.layout is not None:
+        parser.error('synthetic probes do not accept report/layout inputs')
+    paths=json.loads(args.assets.read_text()) if args.assets else {}
+    if not isinstance(paths,dict) or not all(isinstance(role,str) and isinstance(path,str) for role,path in paths.items()):
+        raise ValueError('assets must map image roles to local paths')
+    # Relative paths belong to the asset manifest, not the process working directory.
+    paths={role:Path(path) if Path(path).is_absolute() else args.assets.parent/path for role,path in paths.items()}
+    ensure_output_is_separate(args.output,paths.values())
+    assets={role:path.read_bytes() for role,path in paths.items()}
+    provenance=json.loads((ROOT/'template-provenance.json').read_text())
+    blank=(ROOT/'blank.hwpx').read_bytes()
+    if hashlib.sha256(blank).hexdigest()!=provenance['blankSha256']:raise ValueError('blank package changed')
+    from document_xml import build_parts
+    document=make_probe_document(args.mode)
+    payload=build_package(build_parts(document,read_package(blank),assets))
+    write_atomic(args.output,payload)
+    print(json.dumps({'mode':args.mode,'declaredPageLayouts':len(document.pages),
+                      'images':len(assets),'sha256':hashlib.sha256(payload).hexdigest(),
+                      'mybox':'not_run'},ensure_ascii=False))
 
 if __name__=='__main__':main()
