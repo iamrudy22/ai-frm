@@ -1,0 +1,14 @@
+{
+  "version": "6.10.0",
+  "wheelUrl": "https://files.pythonhosted.org/packages/90/5e/32619782b4f23723f68abc92eb0cb65bbbb5b90ce7784d0c7df9c1cd7ffe/python_hwpx-6.10.0-py3-none-any.whl",
+  "sha256": "c590fe556823d7f31e59a7fe32b26062c7c681bea0a72732b10c736efa49b2c2",
+  "sources": [
+    "hwpx/data/Skeleton.hwpx",
+    "python_hwpx-6.10.0.dist-info/licenses/LICENSE"
+  ],
+  "repository": "https://github.com/airmang/python-hwpx",
+  "license": "Apache-2.0",
+  "templatePart": "hwpx/data/Skeleton.hwpx",
+  "blankSha256": "c91fb77a9933a3e5645a25778e2d2b99e98137ed99572a5d1dd29ef0c0fd4c98",
+  "note": "Only the unmodified empty package is bundled. No upstream document content is copied into report text."
+}
