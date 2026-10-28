@@ -170,6 +170,7 @@ def _formats(header, report=False):
                 # Original paddingBlock3 = spacing3(12px) × 72/96 = 9pt inside each rule.
                 border.set('offsetTop', '900')
                 border.set('offsetBottom', '900')
+                border.set('ignoreMargin', '1')
     chars.set('itemCnt', str(len(chars)))
     paras.set('itemCnt', str(len(paras)))
     return result

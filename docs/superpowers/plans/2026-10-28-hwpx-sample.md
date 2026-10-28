@@ -149,11 +149,11 @@
 
 **Files:** `generate_sample.py`, `test_generate_sample.py`, README·검증 manifest. 입력은 `--mode report --report /abs/report.json --assets /abs/assets.json --output /abs/report.hwpx`이며 기존 wrapper JSON 지원은 유지한다.
 
-- [ ] RED: 전체 보고서 통합 테스트에서 내용/순서·7개 이미지·출력 경로 충돌·실패 시 원본 보존을 검증한다. `--layout` 없는 실행 성공과 구형 `--layout` 인자의 명확한 거부를 고정한다. CLI 오류 뒤 부분 파일을 남기지 않는다.
-- [ ] GREEN: JSON→투영→XML→패키지→원자 저장으로 연결한다. PDF 줄 좌표 계약/legacy fallback을 삭제하고 실패 재현물은 증거 폴더에만 보존한다. 위치/FIXED 속성만 검사하던 테스트는 새 내용·흐름 계약으로 대체한다.
-- [ ] 합성 기준월 JSON과 이미지7개를 고정하고 기존3쪽 PDF와 같은 내용인지 검사한다. 그림5개의 제목·범례·빈 자료 안내까지 보존하고, 참고표2개는 원본PNG bytes/SHA를 그대로 사용한다.
-- [ ] **MYBOX 정상 인쇄 PDF 전3쪽**을 원본과 나란히 비교한다. 쪽수·페이지별 문구/판정·그림7개·선/박스/색·서체/크기·기호·쪽번호·겹침/잘림·불필요한 빈쪽을 확인한다. 글꼴 대체로 차이가 나면 잔여 차이와 영향을 기록한다. 본문 삭제/강제 축소로 맞추지 않는다.
-- [ ] Run: 전체 Python 단위/통합·독립 파서·보호205파일SHA·독립 검토. 원본 HWPX→반환PDF→전쪽PNG를 연결하고 커밋·컨텍스트: `feat(hwpx): validate the full three-page report through MYBOX`.
+- [x] RED: 전체 보고서 통합 테스트에서 내용/순서·7개 이미지·출력 경로 충돌·실패 시 원본 보존을 검증한다. `--layout` 없는 실행 성공과 구형 `--layout` 인자의 명확한 거부를 고정한다. CLI 오류 뒤 부분 파일을 남기지 않는다.
+- [x] GREEN: JSON→투영→XML→패키지→원자 저장으로 연결한다. PDF 줄 좌표 계약/legacy fallback을 삭제하고 실패 재현물은 증거 폴더에만 보존한다. 위치/FIXED 속성만 검사하던 테스트는 새 내용·흐름 계약으로 대체한다.
+- [x] 합성 기준월 JSON과 이미지7개를 고정하고 기존3쪽 PDF와 같은 내용인지 검사한다. 그림5개의 제목·범례·빈 자료 안내까지 보존하고, 참고표2개는 원본PNG bytes/SHA를 그대로 사용한다.
+- [x] **MYBOX 정상 인쇄 PDF 전3쪽**을 원본과 나란히 비교한다. 쪽수·페이지별 문구/판정·그림7개·선/박스/색·서체/크기·기호·쪽번호·겹침/잘림·불필요한 빈쪽을 확인한다. 글꼴 대체로 차이가 나면 잔여 차이와 영향을 기록한다. 본문 삭제/강제 축소로 맞추지 않는다.
+- [x] Run: 전체 Python 단위/통합·독립 파서·보호205파일SHA·독립 검토. 원본 HWPX→반환PDF→전쪽PNG를 연결하고 커밋·컨텍스트: `feat(hwpx): validate the full three-page report through MYBOX`.
 
 ## 5단계: 변형 자료·재저장 회귀와 샘플 인수
 
@@ -326,3 +326,12 @@
 - 제목 padding3=12px→9pt를border offset에옮긴뒤작성일과선이겹치는보조QA회귀를발견했다. 원본header gap2=8px→6pt와하단padding9pt를합한title next15pt(case1500/default3000)를신규실패테스트로보호하고수정했다. 재검토승인,root보조재렌더에서겹침해소확인.
 - 최종Python62개PASS(원래31+투영11+XML추가20), 독립package/doc검증0/0, 보호205파일변경0. 실제인수probe3개 bytes/SHA동일. 원본8월합성자료+7PNG의최종후보report-stage4b-v3.hwpx SHA a313fd7867f0b3644c209f86c241e77bd160017ed795be52e05daf79e6c6178b는승인MIT RHWP0.8.7에서보조3쪽이다. v1/v2는과거후보이며새후보의증거로승계하지않는다.
 - 실제MYBOX 전체3쪽/폰트/쪽번호·편집 인수는아직미완료다. 다음4C에서--layout/legacy생성경로를삭제하고새CLI산출물로MYBOX 정상인쇄를검증한다. RED/GREEN/리뷰근거는recovery-20261029/reviews 아래에보존했다.
+
+### 4C 완료 — CLI 전환·실제 MYBOX3쪽 인수
+
+- 구형PDF layout/좌표 fallback을 삭제하고 JSON→순수 투영→native XML→일반 패키징→원자 저장으로 연결했다. raw/wrapper 입력·7PNG·실패보존·출력 alias·구형인자 거부를 CLI 통합 테스트로 보호한다. 독립 코드/DDD 검토 승인, 제품 파일/DB/서버/의존성 변경 없음.
+- 최초 실제 MYBOX 후보 a313fd78은3쪽이지만 제목 아래 파란선이 작성일과 겹쳐 불합격했다. 보조 렌더 성공을 실제 성공으로 승계하지 않았다. 한컴 문단 테두리는 ignoreMargin=0이면 위아래 문단여백도 포함한다. 제목만 ignoreMargin=1로 바꾸는 실패 테스트→최소수정→66개PASS→독립 재검토 후 새 CLI 후보를 실제 MYBOX로 다시 인쇄했다.
+- 최종 report-cli-native-v2.hwpx SHA f4228892c4559ff63a1bfef063c8a209659df05d20041bcd39b2af8b6ae592d3. MYBOX의 report-native-202608-f4228892.hwpx를 더보기→인쇄→PDF저장해 mybox-report-native-202608-f4228892-default.pdf 확보: SHA1e44740d2092ce1d4f6db551b56265fa231c7286f5d316f9deacff1641e0f86e/1,141,687bytes/A4세로/실제3쪽/Chrome154·Skia154. 인쇄여백·배율은 관측된 기본값이다.
+- root/독립 검토자가 전3쪽을 확인했다. 작성일/파란선 겹침 해소·모든 지표/본문/기호·5차트/2참고표·자동쪽번호1/2/3 보존·겹침/잘림/빈추가쪽 없음. 새2/3쪽 래스터는 이전후보와 픽셀동일이다. 본문은native, PDF는페이지별통이미지이므로 빈텍스트추출을 누락으로 판정하지 않았다.
+- 잔여 차이: 종합 건설경기 항목의 상태가 다음 줄로 흐르고, 글꼴/굵기/자간과 외곽인쇄여백 차이가 있다. 내용 손실 없는 경미한 가독성 차이로 기록하며 픽셀동등성은 주장하지 않는다. 실제 대체글꼴과 약0.91배폭 차이의 원인은 미확정이다. 기존HTML요약도wrap허용이며 억지축소/본문삭제로 맞추지 않았다.
+- 증거는 recovery-20261029/stage4c-qa.json, mybox-report-f422-default-page-1~3.png와 reviews/task-4c/. Python66개·독립파서0/0·보호205SHA변경0 확인. 기존계산식/HTML·PDF템플릿불변. 실제편집재저장은not_run,5단계로이관한다. 다음: 변형자료별 실제figure생성·MYBOX인쇄와편집환경확인.

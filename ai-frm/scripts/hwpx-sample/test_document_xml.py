@@ -506,6 +506,22 @@ class NativeReportContract(unittest.TestCase):
         self.assertEqual(prop.find('hh:border',NS).get('offsetBottom'),'900')
         self.assertEqual(native_text(date.find('hp:run/hp:t',NS)),'작성일')
 
+    def test_title_border_excludes_flow_margins_without_changing_other_styles(self):
+        # Hancom ignoreMargin excludes before/after spacing from the title's border.
+        parts = self.build(report_document(TextBlock('표제','title'),TextBlock('작성일','date'),
+                                           TextBlock('본문'),TextBlock('절','heading'),TextBlock('참고','reference-header')))
+        section, header = self.trees(parts)
+        actual = []
+        for paragraph in section.findall('hp:p',NS):
+            border = self.para(header,paragraph).find('hh:border',NS)
+            actual.append((border.get('ignoreMargin'),border.get('connect')))
+        self.assertEqual(actual,[('1','0'),('0','0'),('0','0'),('0','0'),('0','0')])
+        probe = self.build(document(TextBlock('표제','title'),TextBlock('본문')))
+        probe_section, probe_header = self.trees(probe)
+        for paragraph in probe_section.findall('hp:p',NS):
+            border = self.para(probe_header,paragraph).find('hh:border',NS)
+            self.assertEqual((border.get('ignoreMargin'),border.get('connect')),('0','0'))
+
     def test_rejects_unknown_profile(self):
         # Catches silently falling back to probe defaults for an invalid profile.
         self.reject(ReportDocument('','',(PageSpec((TextBlock('내용'),)),),'unknown'), {}, 'profile')
