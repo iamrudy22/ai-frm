@@ -138,12 +138,12 @@
 
 **Files:** `document_xml.py`, `test_document_xml.py`, 필요 시 exporter 전용 문서형. 기존 HTML/PDF 템플릿·CSS·글꼴 설정은 수정하지 않는다.
 
-- [ ] RED: `test_metric_block_keeps_text_and_image_in_flow`, `test_summary_preserves_mixed_status_colors`, `test_report_styles_match_existing_print_contract`, `test_native_footer_and_page_breaks`를 먼저 추가한다. 현재 `MetricBlock` 직렬화 미구현과 probe 스타일 차이가 실제 실패로 드러나야 한다.
-- [ ] GREEN: 지표 제목/값·상태·설명·산식·차트를 한 의미 그룹으로 직렬화하고, 종합은 색 있는 native 문구를 가진 한 셀 표로 구성한다. native 문단·그림의 흐름을 유지하며 절대좌표/줄 캐시 fallback을 만들지 않는다.
-- [ ] HWPX 전용 스타일은 기존 출력의 A4 세로·좌우12mm/상하10mm·본문13pt/종합14pt/날짜12pt·산식/기준9pt·본문/종합/날짜 줄간격1.5·종합 굵게·파란 선·노란 종합 박스·상태 색·실제 바닥글 쪽번호를 재현한다. 서체 지정은 기존 Dotum/돋움→AppleGothic→Noto Sans KR 순서를 기준으로 하되 설치 여부에 따른 실제 대체 글꼴을 기록한다. 차트 내부 서체 정책은 유지한다. 기존 실제 출력과 대조해 단위 변환/가용 본문 폭을 확정한다. probe의 본문11pt·160%·맑은고딕·skeleton 폭425.2pt를 전체 보고서에 그대로 쓰지 않는다.
-- [ ] 이미지 역할은 `recovery`, `liquidity`, `construction`, `funding`, `cash`, `referenceRisk`, `referenceLcr`의7개다. 원본 PNG의 종횡비를 유지해 가용 폭 안에 놓는 테스트를 추가한다. probe의 명시적400×110 시험 치수를 전체 보고서에 재사용하지 않는다. 누락/중복·가용 폭 초과를 보고서 구성 계층에서 거부한다. 범용 package 계층에5지표/7그림/3쪽 규칙을 넣지 않는다.
-- [ ] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_document_xml.py' -v`, 이후 전체 샘플 테스트·독립 파서 재개방. 본문/이미지SHA·참조·색·흐름 검사를 수행한다. 명시적 쪽나눔2개는 실제3쪽의 증명이 아니다.
-- [ ] 커밋·컨텍스트: `feat(hwpx): serialize report groups with native styles and page numbers`. 실제3쪽 인수는4C까지 미완료로 표시한다.
+- [x] RED: `test_metric_block_keeps_text_and_image_in_flow`, `test_summary_preserves_mixed_status_colors`, `test_report_styles_match_existing_print_contract`, `test_native_footer_and_page_breaks`를 먼저 추가한다. 현재 `MetricBlock` 직렬화 미구현과 probe 스타일 차이가 실제 실패로 드러나야 한다.
+- [x] GREEN: 지표 제목/값·상태·설명·산식·차트를 한 의미 그룹으로 직렬화하고, 종합은 색 있는 native 문구를 가진 한 셀 표로 구성한다. native 문단·그림의 흐름을 유지하며 절대좌표/줄 캐시 fallback을 만들지 않는다.
+- [x] HWPX 전용 스타일은 기존 출력의 A4 세로·좌우12mm/상하10mm·본문13pt/종합14pt/날짜12pt·산식/기준9pt·본문/종합/날짜 줄간격1.5·종합 굵게·파란 선·노란 종합 박스·상태 색·실제 바닥글 쪽번호를 재현한다. 서체 지정은 기존 Dotum/돋움→AppleGothic→Noto Sans KR 순서를 기준으로 하되 설치 여부에 따른 실제 대체 글꼴을 기록한다. 차트 내부 서체 정책은 유지한다. 기존 실제 출력과 대조해 단위 변환/가용 본문 폭을 확정한다. probe의 본문11pt·160%·맑은고딕·skeleton 폭425.2pt를 전체 보고서에 그대로 쓰지 않는다.
+- [x] 이미지 역할은 `recovery`, `liquidity`, `construction`, `funding`, `cash`, `referenceRisk`, `referenceLcr`의7개다. 원본 PNG의 종횡비를 유지해 가용 폭 안에 놓는 테스트를 추가한다. probe의 명시적400×110 시험 치수를 전체 보고서에 재사용하지 않는다. 누락/중복·가용 폭 초과를 보고서 구성 계층에서 거부한다. 범용 package 계층에5지표/7그림/3쪽 규칙을 넣지 않는다.
+- [x] Run(cwd `ai-frm`): `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/hwpx-sample -p 'test_document_xml.py' -v`, 이후 전체 샘플 테스트·독립 파서 재개방. 본문/이미지SHA·참조·색·흐름 검사를 수행한다. 명시적 쪽나눔2개는 실제3쪽의 증명이 아니다.
+- [x] 커밋·컨텍스트: `feat(hwpx): serialize report groups with native styles and page numbers`. 실제3쪽 인수는4C까지 미완료로 표시한다.
 
 ### 4C. CLI 전환과 실제 전체3쪽 검증
 
@@ -318,3 +318,11 @@
 - TDD 최초8개 RED→GREEN, 명시 style_profile 추가 RED→GREEN, 독립 리뷰 P2 두 건을 별도 실패 테스트로 재현→수정했다. 참고는 reference-header, 생략 basis는 None/빈 construction basis는 빈문자열로 구분한다. 재검토 승인. 최종 투영11개/전체Python42개 PASS, 앱1275개 PASS·기존2skip. root의 최종 전체Python42 PASS 및 보호205파일 변경0 확인.
 - ImageBlock의 None 치수는4B에서 PNG비율/가용폭으로 맞추라는 의미다. ReportDocument.style_profile 기본probe/투영결과report를 분리해 기존 승인 probe3개가 바이트까지 그대로임을 확인했다. 새 SummaryBlock/MetricBlock/참고머리말/basis는4B에서 직렬화하므로 아직 전체보고서HWPX 생성완료가 아니다.
 - 상세RED/GREEN·검토는 .superpowers/sdd/2026-10-28-hwpx-sample/task-4a-* 로그/보고서, 인수 요약은 recovery-20261029/stage4a-qa.json. 다음은4B 전체보고서의 native XML/스타일/바닥글/그림 비율을 TDD로 구현한다.
+
+### 4B 완료 — native XML·전체 스타일·그림/바닥글
+
+- document_xml.py/test_document_xml.py만 구현했다. report/probe profile을 분리해 본문13·종합14bold·날짜12·산식/기준9pt·150%·Dotum지정·A4상하10/좌우12mm, 혼합색1셀 종합, reference-header, 지표 흐름, native footer 자동쪽번호쌍과7PNG 원본비율을 직렬화한다. 모델/계산/제품템플릿/CLI/DB/의존성은 변경하지 않았다.
+- TDD: 최초XML24개에서 신규20assertion RED→GREEN, 표준border폭enum 교정RED→GREEN. 독립검토P2(손상IDAT/PLTE수용)·P3(제목안쪽여백누락)을 RED→GREEN으로 해결했다. PNG는8bit noninterlaced grayscale/RGB/gray-alpha/RGBA만 지원하며,64MiB bounded zlib/CRC/정확행길이/filter0–4/PLTE·IDAT배치/criticalchunk를 검증한다. 현재원본7PNG는모두RGB8로통과하고바이트는그대로다. 범용PNG코덱이나재인코딩은추가하지않았다.
+- 제목 padding3=12px→9pt를border offset에옮긴뒤작성일과선이겹치는보조QA회귀를발견했다. 원본header gap2=8px→6pt와하단padding9pt를합한title next15pt(case1500/default3000)를신규실패테스트로보호하고수정했다. 재검토승인,root보조재렌더에서겹침해소확인.
+- 최종Python62개PASS(원래31+투영11+XML추가20), 독립package/doc검증0/0, 보호205파일변경0. 실제인수probe3개 bytes/SHA동일. 원본8월합성자료+7PNG의최종후보report-stage4b-v3.hwpx SHA a313fd7867f0b3644c209f86c241e77bd160017ed795be52e05daf79e6c6178b는승인MIT RHWP0.8.7에서보조3쪽이다. v1/v2는과거후보이며새후보의증거로승계하지않는다.
+- 실제MYBOX 전체3쪽/폰트/쪽번호·편집 인수는아직미완료다. 다음4C에서--layout/legacy생성경로를삭제하고새CLI산출물로MYBOX 정상인쇄를검증한다. RED/GREEN/리뷰근거는recovery-20261029/reviews 아래에보존했다.

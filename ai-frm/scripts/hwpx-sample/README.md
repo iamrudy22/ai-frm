@@ -81,3 +81,9 @@ python3 scripts/hwpx-sample/generate_sample.py --mode probe-table --assets /abso
 종합은 `SummaryBlock`의 색상별 항목으로, 참고 머리말은 `reference-header`로 구분한다. 기준 설명의 생략은 `None`, 건설경기의 유효한 빈 기준은 빈문자열로 유지한다. `ImageBlock`의 None 치수와 `ReportDocument.style_profile='report'`는 다음 XML 계층이 원본 비율/전체 양식을 선택할 명시적 표현 계약이다. 기존 probe는 기본 profile과 명시 치수를 유지해 바이트가 그대로다.
 
 투영11개·전체Python42개 PASS, 독립 리뷰 P2 두 건 RED→GREEN 후 승인됐다. 전체 보고서 XML/CLI 연결·MYBOX3쪽 인수는 아직 미완료이며, report CLI는4C 전환 전까지 기존 실패 재현 경로다. 다음은4B native XML·스타일·쪽번호·이미지 비율 구현이다.
+
+## 복구 4B: 전체 보고서 native XML
+
+report profile은 원본 표시 문구/색·A4 여백·서체/크기·혼합색 요약표·지표 문단/그림 흐름·참고 머리말·자동 바닥글 쪽번호를 직렬화한다. 그림7개는 PNG bytes를 바꾸지 않고 원본 비율로 맞춘다. report/자동맞춤 입력은8bit noninterlaced grayscale/RGB/gray-alpha/RGBA를 지원하며 손상 CRC/IDAT·행/필터·과다 디코딩을 제한해 거부한다. 다른 PNG 형식은 지원 밖 오류로 구분한다. 기존 probe profile과 명시 치수는 보존한다.
+
+전체Python62개 PASS·독립파서 문제0·실제인수probe3개 바이트 동일·원본7PNG 보존을 확인했다. 제목 안쪽 padding과 다음 작성일 간격은 원본 토큰을 HWPUNIT으로 옮겨 겹침을 방지했다. 최종v3 합성 후보는 RHWP 보조3쪽이며 실제 MYBOX 인수가 아니다. report CLI의 새 경로 전환과 실제 MYBOX 전체3쪽 확인은4C에서 진행한다.
