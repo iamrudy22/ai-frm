@@ -1,3 +1,5 @@
+> **최신 상태:** 한글(HWPX) 다운로드 구현·로컬3002반영 완료. 사용자 요청에 따라 실제 한글/MYBOX 최종 QA는 사용자 확인 대상으로 남겼다. 아래 최초 실패 기록은 과거 샘플의 이력이다.
+
 # HWPX 샘플 생성과 3쪽 보고서 비교
 
 > **현재 상태 정정:** 사용자가 확인한 실제 경로는 **네이버 MYBOX → HWPX 열기 → 인쇄/PDF 저장**이다. 반환된 `test_report.pdf`는 4쪽이며 겹침·넘침이 있어 이전 샘플은 이 경로의 호환성 **불합격**이다. 아래 완료 기록은 로컬 샘플 실험의 이력이며 배포 가능한 HWPX의 인수 완료를 뜻하지 않는다. 대응 계획은 아래의 2026-10-29 실행 기준 1~7단계를 따른다.
@@ -207,20 +209,20 @@
 - [x] Vitest는 Node 환경이므로 기존 SSR 계약 테스트/React hook 모의 harness를 재사용한다. DOM→PNG 품질은 실제 브라우저 QA로 별도 검증한다. 새 테스트 프레임워크를 도입하는 것 자체를 목표로 삼지 않는다.
 - [x] Run: 신규 hook/자산 테스트 및 기존 `report-preview.test.tsx`, `report-chart-view.test.ts`, `manual-entry-editor.test.tsx`, `manual-entry-print-host.test.tsx`. 독립 검토·커밋·컨텍스트: `feat(report): add Astryx HWPX download controls`.
 
-### 6D. 웹에서 받은 파일의 실제 MYBOX 재검증
+### 6D. 웹 다운로드 통합 확인과 사용자 QA 인계
 
-- [ ] 격리 합성 앱에서 업로드 결과·직접 입력 검토·과거 확정본의3경로로 다운로드한다. 비동기 중 월 전환·실패 후 재시도·짧은 시간 연속 클릭을 실제 브라우저에서 확인한다.
-- [ ] **최종 웹 다운로드 파일**로 기준 정상/결측/경계 후보의 MYBOX 인쇄·전쪽 비교를 반복한다. Python 샘플 통과를 웹 이식 결과에 자동 승계하지 않는다. 편집 round trip도 지원 환경에서 최종 웹 파일로 다시 확인한다.
-- [ ] `npm run verify`, `npm run lint`, 격리 production `npm run build`·기존 PDF 3쪽 회귀를 수행한다. 계산/템플릿 보호와 허용된 도구/props 변경은 SHA와 diff로 구분한다. 발견한 실패는 해당 모듈 RED→GREEN 뒤 영향 범위만 재검증한다.
-- [ ] 증거·독립 검토·커밋·컨텍스트: `test(report): verify web HWPX exports through MYBOX`. 인쇄 gate가 미통과면 운영 반영하지 않는다.
+- [x] 업로드/보관본의최종displayReport·직접입력review문서3경로의소유권/마운트무동작은자동계약검사로확인했다. 격리합성앱의정상·전체결측대표보고서는실제브라우저클릭으로다운로드하고정리된host0/오류없음을확인했다. 세업무흐름전부를실브라우저로인수했다고확대하지않는다.
+- [ ] **사용자 QA 대상:** 최종웹HWPX의실제한글/MYBOX열기·인쇄/PDF저장·본문편집재저장. 사용자명시요청에따라기능추가/로컬반영의중단조건에서해제했다. Python/RHWP성공을실제MYBOX로승계하지않는다.
+- [x] npm run verify(타입+1327PASS/기존2skip),전체lint무진단,업무DB/env없는격리productionbuild및실제앱productionbuild통과. 원래본문함수/Sheet AST동일·CSS/폰트/계산/차트/참고표SHA불변을확인했다. 기존PDF동작/문구/3쪽구조를바꾸지않았으며새네이티브PDF출력인수는사용자QA와구분한다.
+- [x] 실제웹파일의ZIPCRC·Python독립파서0/0·보조각3쪽과독립전쪽검토·입력/파일SHA를증거로연결했다. 실제MYBOX미검증과외부호환성차이는명시해인계한다.
 
-## 7단계: 운영 반영과 인계
+## 7단계: 로컬 반영과 인계
 
-- [ ] 6D 통과 후 업무 DB/env가 없는 격리 앱의 결과를 확인하고, 업무 원장에 합성 자료를 만들지 않는다. 해당 HEAD·Node26.12.1·빌드 입력을 고정한다.
-- [ ] 기존 업무 원장을 SQLite에 맞는 방법으로 백업하고 무결성/전후 상태를 확인한다. 실행 중 WAL 때문에 파일 SHA만으로 데이터 불변을 판정하지 않고 기존 원장 검증 절차를 따른다. 환경변수/키 값을 출력하지 않는다.
-- [ ] 검증된 HEAD로 로컬3002 서버를 갱신한다. HTTP·실제 UI 접근·다운로드 도구·기존 PDF를 확인한다. 실패하면 직전 검증 HEAD로 복구하고 DB/원장은 바꾸지 않는다. 외부 공개/배포는 별도 요청 범위다.
-- [ ] 최종 HWPX·MYBOX 반환PDF·전쪽 비교·계산/템플릿 불변 증거·커밋·지원/미검증 환경을 인계한다. MYBOX 인쇄 미통과 또는 편집 미검증 상태를 전체 완료로 보고하지 않는다.
-- [ ] 문서/컨텍스트 커밋: `docs(qa): record HWPX rollout and acceptance evidence`.
+- [x] 검토/QA를통과한구현HEAD639178f·Node26.12.1·빌드입력을고정했다. 격리합성QA데이터/추가QA라우트는실제앱에넣지않았다. 업무원장에합성자료/API쓰기를수행하지않았다.
+- [x] 기존원장을SQLite backup API로mode600로컬백업하고PRAGMA quick_check정상을확인했다. WAL포함논리serialize SHA를전후대조해변경0을확인했으며키/원장행내용을출력하지않았다.
+- [x] 이전.next빌드를보존한뒤실제앱을빌드하고127.0.0.1:3002로서버재시작했다. /aifrm·정적blank HTTP200,실제응답clientchunk내새다운로드버튼문구·Node26.12.1을확인했다. 외부공개/배포/merge/push없음.
+- [x] 최종웹HWPX정상/빈자료·보조전쪽렌더·보호검사·커밋·지원/미검증범위를hwpx-web-20261030/에보존했다. 실제MYBOX최종인수는사용자가직접확인할항목으로남긴다.
+- [x] 아래최신컨텍스트와README·작업기록으로재개가능한상태를정리하고문서커밋한다.
 
 ## 단계별 공통 검증·테스트 구분
 
@@ -365,3 +367,10 @@
 - 6B커밋60c8dc4. 보고서상단기존PDF버튼옆에실제Astryx한글(HWPX)다운로드를추가했다. callback없는숨김print host에는버튼이없고,기존Sheet/MetricSection/ReferencePage와printCSS는그대로다. 메인화면은최종displayReport,직접입력은보이는review.document.json을받는다.
 - hook은명시클릭때첫await전structuredClone과동기잠금으로월전환/빠른중복실행을격리하고,생성중표시·재시도안내·unmount취소·late결과억제·BlobURL/앵커정리를담당한다. 화면마운트나effect에서파일을생성하지않고계산/확정/이력API쓰기0이다. 타겟109개및최종전체1327개PASS/기존2skip,타입/전체lint통과. 독립6C및전체변경재검토명세/품질승인·중요미해결0.
 - 실제IAB정상/전체결측두문서에서버튼클릭→HWPX다운로드성공,빈자료에서도제목/안내5개를생성하고임시host0을확인했다. 사용자가직접할MYBOX최종QA는완료로승격하지않는다. 다음은검증빌드로3002서버갱신·최종도구노출/HTTP확인·인계다.
+
+### 로컬 반영 완료 — 사용자 최종 QA 가능
+
+- 6C커밋639178f. 6A a49cd5c/6B60c8dc4/6C639178f를순서대로리뷰/QA/커밋했다. 마지막통합검토도명세/품질승인·중요미해결0이다.
+- 실제앱productionbuild성공후Node26.12.1로3002서버를다시띄웠다. /aifrm과blank200·새문구포함실제clientbundle200을확인했다. 이전빌드/SQLite-aware백업을로컬에보존했고원장논리SHA전후동일/무결성ok다.
+- 화면새로고침후보고서상단인쇄/PDF저장옆의한글(HWPX)다운로드를사용한다. 원자료입력홈에는버튼이없고산출결과/보관본/직접입력검토문서에연결된다. 클릭시문서고정/자산/파일다운로드는확정·정정·재산출API를호출하지않는다.
+- 인계증거는visualizations/hwpx-web-20261030/acceptance.json·download-button.jpg·web-report-normal.hwpx·web-report-empty.hwpx·visual-review.md/json·independent-parser*.json·report-body-ast.json·protected-files.json·reviews/와production-build.log. 실제MYBOX사용자QA는not_run으로남기며모든한글환경의픽셀동일성/편집호환성완료를주장하지않는다.
