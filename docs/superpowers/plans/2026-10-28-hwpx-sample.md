@@ -190,11 +190,11 @@
 
 ### 6B. Python 인수 계약을 웹 직렬화로 이식
 
-- [ ] RED: 공통 `fixtures/report-contract.json`의 기대 문서와 `projectReport` 결과를 비교한다. Unicode 축약·종합/본문 순서·색·0/음수/결측·입력 불변을 검증한다. serializer/ZIP은 한글/특수문자 escape·그림 누락·참조·첫 MIME 무압축·정해진 메타데이터·재개방을 검사한다.
-- [ ] GREEN: document→XML→ZIP→export 모듈을 차례로 구현한다. 검증된 blank 패키지는 `ai-frm/public/aifrm/hwpx/blank.hwpx`에 출처·SHA/라이선스 고지와 함께 제공한다. same-origin 정적 template·참고표 fetch 외에 계산/확정/원장 저장/외부 변환 API를 호출하지 않는다. template 로딩 실패나 자산 누락은 성공 Blob 대신 오류다.
-- [ ] Python/TypeScript는 같은 의미 문서·표시 문자열·이미지SHA·패키지 불변식을 공유한다. ZIP 구현 간 전체 바이트 동일성은 요구하지 않고 각 구현 안에서 결정적 출력을 검사한다. TypeScript 결과를 Python 독립 파서/일반 패키지 검증기로 다시 열어 교차 확인한다. 런타임 Python 의존성은 만들지 않는다.
-- [ ] 자산형의 readonly만으로 바이트 불변성을 가정하지 않고 입력을 복사/보존한다. 날짜를 다운로드 시각으로 다시 만들지 않는다. 임의 글꼴 파일을 추가 배포하지 않는다.
-- [ ] Run(cwd `ai-frm`): `npm test -- src/app/aifrm/report-hwpx-document.test.ts src/app/aifrm/report-hwpx-xml.test.ts src/app/aifrm/report-hwpx-package.test.ts src/app/aifrm/report-hwpx-export.test.ts`. RED 로그·GREEN·독립 검토 후 커밋·컨텍스트: `feat(hwpx): port the verified document contract to browser export`.
+- [x] RED: 공통 `fixtures/report-contract.json`의 기대 문서와 `projectReport` 결과를 비교한다. Unicode 축약·종합/본문 순서·색·0/음수/결측·입력 불변을 검증한다. serializer/ZIP은 한글/특수문자 escape·그림 누락·참조·첫 MIME 무압축·정해진 메타데이터·재개방을 검사한다.
+- [x] GREEN: document→XML→ZIP→export 모듈을 차례로 구현한다. 검증된 blank 패키지는 `ai-frm/public/aifrm/hwpx/blank.hwpx`에 출처·SHA/라이선스 고지와 함께 제공한다. same-origin 정적 template·참고표 fetch 외에 계산/확정/원장 저장/외부 변환 API를 호출하지 않는다. template 로딩 실패나 자산 누락은 성공 Blob 대신 오류다.
+- [x] Python/TypeScript는 같은 의미 문서·표시 문자열·이미지SHA·패키지 불변식을 공유한다. ZIP 구현 간 전체 바이트 동일성은 요구하지 않고 각 구현 안에서 결정적 출력을 검사한다. TypeScript 결과를 Python 독립 파서/일반 패키지 검증기로 다시 열어 교차 확인한다. 런타임 Python 의존성은 만들지 않는다.
+- [x] 자산형의 readonly만으로 바이트 불변성을 가정하지 않고 입력을 복사/보존한다. 날짜를 다운로드 시각으로 다시 만들지 않는다. 임의 글꼴 파일을 추가 배포하지 않는다.
+- [x] Run(cwd `ai-frm`): `npm test -- src/app/aifrm/report-hwpx-document.test.ts src/app/aifrm/report-hwpx-xml.test.ts src/app/aifrm/report-hwpx-package.test.ts src/app/aifrm/report-hwpx-export.test.ts`. RED 로그·GREEN·독립 검토 후 커밋·컨텍스트: `feat(hwpx): port the verified document contract to browser export`.
 
 ### 6C. Astryx 다운로드 도구와 클릭 시점 문서 고정
 
@@ -352,3 +352,10 @@
 - exactfflate0.8.3/html-to-image1.11.13/devxmldom0.9.12를 공개공식MIT출처로 확인해pin했다. 기존package에추가3개외의업그레이드는없다. 어댑터는클릭snapshot의실제ReportChart5개를DocumentThemeProvider+원본인쇄chart규칙의host스코프사본으로렌더한다. SVG내부computedstyle까지동결하고라이브stylesheet폰트스캔을끄며1406×316 PNG로제목/축/범례를포함한다. 빈자료안내는figure전체로캡처한다. 참고표2개원본bytes유지.
 - TDD최초5개RED→GREEN, 혼합fixture의SVG한점기대정정과전체결측Unicode사례추가, 독립리뷰P2청크대기취소를신규회귀RED→abortableimport를DOM생성전으로이동→7PASS/ESLint0/재검토승인. 항상capture session/root/clone/host를정리한다.
 - 격리앱(업무DB/env미복사)실제IAB클릭으로정상·전체결측HWPX다운로드성공. 정상chart5개는실제PNG1406×316이고제목/범례/색/기호를전수확인했다. 빈자료도7이미지패키지생성과임시host0/오류없음을확인했다. 원본HTML/PDF CSS·font·chart소스변경없음. 상세증거hwpx-web-20261030/와task-6a-*기록. 이단계의웹문서전체/도구연결은6B/6C가담당하며현재변경은순서대로별도커밋한다.
+
+### 6B 완료 — 브라우저 문서/XML/ZIP 이식
+
+- 6A커밋a49cd5c. 불변표시문서→nativeXML→일반ZIP→Blob어댑터를작게분리했다. 기존Python의저장표시값/날짜·종합순서/본문순서·색·60Unicode사유·빈basis구분·A4/요약표/문단/바닥글/그림비율을이식했다. HTTP계산/원장/확정API나Python런타임은사용하지않는다. 공개blank/Apachelicense원본SHA를그대로보존하고web출처고지를추가했다.
+- TDD문서/XML12개(독립Huffman불완전코드수용회귀RED→GREEN포함),일반패키지/내보내기22개통과. CRC·중복/비정규경로·XML실파서/참조·boundedPNG/ZIP·MIME첫무압축·고정DOS날짜·바이트복사·동일입력결정성·실패Blob없음/재시도를검사한다. 독립6B검토/통합최종검토P0–P2미해결0.
+- 실제IAB다운로드normal SHAfb230d5846a0cb18b8e8acf3fc28f1f9fb03bb59b23576235fab176877ece760/465303bytes,empty SHA87905867150a10434778a36483fa04c7a700f4d2a5815d8a340b82ca06071c7a/391469bytes. Python독립파서두파일문제0/0·ZIPCRC0,승인RHWP각3쪽/오류0. 독립검토자6쪽/10figure전수검토:10metric인쇄필드/날짜/기준/14임베드bytes/참고2SHA/native쪽번호보존·새4쪽/블록겹침/잘림없음. 보조본문emoji대체글리프/자연줄바꿈과실제MYBOX미검증은명시해사용자QA로이관한다.
+- 기존report본문함수/Sheet JSX subtree가이전HEAD와TypeScriptAST상완전동일하다. 보호205파일중허용controls/test/dependency8개외변경0,금융계산/차트/CSS/폰트/원본참고표변경0. 전체타입+테스트1327PASS/기존2skip,전체lint무진단. 격리productionbuild는시험fixture복사누락1건을QA환경에서보완한뒤성공했다. 제품소스오류수정은없다.

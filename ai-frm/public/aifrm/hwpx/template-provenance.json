@@ -1,0 +1,65 @@
+{
+  "version": "6.10.0",
+  "wheelUrl": "https://files.pythonhosted.org/packages/90/5e/32619782b4f23723f68abc92eb0cb65bbbb5b90ce7784d0c7df9c1cd7ffe/python_hwpx-6.10.0-py3-none-any.whl",
+  "sha256": "c590fe556823d7f31e59a7fe32b26062c7c681bea0a72732b10c736efa49b2c2",
+  "sources": [
+    "hwpx/data/Skeleton.hwpx",
+    "python_hwpx-6.10.0.dist-info/licenses/LICENSE"
+  ],
+  "repository": "https://github.com/airmang/python-hwpx",
+  "license": "Apache-2.0",
+  "templatePart": "hwpx/data/Skeleton.hwpx",
+  "blankSha256": "c91fb77a9933a3e5645a25778e2d2b99e98137ed99572a5d1dd29ef0c0fd4c98",
+  "note": "Only the unmodified empty package is bundled. No upstream document content is copied into report text.",
+  "referenceReview": {
+    "reviewedOn": "2026-10-29",
+    "copyPolicy": "Principles only for unlicensed sources; no external skill installation or bulk code copying.",
+    "sources": [
+      {
+        "source": "https://github.com/Canine89/hwpxskill/blob/main/SKILL.md",
+        "version": "main as read 2026-10-29; no code adopted",
+        "license": "not established; no code copied",
+        "adopt": [
+          "preserve proven template references",
+          "validate content completeness"
+        ],
+        "exclude": [
+          "summarize to force page count",
+          "self-declared compatibility claims"
+        ]
+      },
+      {
+        "source": "https://github.com/jkf87/hwpx-skill/blob/main/SKILL.md",
+        "version": "main as read 2026-10-29; no code adopted",
+        "license": "not established project-wide; no code copied",
+        "adopt": [
+          "semantic blocks",
+          "atomic validated output",
+          "separate structure from actual rendering"
+        ],
+        "exclude": [
+          "replace report with bundled template",
+          "assume Windows Hancom workflow"
+        ]
+      },
+      {
+        "source": "https://github.com/airmang/hwpx-plugins",
+        "commit": "3abcebd3a9d1e1965ce833e7b789136e331b9d5a",
+        "coreSource": "https://github.com/airmang/python-hwpx",
+        "coreCommit": "261140a4411feb616890d000322053d90fee5292",
+        "coreVersion": "6.10.0",
+        "license": "Apache-2.0 for bundled core skeleton; see included license",
+        "adopt": [
+          "minimal edits",
+          "single validated write path",
+          "hash-linked real-engine evidence"
+        ],
+        "exclude": [
+          "treat installation or schema validation as MYBOX acceptance"
+        ]
+      }
+    ]
+  },
+  "webSourcePath": "/aifrm/hwpx/blank.hwpx",
+  "licenseSha256": "fee6f3e30bfe064913de5de0bbe42e1fb2467958ee458199a192bde5e36c0875"
+}
