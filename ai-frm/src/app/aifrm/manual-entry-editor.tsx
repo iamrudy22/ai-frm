@@ -23,6 +23,7 @@ import type { ManualEntryContentV1, ManualEntryDraftDto, ManualEntryFieldError, 
 import { addMonths, yearMonth, type YearMonth } from '@/domain/shared/year-month';
 import { ManualEntryClientError, ManualEntrySession, createManualEntryClient, manualEntryErrorMessage, loadManualEntryPage, useManualEntry, type ManualEntryClient } from './use-manual-entry';
 import { FinancialReportPreview } from './report-preview';
+import { useReportHwpxDownload } from './use-report-hwpx-download';
 import { ManualEntryPrintHost } from './manual-entry-print-host';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import type { FinancialReport } from './report-model';
@@ -109,6 +110,7 @@ export function ManualEntryEditor({session,onLeave,onConfirmed,embedded=false,ex
  const [cashFocus,setCashFocus]=useState({draftId:state.draft.draftId,round:state.draft.reportCycle,month:state.draft.reportCycle});const [noteOpen,setNoteOpen]=useState(false);
  const cashSelection=useMemo(()=>cashFocus.draftId===state.draft.draftId?cashFocus:{round:state.draft.reportCycle,month:state.draft.reportCycle},[cashFocus,state.draft.draftId,state.draft.reportCycle]);
  const setCashSelection=useCallback((selection:{round:YearMonth;month:YearMonth})=>setCashFocus({draftId:state.draft.draftId,...selection}),[state.draft.draftId]);
+ const {downloadHwpx,isDownloadingHwpx,hwpxDownloadError}=useReportHwpxDownload(state.review ? state.review.document.json as unknown as FinancialReport : null);
  const disabled=externalBusy||state.busy||state.completed||state.uncertain==='confirm';
  const targetField=useCallback((error:ManualEntryFieldError)=>manualEntryErrorField(error,{...state.draft,content:state.content}),[state.draft,state.content]);
  const goToError=useCallback((index:number,errors:readonly ManualEntryFieldError[])=>{if(session.snapshot.errors!==errors)return;const error=errors[index];if(!error)return;const selection={errors,index};setErrorSelection(selection);if(error.category!=='general')setCategory(error.category);const parts=error.field.split('.');if(parts[0]==='cashflow'){const round=state.draft.catalog.cashflow.find(value=>value.round===(error.round??parts[1]));if(round)setCashSelection({round:round.round,month:parts[4]==='values'&&round.months.includes(parts[5] as YearMonth)?parts[5] as YearMonth:round.round});}if(parts[0]==='funding'&&parts[4]==='byAgencyRaw'){const day=state.content.funding.days[Number(parts[2])];if(day)setExpandedReferences(previous=>new Set([...previous,`${day.rowId}.${parts[3]}`]));}if(error.field==='note')setNoteOpen(true);setFocusError(selection);},[session,state.draft.catalog.cashflow,state.content.funding.days,setCashSelection]);
@@ -133,7 +135,7 @@ export function ManualEntryEditor({session,onLeave,onConfirmed,embedded=false,ex
  {accept&&<Banner status="warning" title="내 미보관 입력을 버리고 전환할까요?" description="서버에 보관된 내용으로 전환하며 내 미보관 입력을 버립니다." endContent={<HStack gap={2}><Button label="내 입력 유지" variant="ghost" onClick={()=>setAccept(false)}/><Button label="미보관 입력 버리고 전환" variant="secondary" onClick={()=>{session.acceptConflictLatest();setAccept(false);}}/></HStack>}/>}
  {discard&&<Banner status="warning" title="미보관 입력을 포기할까요?" description="화면의 미보관 입력을 버리고 목록으로 돌아갑니다. 마지막으로 확인된 보관 내용은 서버에 남습니다." endContent={<HStack gap={2}><Button label="입력 계속하기" variant="ghost" onClick={()=>setDiscard(false)}/><Button label="미보관 입력 포기하고 목록으로" variant="secondary" onClick={onLeave}/></HStack>}/>}
  </VStack>
- {state.review&&<><DocumentThemeProvider><FinancialReportPreview report={state.review.document.json as unknown as FinancialReport}/></DocumentThemeProvider><ManualEntryPrintHost review={state.review}/></>}
+ {state.review&&<><DocumentThemeProvider><FinancialReportPreview report={state.review.document.json as unknown as FinancialReport} onDownloadHwpx={downloadHwpx} isDownloadingHwpx={isDownloadingHwpx} hwpxDownloadError={hwpxDownloadError}/></DocumentThemeProvider><ManualEntryPrintHost review={state.review}/></>}
  </VStack>;
 }
 export type ManualEntrySurfaces = { readonly entry: ReactNode; readonly pending: ReactNode };

@@ -57,6 +57,7 @@ import { GRADE_COLOR, money, percent } from './format';
 import { DocumentThemeProvider } from '@/app/ThemeProvider';
 import { buildFinancialReport } from './report-model';
 import { FinancialReportPreview } from './report-preview';
+import { useReportHwpxDownload } from './use-report-hwpx-download';
 import { summarizeHistorySources, withExternalRiskHistory } from './report-history-projection';
 import { useReportHistory } from './use-report-history';
 import { ReportControlSurface, ReportHistoryControls, ReportHistorySourceSummary } from './report-history-controls';
@@ -357,6 +358,7 @@ export default function AifrmDashboardPage() {
   const candidatePreparing = confirmationKey !== null && candidatePreparingKey === confirmationKey;
   const { report: displayReport, sources: displayHistorySources } = reportDisplayOf<FinancialReport>(archived, activeCandidate, projectedReport,
     currentReport => history.view ? summarizeHistorySources(currentReport, history.view, 'current') : null);
+  const { downloadHwpx, isDownloadingHwpx, hwpxDownloadError } = useReportHwpxDownload(displayReport ?? null);
 
   const openConfirmation = async (id: string) => {
     if (manualNavigation.current && !await manualNavigation.current()) return;
@@ -468,7 +470,7 @@ export default function AifrmDashboardPage() {
                     <ReportHistoryControls history={history} summary={displayHistorySources} />}
                   {confirmationControls(true)}
                 </ReportControlSurface>
-                <FinancialReportPreview report={displayReport} onBack={() => { void (async () => { if (manualNavigation.current && !await manualNavigation.current()) return;
+                <FinancialReportPreview report={displayReport} onDownloadHwpx={downloadHwpx} isDownloadingHwpx={isDownloadingHwpx} hwpxDownloadError={hwpxDownloadError} onBack={() => { void (async () => { if (manualNavigation.current && !await manualNavigation.current()) return;
     if (correctionNavigation.current && !await correctionNavigation.current()) return; openGeneration.current++; setArchived(null); setReportOpenedAt(null); })(); }} />
               </VStack>
             </LayoutContent>

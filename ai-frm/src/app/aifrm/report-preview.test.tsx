@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { assessDashboard } from '@/application/dashboard';
 import { createStatement, unreadable, type ItemName } from '@/domain/cashflow/statement';
@@ -107,6 +107,36 @@ describe('보고서 작업 영역과 출력 상태', () => {
     expect(buttons.filter((button) => button.includes('인쇄 / PDF 저장'))).toHaveLength(1);
     expect(html).toMatch(/<h2\b[^>]*id="report-view-heading"[^>]*tabindex="-1"/);
     expect(markup()).not.toContain('대시보드로 돌아가기');
+  });
+});
+
+describe('HWPX 다운로드 도구 계약', () => {
+  it('보고서를 그릴 때는 실행하지 않고 다운로드 버튼의 명시 클릭만 콜백을 실행한다', () => {
+    const download = vi.fn();
+    type Node = { props: Record<string, unknown> };
+    const nodes = (value: unknown): Node[] => Array.isArray(value) ? value.flatMap(nodes)
+      : value && typeof value === 'object' && 'props' in value ? [value as Node, ...Object.values((value as Node).props).flatMap(nodes)] : [];
+    const action = nodes(FinancialReportPreview({ report: report(), onDownloadHwpx: download }))
+      .find(node => node.props.label === '한글(HWPX) 다운로드')!;
+    expect(download).not.toHaveBeenCalled(); (action.props.onClick as () => void)(); expect(download).toHaveBeenCalledTimes(1);
+  });
+
+  it('실제 콜백이 있을 때만 다운로드를 제공하고 숨김 출력 호스트 기본값에는 없다', () => {
+    expect(markup()).not.toContain('한글(HWPX) 다운로드');
+    const html = renderToStaticMarkup(<FinancialReportPreview report={report()} onDownloadHwpx={() => {}} />);
+    expect(html.match(/한글\(HWPX\) 다운로드/g)).toHaveLength(1);
+    const button = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []).find(value => value.includes('한글(HWPX) 다운로드'))!;
+    expect(button).toContain('astryx-button'); expect(button).not.toContain('disabled');
+  });
+
+  it('생성 중에는 버튼을 잠그고 오류는 출력 제외 도구 영역에서 재시도를 안내한다', () => {
+    const html = renderToStaticMarkup(<FinancialReportPreview report={report()} onDownloadHwpx={() => {}} isDownloadingHwpx hwpxDownloadError="생성 실패 · 다운로드를 다시 시도하세요" />);
+    const button = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []).find(value => value.includes('한글(HWPX) 다운로드'))!;
+    expect(button).toContain('disabled'); expect(button).toContain('aria-busy="true"');
+    expect(html).toContain('role="status"'); expect(html).toContain('생성 실패 · 다운로드를 다시 시도하세요');
+    expect(page(html, 1)).not.toContain('생성 실패');
+    const retry = renderToStaticMarkup(<FinancialReportPreview report={report()} onDownloadHwpx={() => {}} hwpxDownloadError="다시 시도하세요" />);
+    expect((retry.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []).find(value => value.includes('한글(HWPX) 다운로드'))).not.toContain('disabled');
   });
 });
 

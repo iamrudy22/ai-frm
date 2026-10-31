@@ -200,12 +200,12 @@
 
 **Files:** hook·자산 어댑터의 경합/정리 테스트, `report-preview.tsx`의 `.report-controls`/선택적 props와 테스트, `page.tsx`, `manual-entry-editor.tsx`의 보이는 문서 콜백·기존 테스트. `manual-entry-print-host.tsx`는 콜백을 받지 않는다.
 
-- [ ] preview props는 `onDownloadHwpx?: () => void`, `isDownloadingHwpx?: boolean`(기본 false), `hwpxDownloadError?: string | null`(기본 null). 콜백이 없으면 버튼도 없다. hook은 `{downloadHwpx, isDownloadingHwpx, hwpxDownloadError}`를 반환하고 양쪽 보이는 문서 소유자가 같은 계약을 사용한다.
-- [ ] RED: 업로드/보관본은 **최종 `displayReport`**, 직접 입력 검토는 **`state.review.document.json`**을 클릭 순간 복제하는지 검사한다. 비동기 도중 월/문서가 바뀌어도 최초 snapshot과 그 차트만 담아야 한다. 중간 `report`/`projectedReport`나 뒤늦게 읽은 화면DOM을 사용하지 않는다.
-- [ ] RED: 빠른 중복 클릭은 한 번만 실행, 자산/template/ZIP 실패는 다운로드 없음·오류 표시·재시도 가능, unmount 시 작업/임시 host/URL 정리, 숨김 print host에는 버튼/호출 없음, 재산출·확정·이력 저장 API 호출0을 검증한다. 모든 다운로드는 명시 클릭으로만 시작한다.
-- [ ] GREEN: 실제 Astryx Button·기존 상태/오류 컴포넌트를 출력 도구 영역에 추가한다. 기존 본문 `Sheet`/`MetricSection`/`ReferencePage`, 인쇄 CSS/폰트·PDF 동작은 그대로 둔다. 버튼 문구는 `한글(HWPX) 다운로드`, 생성 중에는 중복 실행을 막는다.
-- [ ] Vitest는 Node 환경이므로 기존 SSR 계약 테스트/React hook 모의 harness를 재사용한다. DOM→PNG 품질은 실제 브라우저 QA로 별도 검증한다. 새 테스트 프레임워크를 도입하는 것 자체를 목표로 삼지 않는다.
-- [ ] Run: 신규 hook/자산 테스트 및 기존 `report-preview.test.tsx`, `report-chart-view.test.ts`, `manual-entry-editor.test.tsx`, `manual-entry-print-host.test.tsx`. 독립 검토·커밋·컨텍스트: `feat(report): add Astryx HWPX download controls`.
+- [x] preview props는 `onDownloadHwpx?: () => void`, `isDownloadingHwpx?: boolean`(기본 false), `hwpxDownloadError?: string | null`(기본 null). 콜백이 없으면 버튼도 없다. hook은 `{downloadHwpx, isDownloadingHwpx, hwpxDownloadError}`를 반환하고 양쪽 보이는 문서 소유자가 같은 계약을 사용한다.
+- [x] RED: 업로드/보관본은 **최종 `displayReport`**, 직접 입력 검토는 **`state.review.document.json`**을 클릭 순간 복제하는지 검사한다. 비동기 도중 월/문서가 바뀌어도 최초 snapshot과 그 차트만 담아야 한다. 중간 `report`/`projectedReport`나 뒤늦게 읽은 화면DOM을 사용하지 않는다.
+- [x] RED: 빠른 중복 클릭은 한 번만 실행, 자산/template/ZIP 실패는 다운로드 없음·오류 표시·재시도 가능, unmount 시 작업/임시 host/URL 정리, 숨김 print host에는 버튼/호출 없음, 재산출·확정·이력 저장 API 호출0을 검증한다. 모든 다운로드는 명시 클릭으로만 시작한다.
+- [x] GREEN: 실제 Astryx Button·기존 상태/오류 컴포넌트를 출력 도구 영역에 추가한다. 기존 본문 `Sheet`/`MetricSection`/`ReferencePage`, 인쇄 CSS/폰트·PDF 동작은 그대로 둔다. 버튼 문구는 `한글(HWPX) 다운로드`, 생성 중에는 중복 실행을 막는다.
+- [x] Vitest는 Node 환경이므로 기존 SSR 계약 테스트/React hook 모의 harness를 재사용한다. DOM→PNG 품질은 실제 브라우저 QA로 별도 검증한다. 새 테스트 프레임워크를 도입하는 것 자체를 목표로 삼지 않는다.
+- [x] Run: 신규 hook/자산 테스트 및 기존 `report-preview.test.tsx`, `report-chart-view.test.ts`, `manual-entry-editor.test.tsx`, `manual-entry-print-host.test.tsx`. 독립 검토·커밋·컨텍스트: `feat(report): add Astryx HWPX download controls`.
 
 ### 6D. 웹에서 받은 파일의 실제 MYBOX 재검증
 
@@ -359,3 +359,9 @@
 - TDD문서/XML12개(독립Huffman불완전코드수용회귀RED→GREEN포함),일반패키지/내보내기22개통과. CRC·중복/비정규경로·XML실파서/참조·boundedPNG/ZIP·MIME첫무압축·고정DOS날짜·바이트복사·동일입력결정성·실패Blob없음/재시도를검사한다. 독립6B검토/통합최종검토P0–P2미해결0.
 - 실제IAB다운로드normal SHAfb230d5846a0cb18b8e8acf3fc28f1f9fb03bb59b23576235fab176877ece760/465303bytes,empty SHA87905867150a10434778a36483fa04c7a700f4d2a5815d8a340b82ca06071c7a/391469bytes. Python독립파서두파일문제0/0·ZIPCRC0,승인RHWP각3쪽/오류0. 독립검토자6쪽/10figure전수검토:10metric인쇄필드/날짜/기준/14임베드bytes/참고2SHA/native쪽번호보존·새4쪽/블록겹침/잘림없음. 보조본문emoji대체글리프/자연줄바꿈과실제MYBOX미검증은명시해사용자QA로이관한다.
 - 기존report본문함수/Sheet JSX subtree가이전HEAD와TypeScriptAST상완전동일하다. 보호205파일중허용controls/test/dependency8개외변경0,금융계산/차트/CSS/폰트/원본참고표변경0. 전체타입+테스트1327PASS/기존2skip,전체lint무진단. 격리productionbuild는시험fixture복사누락1건을QA환경에서보완한뒤성공했다. 제품소스오류수정은없다.
+
+### 6C 완료 — 실제 Astryx 다운로드 도구와 현재 문서 소유권
+
+- 6B커밋60c8dc4. 보고서상단기존PDF버튼옆에실제Astryx한글(HWPX)다운로드를추가했다. callback없는숨김print host에는버튼이없고,기존Sheet/MetricSection/ReferencePage와printCSS는그대로다. 메인화면은최종displayReport,직접입력은보이는review.document.json을받는다.
+- hook은명시클릭때첫await전structuredClone과동기잠금으로월전환/빠른중복실행을격리하고,생성중표시·재시도안내·unmount취소·late결과억제·BlobURL/앵커정리를담당한다. 화면마운트나effect에서파일을생성하지않고계산/확정/이력API쓰기0이다. 타겟109개및최종전체1327개PASS/기존2skip,타입/전체lint통과. 독립6C및전체변경재검토명세/품질승인·중요미해결0.
+- 실제IAB정상/전체결측두문서에서버튼클릭→HWPX다운로드성공,빈자료에서도제목/안내5개를생성하고임시host0을확인했다. 사용자가직접할MYBOX최종QA는완료로승격하지않는다. 다음은검증빌드로3002서버갱신·최종도구노출/HTTP확인·인계다.

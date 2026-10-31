@@ -190,3 +190,21 @@ it.each([78,210])('fix2 I3 %i errors use one next action, reach every actual fie
 it('final I1 current review installs a print host and raw edit removes it without confirmation',async()=>manualScreen(async env=>{
  const {ManualEntryEditor}=await env.load();const {ManualEntrySession}=await import('./use-manual-entry');const report=(await import('./report-model')).buildFinancialReport();const ref={draftId:draft.draftId,draftRevision:1,rawInputHash:draft.rawInputHash,candidateId:'22222222-2222-4222-8222-222222222222',documentHash:'b'.repeat(64),preparedAt:draft.savedAt,evaluatedAt:draft.savedAt,dependencyHeads:[]};const review={ref,document:{schemaVersion:1 as const,templateVersion:'v',contentHash:ref.documentHash,json:report as never,historyCalculationIds:[]},inputSummary:{includedRounds:[],omittedRounds:[],unavailableItems:[],missingEconomic:[],fundingDates:[],fundingMissing:[]}};const confirm=vi.fn();const s=new ManualEntrySession({...draft,state:'review-ready',currentReview:ref,review},{confirm} as never);const render=()=>env.render(()=>ManualEntryEditor({session:s,onLeave:vi.fn(),onConfirmed:vi.fn(),embedded:true}));const host=(nodes:ScreenNode[])=>nodes.filter(v=>typeof v.type==='function'&&(v.type as {name:string}).name==='ManualEntryPrintHost');expect(host(render())).toHaveLength(1);expect(host(render())[0].props.review).toBe(s.snapshot.review);s.change({...s.snapshot.content,note:'invalidate review'});expect(host(render())).toHaveLength(0);expect(confirm).not.toHaveBeenCalled();s.dispose();
 }));
+
+
+it('visible manual review alone owns HWPX action and passes the exact saved document; hidden print host has no callback',async()=>manualScreen(async env=>{
+ const downloadHwpx=vi.fn();const downloads=vi.fn(()=>({downloadHwpx,isDownloadingHwpx:true,hwpxDownloadError:'합성 파일 생성 오류'}));
+ vi.doMock('./use-report-hwpx-download',()=>({useReportHwpxDownload:downloads}));
+ try {
+  const {ManualEntryEditor}=await env.load();const {ManualEntrySession}=await import('./use-manual-entry');const {buildFinancialReport}=await import('./report-model');
+  const report={...buildFinancialReport(),title:'검토 문서 원본'};const ref={draftId:draft.draftId,draftRevision:1,rawInputHash:draft.rawInputHash,candidateId:'22222222-2222-4222-8222-222222222222',documentHash:'b'.repeat(64),preparedAt:draft.savedAt,evaluatedAt:draft.savedAt,dependencyHeads:[]};
+  const review={ref,document:{schemaVersion:1 as const,templateVersion:'v',contentHash:ref.documentHash,json:report as never,historyCalculationIds:[]},inputSummary:{includedRounds:[],omittedRounds:[],unavailableItems:[],missingEconomic:[],fundingDates:[],fundingMissing:[]}};
+  const session=new ManualEntrySession({...draft,state:'review-ready',currentReview:ref,review},{} as never);
+  const render=()=>env.render(()=>ManualEntryEditor({session,onLeave:vi.fn(),onConfirmed:vi.fn()}));const nodes=render();
+  const preview=nodes.find(node=>typeof node.type==='function'&&(node.type as {name:string}).name==='FinancialReportPreview')!;
+  expect(downloads).toHaveBeenLastCalledWith(session.snapshot.review!.document.json);expect(preview.props.report).toBe(session.snapshot.review!.document.json);
+  expect(preview.props.onDownloadHwpx).toBe(downloadHwpx);expect(preview.props.isDownloadingHwpx).toBe(true);expect(preview.props.hwpxDownloadError).toBe('합성 파일 생성 오류');
+  const host=nodes.find(node=>typeof node.type==='function'&&(node.type as {name:string}).name==='ManualEntryPrintHost')!;expect(host.props.onDownloadHwpx).toBeUndefined();
+  session.change({...session.snapshot.content,note:'원자료 수정'});expect(render().some(node=>typeof node.type==='function'&&(node.type as {name:string}).name==='FinancialReportPreview')).toBe(false);expect(downloads).toHaveBeenLastCalledWith(null);session.dispose();
+ } finally { vi.doUnmock('./use-report-hwpx-download'); }
+}));

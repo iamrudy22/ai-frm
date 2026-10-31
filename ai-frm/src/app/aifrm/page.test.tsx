@@ -66,6 +66,9 @@ it.each([
     useCallback: (callback: unknown) => callback,
     useEffect: () => {},
   }));
+  const downloadHwpx = vi.fn();
+  const downloads = vi.fn(() => ({ downloadHwpx, isDownloadingHwpx: true, hwpxDownloadError: '합성 다운로드 오류' }));
+  vi.doMock('./use-report-hwpx-download', () => ({ useReportHwpxDownload: downloads }));
   const cancelBackfill = vi.fn();
   vi.doMock('./construction-perception-card', async original => ({ ...await original<typeof import('./construction-perception-card')>(), usePerception: () => ({ response: null, isLoading: false, selectedMonth: undefined }) }));
   vi.doMock('./funding-risk-card', async original => ({ ...await original<typeof import('./funding-risk-card')>(), useFundingRisk: () => ({ response: null }) }));
@@ -88,6 +91,7 @@ it.each([
     const allElements = (value: unknown): Element[] => Array.isArray(value) ? value.flatMap(allElements)
       : value && typeof value === 'object' && 'props' in value ? [value as Element, ...Object.values((value as Element).props).flatMap(allElements)] : [];
     let home = render();
+    expect(downloads).toHaveBeenLastCalledWith(null);
     (home.props.onNavigate as (section: string) => void)('history');
     await Promise.resolve();
     home = render();
@@ -108,10 +112,14 @@ it.each([
     } else {
       const report = allElements(view).find(element => typeof element.type === 'function' && element.type.name === 'FinancialReportPreview');
       expect(report?.props.report).toEqual({ title: '합성 확정본' });
+      expect(downloads).toHaveBeenLastCalledWith(report?.props.report);
+      expect(report?.props.onDownloadHwpx).toBe(downloadHwpx);
+      expect(report?.props.isDownloadingHwpx).toBe(true);
+      expect(report?.props.hwpxDownloadError).toBe('합성 다운로드 오류');
       expect(cancelBackfill).toHaveBeenCalledTimes(1);
     }
   } finally {
-    for (const mockPath of ['react', './construction-perception-card', './funding-risk-card', './use-report-history']) vi.doUnmock(mockPath);
+    for (const mockPath of ['react', './construction-perception-card', './funding-risk-card', './use-report-history', './use-report-hwpx-download']) vi.doUnmock(mockPath);
     vi.unstubAllGlobals();
     vi.resetModules();
   }

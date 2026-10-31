@@ -105,7 +105,10 @@ function ReferencePage() {
   );
 }
 
-export function FinancialReportPreview({ report, onBack }: { report: FinancialReport; onBack?: () => void }) {
+export function FinancialReportPreview({ report, onBack, onDownloadHwpx, isDownloadingHwpx = false, hwpxDownloadError = null }: {
+  report: FinancialReport; onBack?: () => void; onDownloadHwpx?: () => void;
+  isDownloadingHwpx?: boolean; hwpxDownloadError?: string | null;
+}) {
   const loadingCount = report.metrics.filter((item) => item.status === '산출 중').length;
   const unavailableCount = report.metrics.filter((item) => item.status === '산출 불가').length;
   const calculationStatus = report.isTemplate ? '산출 전'
@@ -130,9 +133,12 @@ export function FinancialReportPreview({ report, onBack }: { report: FinancialRe
           <Text size="sm" color="inherit" role="status" aria-label="지표 산출 상태">{calculationStatus}</Text>
           <HStack gap={2} wrap="wrap">
             {onBack && <Button label="대시보드로 돌아가기" variant="secondary" size="sm" onClick={onBack} />}
+            {onDownloadHwpx && <Button label="한글(HWPX) 다운로드" variant="secondary" size="sm"
+              isLoading={isDownloadingHwpx} isDisabled={isDownloadingHwpx} onClick={onDownloadHwpx} />}
             <Button label="인쇄 / PDF 저장" variant="primary" size="sm" onClick={() => window.print()} />
           </HStack>
         </HStack>
+        {onDownloadHwpx && hwpxDownloadError && <Text size="sm" color="inherit" role="status" aria-live="polite">{hwpxDownloadError}</Text>}
       </VStack>
       <Sheet page={1}>
         <VStack as="header" gap={2}>
