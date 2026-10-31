@@ -168,7 +168,7 @@
 
 ## 6단계: 웹용 변환 경계와 다운로드 도구
 
-**착수 조건:** 4·5단계의 실제 MYBOX 전체 보고서 인쇄 검증 통과. 구현 전 repo `AGENTS.md`의 해당 Next 로컬 문서와 Astryx CLI를 읽는다. 계산/저장/보고서 본문과 출력 어댑터를 분리한다. 새 aggregate·업무 저장소·변환 API를 추가하지 않는다.
+**착수 조건 갱신(사용자 승인, 2026-10-30):** 사용자가 “네 추가하세요. qa 는 제가 직접해볼게요”라고 명시했다. 따라서 MYBOX 선행 인쇄 gate를 버튼 구현의 중단 조건에서 해제하고, 실제 한글/MYBOX 인쇄·편집 최종 QA는 사용자에게 이관한다. 미수행 인수 상태는 그대로 기록하며 자동 통과로 승격하지 않는다. 구현 전 repo `AGENTS.md`의 해당 Next 로컬 문서와 Astryx CLI를 읽는다. 계산/저장/보고서 본문과 출력 어댑터를 분리한다. 새 aggregate·업무 저장소·변환 API를 추가하지 않는다.
 
 기본 경로는 `ai-frm/src/app/aifrm/`. 작은 순수 함수와 경계별 테스트로 나누며 기존 exporter 한 파일에 XML/ZIP/DOM/클릭 상태를 몰아넣지 않는다.
 
@@ -183,10 +183,10 @@
 
 ### 6A. 웹 자산 생성과 의존성의 작은 검증
 
-- [ ] 현재 의존성에는 브라우저 ZIP/DOM 이미지 도구가 없다. ZIP 후보 [fflate](https://github.com/101arrowz/fflate), DOM 전체 PNG 후보 [html-to-image](https://github.com/bubkoo/html-to-image)는 공개 API/MIT를 확인했다. **채택 확정은 구현 시점**의 실제 Chrome 동작·버전/라이선스·번들·필요 API 확인 뒤로 둔다. XML 참조 검사도 Node/브라우저에서 시험 가능한 공개 API를 선택하며 문자열 regex를 XML 파서처럼 쓰지 않는다. 기존 xlsx/Next 내부 ZIP API와 전이 sharp를 브라우저 구현에 전용하지 않는다.
-- [ ] RED→GREEN: 대표 정상·빈 차트1개씩을 기존 `ReportChart`+`DocumentThemeProvider`로 독립 렌더링해 PNG를 만든다. **SVG만 추출하지 않고 `.report-chart` figure 전체**의 제목/범례/빈 자료 안내·경계선까지 검사한다. 자료가 없어 SVG가 없는 경우도 유효한 PNG여야 한다.
-- [ ] 기준 폭/문서 테마·폰트/이미지 로딩 완료를 기다리고 CSS 변수·외부 이미지 참조가 남지 않게 한다. 기존 차트 소스/표현 정책/문서 테마는 고치지 않는다. 임시 렌더 host는 출력 전용 어댑터에 두며 숨김 인쇄 host를 재사용하지 않는다.
-- [ ] 이 단계의 브라우저 증거가 실패하면 패키지 선택/자산 어댑터만 조정하고 버튼 연결을 보류한다. 선택한 의존성만 정확한 버전으로 package/lock에 고정한다. 커밋·컨텍스트: `feat(hwpx): capture existing chart figures for document export`.
+- [x] 현재 의존성에는 브라우저 ZIP/DOM 이미지 도구가 없다. ZIP 후보 [fflate](https://github.com/101arrowz/fflate), DOM 전체 PNG 후보 [html-to-image](https://github.com/bubkoo/html-to-image)는 공개 API/MIT를 확인했다. **채택 확정은 구현 시점**의 실제 Chrome 동작·버전/라이선스·번들·필요 API 확인 뒤로 둔다. XML 참조 검사도 Node/브라우저에서 시험 가능한 공개 API를 선택하며 문자열 regex를 XML 파서처럼 쓰지 않는다. 기존 xlsx/Next 내부 ZIP API와 전이 sharp를 브라우저 구현에 전용하지 않는다.
+- [x] RED→GREEN: 대표 정상·빈 차트1개씩을 기존 `ReportChart`+`DocumentThemeProvider`로 독립 렌더링해 PNG를 만든다. **SVG만 추출하지 않고 `.report-chart` figure 전체**의 제목/범례/빈 자료 안내·경계선까지 검사한다. 자료가 없어 SVG가 없는 경우도 유효한 PNG여야 한다.
+- [x] 기준 폭/문서 테마·폰트/이미지 로딩 완료를 기다리고 CSS 변수·외부 이미지 참조가 남지 않게 한다. 기존 차트 소스/표현 정책/문서 테마는 고치지 않는다. 임시 렌더 host는 출력 전용 어댑터에 두며 숨김 인쇄 host를 재사용하지 않는다.
+- [x] 이 단계의 브라우저 증거가 실패하면 패키지 선택/자산 어댑터만 조정하고 버튼 연결을 보류한다. 선택한 의존성만 정확한 버전으로 package/lock에 고정한다. 커밋·컨텍스트: `feat(hwpx): capture existing chart figures for document export`.
 
 ### 6B. Python 인수 계약을 웹 직렬화로 이식
 
@@ -345,3 +345,10 @@
 - 한컴오피스Web v2에서합성f422파일의대금두곳(종합/지표제목)에(검증)을추가→저장완료→재열기3쪽/953글자확인→편집HWPX다운로드성공. SHA b48ee50e9bab6f92d77dfbb5d020a4f0e0c923ff45199c6cb30de1d05d406c8b, 두marker제거후native본문완전동일·원본7imageSHA동일. 기존합성cloud파일은편집본으로바뀌었고로컬인수원본f422는별도로보존했다. 새업무파일/약관승인/권한확장없음.
 - **미완료:**7변형과편집본의실제MYBOX정상인쇄/전쪽대조. Chrome다른창초점이동으로파일선택시도후실제업로드가확인되지않았고,확장fileChooser.setFiles가로컬fileURL접근권한부족을명시적으로반환했다. 권한을임의변경하지않았다. 사용자준비응답후에도전달실패가남아합성8파일수동업로드를요청한다. /private/tmp/aifrm-hwpx-stage5-mybox-batch-20261029/에는새이름8파일만있다. 아직업로드성공으로기록하지않는다.
 - 증거: recovery-20261029/stage5/status.json·candidates.json·independent-aux-qa.json/md·rhwp/와reviews/task-5/. 보호205SHA변경0. 자동QA는별도체크포인트커밋하고5단계인수는열어둔다. **5단계인쇄gate미통과이므로6·7단계미착수**다.6A는공식의존성/API읽기전용조사만보존했다.다음작업은합성8파일업로드확인→MYBOX정상인쇄→전쪽대조→5단계인수커밋이다.
+
+### 6A 완료 — 실제 차트 전체 PNG·출력 자원 경계
+
+- 사용자가 버튼 추가와 직접QA를 명시해 선행MYBOXgate를 해제했다. 외부 인수는not_run/user-owned로 유지하며 원장/계산/기존보고서본문은 보호한다.
+- exactfflate0.8.3/html-to-image1.11.13/devxmldom0.9.12를 공개공식MIT출처로 확인해pin했다. 기존package에추가3개외의업그레이드는없다. 어댑터는클릭snapshot의실제ReportChart5개를DocumentThemeProvider+원본인쇄chart규칙의host스코프사본으로렌더한다. SVG내부computedstyle까지동결하고라이브stylesheet폰트스캔을끄며1406×316 PNG로제목/축/범례를포함한다. 빈자료안내는figure전체로캡처한다. 참고표2개원본bytes유지.
+- TDD최초5개RED→GREEN, 혼합fixture의SVG한점기대정정과전체결측Unicode사례추가, 독립리뷰P2청크대기취소를신규회귀RED→abortableimport를DOM생성전으로이동→7PASS/ESLint0/재검토승인. 항상capture session/root/clone/host를정리한다.
+- 격리앱(업무DB/env미복사)실제IAB클릭으로정상·전체결측HWPX다운로드성공. 정상chart5개는실제PNG1406×316이고제목/범례/색/기호를전수확인했다. 빈자료도7이미지패키지생성과임시host0/오류없음을확인했다. 원본HTML/PDF CSS·font·chart소스변경없음. 상세증거hwpx-web-20261030/와task-6a-*기록. 이단계의웹문서전체/도구연결은6B/6C가담당하며현재변경은순서대로별도커밋한다.
