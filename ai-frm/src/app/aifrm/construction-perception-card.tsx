@@ -42,6 +42,7 @@ import {
   revisionNote,
 } from '@/app/aifrm/construction-perception-view';
 import type { NamedStatement } from '@/app/aifrm/uploaded-rounds';
+import { indicatorFailureDescription, requestIndicator, type IndicatorRequestFailure } from '@/app/aifrm/indicator-request';
 import { GRADE_COLOR } from '@/app/aifrm/format';
 import { roundEntryOf, type RoundEntry } from '@/domain/cashflow/round-entry';
 import { calendarOf, type Statement } from '@/domain/cashflow/statement';
@@ -64,6 +65,8 @@ const MISSING_COLUMNS = [
 export type Perception = {
   /** 이 회차 묶음의 결과. 아직 한 번도 받지 못했으면 null. */
   readonly response: PerceptionResponse | null;
+  /** 화면 안내 전용. 보고서에 쓰는 response.reason과 분리한다. */
+  readonly requestFailure?: IndicatorRequestFailure | null;
   /** 기준월을 바꿔 다시 받는 중. response는 앞선 결과다. */
   readonly isLoading: boolean;
   /** 분양회수를 떼지 못한 회차. */
@@ -77,13 +80,17 @@ export type Perception = {
 
 type Choice = { readonly for: readonly NamedStatement[]; readonly month: YearMonth };
 
+type PerceptionRequestResult = {
+  readonly response: PerceptionResponse;
+  readonly requestFailure: IndicatorRequestFailure | null;
+};
+
 type Loaded = {
   /** 어느 회차 묶음·선택에 대한 결과인가. 다르면 아직 불러오는 중이다. */
   readonly for: readonly NamedStatement[];
   readonly chosen: YearMonth | undefined;
   readonly attempt: number;
-  readonly response: PerceptionResponse;
-};
+} & PerceptionRequestResult;
 
 /** named가 null이면(아직 산출 전) 부르지 않는다. */
 export function usePerception(latest: Statement | null, named: readonly NamedStatement[] | null): Perception {
@@ -112,8 +119,8 @@ export function usePerception(latest: Statement | null, named: readonly NamedSta
     if (named === null) return;
     let cancelled = false;
     (async () => {
-      const response = await fetchPerception(rounds, reportMonth, chosen);
-      if (!cancelled) setLoaded({ for: named, chosen, attempt, response });
+      const result = await fetchPerception(rounds, reportMonth, chosen);
+      if (!cancelled) setLoaded({ for: named, chosen, attempt, ...result });
     })();
     return () => {
       cancelled = true;
@@ -123,6 +130,7 @@ export function usePerception(latest: Statement | null, named: readonly NamedSta
   const current = named !== null && loaded?.for === named ? loaded : null;
   return {
     response: current?.response ?? null,
+    requestFailure: current?.requestFailure ?? null,
     isLoading: current === null || current.chosen !== chosen || current.attempt !== attempt,
     unreadable,
     selectedMonth: chosen,
@@ -137,7 +145,7 @@ export function usePerception(latest: Statement | null, named: readonly NamedSta
 }
 
 export function ConstructionPerceptionCard({ perception }: { perception: Perception }) {
-  const { response, isLoading, unreadable, selectedMonth, choose, reset, retry } = perception;
+  const { response, requestFailure, isLoading, unreadable, selectedMonth, choose, reset, retry } = perception;
   return (
     <VStack gap={3}>
       <Heading level={2} id="risk-construction" tabIndex={-1}>건설경기 인식 지수</Heading>
@@ -160,7 +168,7 @@ export function ConstructionPerceptionCard({ perception }: { perception: Percept
           <Banner
             status="error"
             title={isLoading ? '이전 요청에 실패했습니다' : '산출할 수 없습니다'}
-            description={response.reason}
+            description={requestFailure ? indicatorFailureDescription(requestFailure) : response.reason}
           />
           <Text type="supporting" role="status">
             {selectedMonth === undefined ? '기본 기준월로 요청했습니다.' : `요청 기준월 ${selectedMonth}`}
@@ -274,20 +282,13 @@ function PerceptionResult({
   );
 }
 
-async function fetchPerception(
+export async function fetchPerception(
   rounds: readonly RoundEntry[],
   reportMonth?: YearMonth,
   baseMonth?: YearMonth,
-): Promise<PerceptionResponse> {
-  try {
-    const res = await fetch('/api/construction-perception', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rounds, reportMonth, baseMonth }),
-      cache: 'no-store',
-    });
-    return (await res.json()) as PerceptionResponse;
-  } catch {
-    return { ok: false, reason: '서버에 연결하지 못했습니다.' };
-  }
+): Promise<PerceptionRequestResult> {
+  const result = await requestIndicator('/api/construction-perception', { rounds, reportMonth, baseMonth });
+  return result.kind === 'response'
+    ? { response: result.response as PerceptionResponse, requestFailure: null }
+    : { response: { ok: false, reason: '서버에 연결하지 못했습니다.' }, requestFailure: result.failure };
 }

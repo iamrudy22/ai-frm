@@ -24,6 +24,7 @@ import { VStack } from '@astryxdesign/core/VStack';
 
 import type { FundingRiskReportDto, FundingRiskResponse } from '@/app/api/funding-risk/dto';
 import { basisText, canRetry, evaluationNote, yieldRows } from '@/app/aifrm/funding-risk-view';
+import { indicatorFailureDescription, requestIndicator, type IndicatorRequestFailure } from '@/app/aifrm/indicator-request';
 import { GRADE_COLOR, percentPoints } from '@/app/aifrm/format';
 import { AGENCIES } from '@/domain/risk/funding-risk/funding-risk';
 import { commentFor } from '@/domain/risk/funding-risk/policy';
@@ -38,10 +39,16 @@ const YIELD_COLUMNS = [
 export type FundingRiskState = {
   /** 이 판단월의 결과. 아직 받지 못했으면 null. */
   readonly response: FundingRiskResponse | null;
+  /** 화면 안내 전용. 보고서에 쓰는 response.reason과 분리한다. */
+  readonly requestFailure?: IndicatorRequestFailure | null;
   readonly retry: () => void;
 };
 
-type Loaded = { readonly judged: YearMonth; readonly attempt: number; readonly response: FundingRiskResponse };
+type FundingRequestResult = {
+  readonly response: FundingRiskResponse;
+  readonly requestFailure: IndicatorRequestFailure | null;
+};
+type Loaded = { readonly judged: YearMonth; readonly attempt: number } & FundingRequestResult;
 
 /** judged가 null이면(아직 산출 전) 부르지 않는다. */
 export function useFundingRisk(judged: YearMonth | null): FundingRiskState {
@@ -52,8 +59,8 @@ export function useFundingRisk(judged: YearMonth | null): FundingRiskState {
     if (judged === null) return;
     let cancelled = false;
     (async () => {
-      const response = await fetchFundingRisk(judged);
-      if (!cancelled) setLoaded({ judged, attempt, response });
+      const result = await fetchFundingRisk(judged);
+      if (!cancelled) setLoaded({ judged, attempt, ...result });
     })();
     return () => {
       cancelled = true;
@@ -61,11 +68,12 @@ export function useFundingRisk(judged: YearMonth | null): FundingRiskState {
   }, [judged, attempt]);
 
   const current = loaded !== null && loaded.judged === judged && loaded.attempt === attempt ? loaded : null;
-  return { response: current?.response ?? null, retry: () => setAttempt((n) => n + 1) };
+  return { response: current?.response ?? null, requestFailure: current?.requestFailure ?? null,
+    retry: () => setAttempt((n) => n + 1) };
 }
 
 export function FundingRiskCard({ fundingRisk }: { fundingRisk: FundingRiskState }) {
-  const { response, retry } = fundingRisk;
+  const { response, requestFailure, retry } = fundingRisk;
   return (
     <VStack gap={3}>
       <Heading level={2} id="risk-funding" tabIndex={-1}>조달위험 인식 지수</Heading>
@@ -75,7 +83,8 @@ export function FundingRiskCard({ fundingRisk }: { fundingRisk: FundingRiskState
         <FundingRiskResult report={response.value} onRetry={canRetry(response) ? retry : null} />
       ) : (
         <VStack gap={2} align="start">
-          <Banner status="error" title="산출할 수 없습니다" description={response.reason} />
+          <Banner status="error" title="산출할 수 없습니다"
+            description={requestFailure ? indicatorFailureDescription(requestFailure) : response.reason} />
           <Button label="다시 불러오기" variant="secondary" onClick={retry} />
         </VStack>
       )}
@@ -149,16 +158,9 @@ function FundingRiskResult({ report, onRetry }: { report: FundingRiskReportDto; 
   );
 }
 
-async function fetchFundingRisk(judgedMonth: YearMonth): Promise<FundingRiskResponse> {
-  try {
-    const res = await fetch('/api/funding-risk', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ judgedMonth }),
-      cache: 'no-store',
-    });
-    return (await res.json()) as FundingRiskResponse;
-  } catch {
-    return { ok: false, reason: '서버에 연결하지 못했습니다.' };
-  }
+export async function fetchFundingRisk(judgedMonth: YearMonth): Promise<FundingRequestResult> {
+  const result = await requestIndicator('/api/funding-risk', { judgedMonth });
+  return result.kind === 'response'
+    ? { response: result.response as FundingRiskResponse, requestFailure: null }
+    : { response: { ok: false, reason: '서버에 연결하지 못했습니다.' }, requestFailure: result.failure };
 }
