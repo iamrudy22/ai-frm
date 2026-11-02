@@ -13,11 +13,22 @@ export function json(body: unknown, status = 200, extra?: HeadersInit): Response
 }
 export function localOrigin(request: Request): boolean {
   const url = new URL(request.url);
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return false;
   const host = request.headers.get('host');
-  if (host && !/^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?$/i.test(host)) return false;
   const origin = request.headers.get('origin');
   try {
+    const localUrl = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    const localHost = !host || /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?$/i.test(host);
+    if (!localUrl || !localHost) {
+      const configured = process.env.AIFRM_PUBLIC_ORIGIN;
+      if (!configured) return false;
+      const allowed = new URL(configured);
+      if (allowed.protocol !== 'https:' || allowed.username || allowed.password ||
+          (configured !== allowed.origin && configured !== `${allowed.origin}/`) || allowed.hostname.includes('*')) return false;
+      // Host/origin checks do not authenticate users. The tunnel must validate Cloudflare Access tokens separately.
+      // Next can normalize request.url to the loopback listener while preserving the browser's Host.
+      return (url.protocol === 'http:' || url.protocol === 'https:') && (localUrl || url.host === allowed.host) &&
+        host?.toLowerCase() === allowed.host && (!origin || origin === allowed.origin);
+    }
     const authority = host ? new URL(`${url.protocol}//${host}`) : url;
     return !origin || new URL(origin).origin === authority.origin;
   }

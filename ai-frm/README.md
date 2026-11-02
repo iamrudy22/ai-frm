@@ -28,6 +28,18 @@ Node.js 26.12.1은 Brotli 취약점 CVE-2026-111497 패치를 포함한 [보안 
 
 검증: `npm run verify`(tsc + vitest), `npm run lint`(전체 ESLint).
 
+### Cloudflare Tunnel 외부 공유
+
+기본값은 localhost 전용이다. 서버 런타임에 `AIFRM_PUBLIC_ORIGIN=https://aifrm.brainbackdoor.com`을 지정하면 이력 API의 요청 경계가 해당 공개 Host와 HTTPS Origin만 추가로 허용한다. URL은 경로 없는 origin이어야 하며, 다른 Host·포트·Origin과 임의 forwarded 헤더로 허용 범위를 넓힐 수 없다. Next가 요청 URL을 내부 loopback 주소로 정규화하는 경우에도 공개 Host는 정확히 일치해야 한다. 이 설정은 사용자 인증을 제공하지 않는다.
+
+외부 공개 전에 Cloudflare Access로 **전체 호스트명**을 보호하고, 허용할 이메일을 제한하며, 터널의 **Protect with Access**에서 토큰을 검증한다. 화면뿐 아니라 `/api/*`도 보호해야 한다. 앱은 `127.0.0.1:3002`에 바인딩하고 터널의 서비스 주소는 `http://127.0.0.1:3002`로 설정한다. 서비스 주소에 `/aifrm`을 넣지 않는다. 계산식·리포트 템플릿은 바꾸지 않는다.
+
+허용된 사용자는 현재 하나의 공통 원장을 공유한다. 데이터는 Mac의 `data/report-history.sqlite`에 계속 저장되며, Mac·앱·터널이 실행 중이어야 접속할 수 있다. 터널 토큰·계정 인증정보·업무 원본은 Git에 넣지 않는다.
+
+2026-11-02 준비 기록: 요청 경계의 TDD(74건)·독립 리뷰·전체 회귀(1,366건 통과, 기존 2건 skipped)를 완료했다. 최초 전체 실행에서 HWPX ZIP 테스트 1건이 시간 초과했으나 해당 파일 재실행과 `--maxWorkers=4` 전체 실행은 통과했다. Turbopack은 실행 환경의 내부 포트 권한 오류로 실패하여 공식 `next build --webpack`으로 production 빌드를 검증했다. 실제 Next 서버의 Host/Origin 요청 10건도 업무 원장에 접근하지 않는 잘못된 조회 조건으로 통과했다.
+
+가비아 원본 DNS 9개를 Cloudflare Free 존에 복사하고 원본 TTL 600초와 DNS 전용 연결을 유지했다. 배정된 네임서버는 `simon.ns.cloudflare.com`, `sureena.ns.cloudflare.com`이며 가비아 변경 양식만 준비했다. Zero Trust Free 활성화 화면은 결제수단과 무료 한도 초과 사용량의 청구 동의를 요구하여 사용자 확인을 기다린다. 네임서버 전환·Access 설정·터널 공개·외부 회귀 검증은 아직 완료하지 않았으며, 준비 완료를 외부 공유 완료로 취급하지 않는다. 네임서버 변경 및 외부 접근 확대 직전에 구체적인 범위를 확인하고 진행한다.
+
 ## 홈과 과거 자료 등록
 
 `/aifrm`의 **보고서 작성**에서는 자금수지표 업로드부터 시작한다. 작성 중인 월과 확정본은 **보관한 보고서**에서 확인한다. 외부 위험 이력 보완은 보관 영역에서 필요한 때 펼친다.
