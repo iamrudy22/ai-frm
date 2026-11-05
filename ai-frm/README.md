@@ -30,7 +30,9 @@ Node.js 26.12.1은 Brotli 취약점 CVE-2026-111497 패치를 포함한 [보안 
 
 ### Windows에서 로컬 서버 실행
 
-Windows x64 또는 ARM64에서 Node.js 22 이상이 설치되어 있으면, 파일 탐색기에서 로컬 드라이브의 앱 폴더(`package.json`이 있는 위치)에 있는 **`start-aifrm.bat`**을 더블클릭한다. 설치된 버전이 **26.12.1**과 다르면, 스크립트가 공식 배포본을 다운로드하고 SHA-256을 확인한 뒤 `%LOCALAPPDATA%\AIFRM\runtime`에 설치한다. 이 런타임은 AIFRM에서 사용하며 다음 실행부터 재사용한다. 첫 설치에는 인터넷 연결이 필요하다. 서버가 준비되면 기본 브라우저에서 AIFRM 화면이 자동으로 열린다. 실행에 실패하면 명령 창이 오류를 표시한 채 대기한다.
+Windows x64 또는 ARM64에서 Node.js 22 이상이 설치되어 있으면, 파일 탐색기에서 로컬 드라이브의 앱 폴더(`package.json`이 있는 위치)에 있는 **`start-aifrm.bat`**을 더블클릭한다. 설치된 버전이 **26.12.1**과 다르면, 스크립트가 AIFRM 전용 런타임을 `%LOCALAPPDATA%\AIFRM\runtime`에 설치하고 다음 실행부터 재사용한다. 서버가 준비되면 기본 브라우저에서 AIFRM 화면이 자동으로 열린다. 실행에 실패하면 명령 창이 오류를 표시한 채 대기한다.
+
+다른 PC에 배포할 때는 [공식 Node.js ZIP](https://nodejs.org/dist/v26.12.1/)을 앱 폴더의 `runtime` 폴더에 압축을 풀지 않고 동봉할 수 있다. `node -p process.arch` 결과에 맞춰 `node-v26.12.1-win-x64.zip` 또는 `node-v26.12.1-win-arm64.zip`을 둔다. 스크립트는 동봉된 ZIP을 우선 사용하고, 해당 파일이 없으면 공식 서버에서 받는다. 두 경우 모두 SHA-256을 확인한 뒤 설치한다. 새 PC에서 `node_modules`를 처음 설치할 때는 npm 저장소에 연결할 수 있어야 한다.
 
 PowerShell이나 macOS 터미널에서는 같은 앱 폴더에서 다음 명령으로 실행할 수 있다. macOS에서는 Node.js **26.12.1**을 먼저 설치한다.
 

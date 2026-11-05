@@ -19,6 +19,7 @@
 
 # production
 /build
+/runtime/node-v*-win-*.zip
 
 # misc
 .DS_Store

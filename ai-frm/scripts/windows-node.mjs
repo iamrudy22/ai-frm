@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // From https://nodejs.org/dist/v26.12.1/SHASUMS256.txt.
 // Update the checksums when package.json pins a different version.
@@ -24,6 +25,29 @@ function checkRuntime(directory, version) {
   return executable;
 }
 
+async function readRuntimeArchive(version, filename) {
+  const bundled = new URL(`../runtime/${filename}`, import.meta.url);
+  if (existsSync(bundled)) {
+    console.log(`동봉된 AIFRM 전용 Node.js ${version} 배포본을 확인합니다.`);
+    return readFile(bundled);
+  }
+
+  console.log(`AIFRM 전용 Node.js ${version}을 다운로드합니다.`);
+  try {
+    const response = await fetch(`https://nodejs.org/dist/v${version}/${filename}`, {
+      signal: AbortSignal.timeout(180_000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    const reason = error.cause?.code ?? error.message;
+    throw new Error(`Node.js 다운로드에 실패했습니다 (${reason}). 공식 ZIP을 ${fileURLToPath(bundled)}에 넣고 다시 실행하세요.`, { cause: error });
+  }
+}
+
 export async function installWindowsNode(version) {
   const distribution = `node-v${version}-win-${process.arch}`;
   const expectedChecksum = checksums.get(distribution);
@@ -39,16 +63,8 @@ export async function installWindowsNode(version) {
   await mkdir(cache, { recursive: true });
   const temporary = await mkdtemp(join(cache, 'download-'));
   try {
-    console.log(`AIFRM 전용 Node.js ${version}을 다운로드합니다. 첫 실행에는 인터넷이 필요합니다.`);
     const filename = `${distribution}.zip`;
-    const response = await fetch(`https://nodejs.org/dist/v${version}/${filename}`, {
-      signal: AbortSignal.timeout(180_000),
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error(`Node.js 다운로드에 실패했습니다. HTTP ${response.status}`);
-    }
-    const archive = Buffer.from(await response.arrayBuffer());
+    const archive = await readRuntimeArchive(version, filename);
     if (createHash('sha256').update(archive).digest('hex') !== expectedChecksum) {
       throw new Error('Node.js 다운로드 파일의 SHA-256이 공식 배포본과 다릅니다.');
     }
