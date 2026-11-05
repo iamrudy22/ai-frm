@@ -30,9 +30,9 @@ Node.js 26.12.1은 Brotli 취약점 CVE-2026-111497 패치를 포함한 [보안 
 
 ### Windows에서 로컬 서버 실행
 
-Node.js **26.12.1**을 설치한 뒤, 파일 탐색기에서 로컬 드라이브의 앱 폴더(`package.json`이 있는 위치)에 있는 **`start-aifrm.bat`**을 더블클릭한다. 서버가 준비되면 기본 브라우저에서 AIFRM 화면이 자동으로 열린다. 실행에 실패하면 명령 창이 오류를 표시한 채 대기한다.
+Windows x64 또는 ARM64에서 Node.js 22 이상이 설치되어 있으면, 파일 탐색기에서 로컬 드라이브의 앱 폴더(`package.json`이 있는 위치)에 있는 **`start-aifrm.bat`**을 더블클릭한다. 설치된 버전이 **26.12.1**과 다르면, 스크립트가 공식 배포본을 다운로드하고 SHA-256을 확인한 뒤 `%LOCALAPPDATA%\AIFRM\runtime`에 설치한다. 이 런타임은 AIFRM에서 사용하며 다음 실행부터 재사용한다. 첫 설치에는 인터넷 연결이 필요하다. 서버가 준비되면 기본 브라우저에서 AIFRM 화면이 자동으로 열린다. 실행에 실패하면 명령 창이 오류를 표시한 채 대기한다.
 
-PowerShell이나 macOS 터미널에서는 같은 앱 폴더에서 다음 명령으로 실행할 수 있다.
+PowerShell이나 macOS 터미널에서는 같은 앱 폴더에서 다음 명령으로 실행할 수 있다. macOS에서는 Node.js **26.12.1**을 먼저 설치한다.
 
 ```powershell
 node scripts/start-local.mjs

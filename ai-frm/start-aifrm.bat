@@ -3,7 +3,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 
 where.exe node.exe >nul 2>&1
 if errorlevel 1 (
-    echo Node.js 26.12.1 is required. Install it and double-click this file again.
+    echo Install Node.js 22 or newer, then double-click this file again.
     pause
     exit /b 1
 )
